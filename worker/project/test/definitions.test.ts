@@ -62,3 +62,9 @@ test("Python, Go and Rust shapes; calls are not definitions", () => {
 		Span: ["pub struct Span {\n    start: usize,\n}"],
 	});
 });
+
+test("data files hold no definitions: JSON, CSV and lock files are passed over, however code-like a line looks (abso issue 158)", () => {
+	const codeLike = "export function parsePattern(text: string): Node {\n  return compileNode(text);\n}\n";
+	assert.deepEqual(defs({ "fixtures/a.json": codeLike, "data/b.csv": codeLike, "c.lock": codeLike }), {});
+	assert.deepEqual(Object.keys(defs({ "src/a.ts": codeLike })), ["parsePattern"]);
+});

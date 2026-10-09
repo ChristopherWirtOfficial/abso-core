@@ -20,7 +20,7 @@
 // that defines it (project.ts, #definitionCore).
 
 import type { LineId, View } from "../../src/engine/index.ts";
-import { codeOfLines, isCommonName, isProse } from "./names.ts";
+import { codeOfLines, holdsNoCode, isCommonName } from "./names.ts";
 
 export interface Definition {
 	readonly name: string;
@@ -119,7 +119,7 @@ export function definitionsIn(view: View, files?: Iterable<string>): Map<string,
 }
 
 function definitionsInFile(view: View, file: string, keepCommon = false): Definition[] {
-	if (isProse(file) || !view.hasFile(file)) return [];
+	if (holdsNoCode(file) || !view.hasFile(file)) return [];
 	const out: Definition[] = [];
 	const visible = view.lines(file);
 	const code = codeOfLines(visible.map((l) => l.text));

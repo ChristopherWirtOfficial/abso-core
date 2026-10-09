@@ -64,6 +64,21 @@ const PROSE_NAMES = new Set([
 ]);
 
 /** Files of prose, whose words are not code: Markdown, plain text, READMEs and the like. */
+/** Data files: no code defines or uses a name in them, however big they are (abso issue 158). */
+const DATA_EXTENSIONS = new Set(["json", "jsonc", "json5", "jsonl", "ndjson", "geojson", "csv", "tsv", "lock", "svg"]);
+
+/**
+ * Whether the definition rule passes over a file: prose, or data. Scanning a
+ * 23,000-line JSON fixture for definitions it can't hold cost a big publish
+ * hundreds of milliseconds, and its keys could pass for uses of code names.
+ */
+export function holdsNoCode(path: string): boolean {
+	if (isProse(path)) return true;
+	const base = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
+	const dot = base.lastIndexOf(".");
+	return dot > 0 && DATA_EXTENSIONS.has(base.slice(dot + 1));
+}
+
 export function isProse(path: string): boolean {
 	const base = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
 	const dot = base.lastIndexOf(".");

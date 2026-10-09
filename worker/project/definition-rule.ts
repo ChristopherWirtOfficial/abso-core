@@ -7,7 +7,7 @@
 import { type AtomId, type Graph, joinLines, type LineId, type View } from "../../src/engine/index.ts";
 import { type Origin, touchedFiles } from "./collisions.ts";
 import { type Definition, definitionsIn, importsOf, usedNames } from "./definitions.ts";
-import { codeOfLines, declaredIn, isProse } from "./names.ts";
+import { codeOfLines, declaredIn, holdsNoCode } from "./names.ts";
 import { definitionText } from "./news.ts";
 import type { Collision } from "./project.ts";
 
@@ -30,6 +30,12 @@ export function signature(defs: readonly Definition[]): string {
 
 const EMPTY_NAMES: ReadonlySet<string> = new Set();
 
+/** Where one of an atom's inserted runs ends (its lines' k), and the node it hangs off. */
+interface RunEnd {
+	readonly end: number;
+	readonly parent: string;
+}
+
 export class DefinitionRule {
 	readonly #graph: Graph;
 	readonly #origin: (atom: AtomId, spaceName: string) => Origin;
@@ -46,20 +52,20 @@ export class DefinitionRule {
 	 * replaced the block of lines the atom deleted just before it in `base`.
 	 * A pure insertion replaced nothing.
 	 */
-	#replacedNames(line: LineId, base: View): ReadonlySet<string> {
+	#replacedNames(line: LineId, base: View, runsOf: Map<AtomId, readonly RunEnd[]>): ReadonlySet<string> {
 		const g = this.#graph;
 		const info = g.line(line);
 		if (!info) return EMPTY_NAMES;
 		const atom = g.atom(info.atom);
-		let k = 0;
-		let parent: string | undefined;
-		for (const run of atom.inserts) {
-			if (info.k < k + run.lines.length) {
-				parent = run.parent;
-				break;
-			}
-			k += run.lines.length;
+		// Where each of the atom's runs ends, worked out once per check (abso issue 158): reading a run's
+		// lines can mean reading its text back from the log, so not once per line of a big change.
+		let runs = runsOf.get(atom.id);
+		if (!runs) {
+			let k = 0;
+			runs = atom.inserts.map((run) => ({ end: (k += run.lines.length), parent: run.parent }));
+			runsOf.set(atom.id, runs);
 		}
+		const parent = runs.find((r) => info.k < r.end)?.parent;
 		if (parent === undefined || parent.startsWith("^") || !g.deletersOf(parent).includes(atom.id)) return EMPTY_NAMES;
 		const key = `${atom.id} ${parent}`;
 		let names = this.#replacedCache.get(key);
@@ -100,10 +106,11 @@ export class DefinitionRule {
 		if (draft.size === 0 || newer.size === 0) return [];
 		const uses = new Map<string, { file: string; index: number }[]>();
 		const declared = new Set<string>();
+		const runsOf = new Map<AtomId, readonly RunEnd[]>();
 		// Only files the draft wrote lines in can hold its lines.
 		const draftFiles = touchedFiles(this.#graph, draft, [view]);
 		for (const file of [...draftFiles].sort()) {
-			if (isProse(file) || !view.hasFile(file)) continue;
+			if (holdsNoCode(file) || !view.hasFile(file)) continue;
 			const visible = view.lines(file);
 			if (!visible.some((l) => draft.has(l.atom))) continue;
 			const code = codeOfLines(visible.map((l) => l.text));
@@ -111,7 +118,7 @@ export class DefinitionRule {
 				if (!draft.has(line.atom)) return;
 				for (const name of declaredIn(code[i]!)) declared.add(name);
 				// Only names the change added: a use already on the lines it replaced is not the draft's to answer for.
-				const before = this.#replacedNames(line.id, baseView);
+				const before = this.#replacedNames(line.id, baseView, runsOf);
 				for (const name of usedNames(code[i]!)) {
 					if (before.has(name)) continue;
 					const list = uses.get(name);
