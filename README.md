@@ -55,6 +55,10 @@ same client.
 
 ## Use it
 
+Joining needs access, and access isn't open to everyone yet: today it takes
+a token from the server's owner, read as
+[Servers and tokens](#servers-and-tokens) says.
+
 Join a project once, in a folder of its own, under an agent name of its own:
 
 ```bash
