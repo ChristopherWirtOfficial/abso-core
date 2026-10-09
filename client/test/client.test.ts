@@ -2187,6 +2187,40 @@ describe("the merge queue (#39)", () => {
 		assert.equal((await avcs(folders.bob!, "status")).json.version, 1, "shared stayed at version 1");
 	});
 
+	it("--done takes the start note back only once the queued publish lands", async () => {
+		const { folders } = await project(files, "alice");
+		const noted = async () =>
+			/Starting on:/.test((await main(["where"], { cwd: folders.alice!, env: QENV, write: () => {} })).stdout);
+		assert.equal((await avcs(folders.alice!, "start", "Two", "other.txt")).exit, 0);
+		fake.queueHold = true;
+		try {
+			write(folders.alice!, { "other.txt": "two\n" });
+			const queued = await publish(folders.alice!, "-m", "two", "--no-wait", "--done");
+			assert.equal(queued.exit, 0, queued.stdout + queued.stderr);
+			assert.match(
+				queued.stdout,
+				/\nYour start note stays \(--done\): publish 1 hasn't landed yet\. Once it has, abso start --done takes the note back and abso issue <N> --done closes the issue it names\.\n$/,
+			);
+			assert.equal(await noted(), true, "a queued publish may yet be pulled");
+			assert.equal((await main(["unqueue"], { cwd: folders.alice!, env: QENV, write: () => {} })).exit, 0);
+		} finally {
+			fake.queueHold = false;
+		}
+		write(folders.alice!, { "state.txt": "bad\n" });
+		const pulled = await publish(folders.alice!, "-m", "breaks it", "--done");
+		assert.equal(pulled.exit, 2, pulled.stdout + pulled.stderr);
+		assert.doesNotMatch(pulled.stdout, /start note/);
+		assert.equal(await noted(), true, "a pulled publish leaves the note");
+		write(folders.alice!, { "state.txt": "ok, fixed\n" });
+		const landed = await publish(folders.alice!, "-m", "fixed", "--done");
+		assert.equal(landed.exit, 0, landed.stdout + landed.stderr);
+		assert.match(
+			landed.stdout,
+			/\nPublished version 1: it passed the project's check in the merge queue\.\nYour start note is taken back \(--done\): this work is finished\.\n$/,
+		);
+		assert.equal(await noted(), false);
+	});
+
 	it("--no-wait and --wait, status shows the queue, unqueue takes it back, and a collision names the queued publish", async () => {
 		const { folders } = await project(files, "alice", "bob");
 		fake.queueHold = true;

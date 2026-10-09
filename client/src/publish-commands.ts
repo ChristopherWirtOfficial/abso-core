@@ -201,11 +201,17 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 		`${checked ? "The check passed; " : ""}the publish may have reached the server before its answer was lost: abso status shows whether your draft was published.`,
 	);
 	const out = withLeftOut(reached, leftOut);
-	// --done: this publish finishes the work the start note named (#44): take the note back once it's published or queued.
-	const went =
-		(out.json as { version?: unknown; queued?: unknown }).version !== undefined ||
-		(out.json as { queued?: unknown }).queued !== undefined;
-	if (!bool(args, "done") || !went) return out;
+	// --done: this publish finishes the work the start note named (#44): take the note back once it's published.
+	// A publish still in the merge queue may yet be pulled, so its note and issue stay as they are until it lands.
+	if (!bool(args, "done")) return out;
+	const { version, queued, outcome } = out.json as { version?: unknown; queued?: unknown; outcome?: unknown };
+	if (version === undefined) {
+		if (queued === undefined || outcome === "pulled") return out;
+		return {
+			...out,
+			text: `${out.text}\nYour start note stays (--done): publish ${queued} hasn't landed yet. Once it has, abso start --done takes the note back and abso issue <N> --done closes the issue it names.`,
+		};
+	}
 	// done (#54): the work is finished, so an issue the note named is closed with this change.
 	await api.starting(null, undefined, { done: true });
 	return {
