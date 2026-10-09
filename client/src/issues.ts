@@ -27,6 +27,7 @@ import { issuesServerFor, tokenGoesTo } from "./core.ts";
 import { fromEnv } from "./env-names.ts";
 import { ignoredHere } from "./fetch.ts";
 import { loadIgnore, relativeTo } from "./folder.ts";
+import { queuedLines, standing } from "./queue.ts";
 import { seenText, shortWhen } from "./times.ts";
 
 const q = (s: string): string => JSON.stringify(s);
@@ -698,17 +699,31 @@ export async function runWaiting(args: Parsed, env: Env): Promise<Output> {
 	const { api, config } = openIssues(env);
 	const mine = bool(args, "mine") || str(args, "of") === config.agent;
 	const of = mine ? config.agent : str(args, "of");
-	const { asks } = mine ? await api.waitingMine() : await api.waiting(of);
+	// With --mine, your own publishes still in the merge queue are open work too. A server without a queue,
+	// or one that can't be read now, leaves them out rather than failing the asks.
+	const [{ asks }, queue] = await Promise.all([
+		mine ? api.waitingMine() : api.waiting(of),
+		mine ? api.queueState().catch(() => undefined) : undefined,
+	]);
+	const queued = queuedLines(queue, config.agent);
+	const yours = (queue?.items ?? []).filter((q) => q.agent === config.agent);
 	return {
-		text:
-			asks.length === 0
-				? `Nothing is waiting${of ? ` on ${of}` : ""}.`
+		text: [
+			...queued,
+			...(asks.length === 0
+				? [queued.length > 0 ? `No open asks of ${of}.` : `Nothing is waiting${of ? ` on ${of}` : ""}.`]
 				: [
 						`${plural(asks.length, "open ask")}${of ? ` of ${of}` : ""}, soonest due first:`,
 						...asks.map((a) => askLine(a, api)),
 						'abso answer <ask> "..." answers one asked of you.',
-					].join("\n"),
-		json: { asks },
+					]),
+		].join("\n"),
+		json: {
+			asks,
+			...(yours.length > 0
+				? { queued: yours.map((q) => ({ id: q.id, message: q.message, standing: standing(queue!.items, q.id) })) }
+				: {}),
+		},
 	};
 }
 

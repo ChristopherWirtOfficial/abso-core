@@ -455,7 +455,8 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	waiting: {
 		flags: { of: "string", mine: "boolean" },
 		usage: "abso waiting [--of <agent or person:id>] [--mine]",
-		about: "The open asks, soonest due first: every one, those of someone (--of), or those of you (--mine).",
+		about:
+			"The open asks, soonest due first: every one, those of someone (--of), or those of you (--mine). --mine also lists your publishes still in the merge queue and where each stands; the outcome comes as news.",
 		run: runWaiting,
 	},
 	answer: {

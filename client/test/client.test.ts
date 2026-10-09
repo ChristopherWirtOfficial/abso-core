@@ -2204,6 +2204,26 @@ describe("the merge queue (#39)", () => {
 				(await main(["status", "--short"], { cwd: folders.alice!, env: QENV, write: () => {} })).stdout,
 				"0+unpublished+queued\n",
 			);
+			// waiting --mine lists it beside the asks (an Issues stand-in with none open).
+			const stub = createHttpServer((_req, res) =>
+				res.writeHead(200, { "content-type": "application/json" }).end('{"asks":[]}'),
+			);
+			await new Promise<void>((ok) => stub.listen(0, "127.0.0.1", ok));
+			try {
+				const issuesUrl = `http://127.0.0.1:${(stub.address() as AddressInfo).port}`;
+				const waiting = await main(["waiting", "--mine"], {
+					cwd: folders.alice!,
+					env: { ...QENV, AVCS_ISSUES_SERVER: issuesUrl },
+					write: () => {},
+				});
+				assert.equal(waiting.exit, 0, waiting.stdout + waiting.stderr);
+				assert.match(
+					waiting.stdout,
+					/^Your publish 1 \("two"\) is in the merge queue: [^\n]+\.\nIt lands or is pulled once the project's check runs on it; the outcome comes as news, and abso unqueue takes it back\.\nNo open asks of alice\.\n$/,
+				);
+			} finally {
+				await new Promise((ok) => stub.close(ok));
+			}
 
 			// bob changes the same line: refused at once, naming the queued publish, not a version.
 			write(folders.bob!, { "other.txt": "two, by bob\n" });

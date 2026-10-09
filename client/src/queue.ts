@@ -138,6 +138,23 @@ export function queueText(queue: QueueState | null | undefined, me: string): str
 	return lines;
 }
 
+/**
+ * What abso waiting --mine says about this agent's own publishes in the merge queue: where each stands, whether
+ * the queue is paused, and how the outcome comes. Nothing when none of theirs waits.
+ */
+export function queuedLines(queue: QueueState | null | undefined, me: string): string[] {
+	const items = queue?.items ?? [];
+	const mine = items.filter((q) => q.agent === me);
+	if (mine.length === 0) return [];
+	return [
+		...mine.map(
+			(q) => `Your publish ${q.id} (${JSON.stringify(q.message)}) is in the merge queue: ${standing(items, q.id)}.`,
+		),
+		...(queue?.paused ? [`The merge queue is paused: ${queue.paused.reason}.`] : []),
+		`${mine.length === 1 ? "It lands or is pulled" : "Each lands or is pulled"} once the project's check runs on it; the outcome comes as news, and abso unqueue takes ${mine.length === 1 ? "it" : "them"} back.`,
+	];
+}
+
 /** abso unqueue: take this agent's queued publishes back; their changes stay in the draft. */
 export async function runUnqueue(args: Parsed, env: Env): Promise<Output> {
 	if (args.positionals.length > 0)
