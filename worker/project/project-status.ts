@@ -3,7 +3,7 @@
 
 import type { AtomId, View } from "../../src/engine/index.ts";
 import { ProjectError } from "./project-error.ts";
-import { countRefusals } from "./project-helpers.ts";
+import { countRefusals, type projectFileIn } from "./project-helpers.ts";
 import type { AgentState, AgentStatus, EditsVia, Refusal, Starting, StatusAnswer } from "./project-types.ts";
 import { last, SHARED, type Space, sharedBaseOf } from "./spaces.ts";
 
@@ -32,6 +32,8 @@ export interface SnapshotHost {
 	viewAt(space: Space, version: number): View;
 	agentView(agent: AgentState): View;
 	version(): number;
+	/** Shared's project file (224), or undefined before init or without one. */
+	projectFile(): ReturnType<typeof projectFileIn>;
 }
 
 /**
@@ -143,5 +145,14 @@ export function status(host: SnapshotHost): StatusAnswer {
 		}
 	}
 	const announcements = [...waiting].map(([text, names]) => ({ text, waiting: names }));
-	return { version: host.version(), agents, drafts, refusals: countRefusals(host.refusals), announcements };
+	// Both project files in shared (224): say which one counts, never quietly.
+	const file = host.projectFile();
+	return {
+		version: host.version(),
+		agents,
+		drafts,
+		refusals: countRefusals(host.refusals),
+		announcements,
+		...(file?.ignored ? { projectFile: { used: "abso.json" as const, ignored: file.ignored } } : {}),
+	};
 }

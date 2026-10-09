@@ -301,6 +301,11 @@ export async function runStatus(args: Parsed, env: Env): Promise<Output> {
 		// Is shared green (#39)? Right under the first line, since it decides what to do next.
 		...ciText(status.ci, status.version),
 		...queueText(status.queue, config.agent),
+		...(status.projectFile
+			? [
+					`Shared has both ${status.projectFile.used} and ${status.projectFile.ignored}: ${status.projectFile.used} counts and ${status.projectFile.ignored} is ignored. Move anything you need into ${status.projectFile.used} and delete ${status.projectFile.ignored}.`,
+				]
+			: []),
 		local.size === 0
 			? "Everything in this folder is recorded."
 			: `Not yet recorded (abso record sends them): ${[...local.keys()].join(", ")}`,

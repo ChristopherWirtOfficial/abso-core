@@ -3,6 +3,7 @@
 
 import { canonicalText, type View } from "../../src/engine/index.ts";
 import { matchesPattern } from "./globs.ts";
+import { projectFileIn } from "./project-helpers.ts";
 import type { ProjectOptions } from "./project-types.ts";
 
 /**
@@ -18,14 +19,13 @@ export interface WholeHost {
 	whole: ProjectOptions["whole"];
 }
 
-/** avcs.json's `"whole": [globs]`: paths kept whole. From `config` when given (init), else shared's. */
+/** The project file's `"whole": [globs]`: paths kept whole. From `config` when given (init), else shared's. */
 export function wholeRules(host: WholeHost, config?: string): string[] {
 	let text = config;
 	if (text === undefined) {
 		if (!host.initialized()) return [];
-		const view = host.sharedView();
-		if (!view.hasFile("avcs.json")) return [];
-		text = view.text("avcs.json");
+		text = projectFileIn(host.sharedView())?.text;
+		if (text === undefined) return [];
 	}
 	try {
 		const whole = (JSON.parse(text) as { whole?: unknown }).whole;

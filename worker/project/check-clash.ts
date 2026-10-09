@@ -3,7 +3,7 @@
 
 import type { AtomId, View } from "../../src/engine/index.ts";
 import { ProjectError } from "./project-error.ts";
-import { configProblem } from "./project-helpers.ts";
+import { configProblem, PROJECT_FILES } from "./project-helpers.ts";
 import type { Space } from "./spaces.ts";
 import { clashIn } from "./spelling.ts";
 
@@ -38,10 +38,11 @@ export function checkClash(
 	const touched = host.touchedFiles(changes, [view]);
 	const why = clashIn(view, touched, now);
 	if (why) throw new ProjectError("conflict", why);
-	// A broken avcs.json would quietly switch off files kept whole, the queue and reviewers (Git Lessons' review, batch 4).
-	if (touched.has("avcs.json") && view.hasFile("avcs.json")) {
-		const bad = configProblem(view.text("avcs.json"));
+	// A broken project file would quietly switch off files kept whole, the queue and reviewers (Git Lessons' review, batch 4).
+	for (const name of PROJECT_FILES) {
+		if (!touched.has(name) || !view.hasFile(name)) continue;
+		const bad = configProblem(view.text(name));
 		if (bad)
-			throw new ProjectError("conflict", `avcs.json ${bad}. Shared keeps the one it has; fix yours and publish again.`);
+			throw new ProjectError("conflict", `${name} ${bad}. Shared keeps the one it has; fix yours and publish again.`);
 	}
 }

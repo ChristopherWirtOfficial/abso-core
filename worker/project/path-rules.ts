@@ -46,15 +46,18 @@ const GIT_KEY = pathKey(".git");
 function reservedKey(seg: string): string {
 	return pathKey(seg.replace(/[\u200C-\u200F\u202A-\u202E\u206A-\u206F\uFEFF]/g, ""));
 }
-const AVCS_KEY = pathKey(".avcs");
+/** The client's folder: .abso, and .avcs from before the rename (224). */
+const SETTINGS_KEYS = new Set([pathKey(".abso"), pathKey(".avcs")]);
 
-/** For writes: the path must be canonical, and not under .avcs/ in any spelling, at any depth. */
+/** For writes: the path must be canonical, and not under .abso/ or .avcs/ in any spelling, at any depth. */
 export function checkPath(path: string): void {
 	const problem = pathProblem(path);
 	if (problem) throw new ProjectError("bad-request", `bad file path ${JSON.stringify(path)}: ${problem}`);
 	// The client's settings stay in the agent's folder and are never published.
-	if (path.split("/").some((seg) => reservedKey(seg) === AVCS_KEY)) {
-		throw new ProjectError("bad-request", `${path} is under .avcs/, which stays in the agent's folder`);
+	const settings = path.split("/").find((seg) => SETTINGS_KEYS.has(reservedKey(seg)));
+	if (settings !== undefined) {
+		const folder = reservedKey(settings) === pathKey(".abso") ? ".abso" : ".avcs";
+		throw new ProjectError("bad-request", `${path} is under ${folder}/, which stays in the agent's folder`);
 	}
 }
 

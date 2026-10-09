@@ -511,6 +511,8 @@ export type StatusAnswer = {
 	refusals: RefusalCounts;
 	/** Announcements some agent hasn't received yet, oldest first. */
 	announcements: { text: string; waiting: string[] }[];
+	/** Only when shared has both abso.json and avcs.json (224): abso.json counts and avcs.json is ignored. */
+	projectFile?: { used: "abso.json"; ignored: "avcs.json" };
 };
 
 /** Refused publishes and lands, counted by collision kind (a refusal can have several kinds). */

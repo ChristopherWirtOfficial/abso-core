@@ -118,7 +118,7 @@ import { PathIndex } from "./pathindex.ts";
 import { pathKey } from "./pathkey.ts";
 import { pluck as hostedPluck, type PluckHost } from "./pluck.ts";
 import { ProjectError } from "./project-error.ts";
-import { checkDraftName, checkPerson, NAME } from "./project-helpers.ts";
+import { checkDraftName, checkPerson, NAME, projectFileIn } from "./project-helpers.ts";
 import {
 	type SnapshotHost,
 	agentPaths as snapshotAgentPaths,
@@ -668,8 +668,7 @@ export class Project {
 
 	/** The project's reviewers per area (#44): avcs.json's `"review": [{"paths": [...], "reviewer": "..."}]` in shared. */
 	#reviewRules(): ReviewRule[] {
-		const view = this.#sharedView();
-		return reviewRulesIn(view.hasFile("avcs.json") ? view.text("avcs.json") : undefined);
+		return reviewRulesIn(projectFileIn(this.#sharedView())?.text);
 	}
 
 	/** Each reviewer whose area these files fall in, the files that do, and whether it has noted change `id`. */
@@ -2151,6 +2150,7 @@ export class Project {
 			viewAt: (space, version) => this.#viewAt(space, version),
 			agentView: (agent) => this.#agentView(agent),
 			version: () => this.version,
+			projectFile: () => (this.initialized ? projectFileIn(this.#sharedView()) : undefined),
 		};
 		return this.#snapshotHost;
 	}

@@ -7,6 +7,7 @@ import { definedTwice } from "./definitions.ts";
 import { keptOf, lostLines } from "./markers.ts";
 import { clip } from "./news.ts";
 import { ProjectError } from "./project-error.ts";
+import { projectFileIn } from "./project-helpers.ts";
 import type {
 	AgentState,
 	Blobs,
@@ -62,13 +63,13 @@ export interface QueueHost {
 	flush(entries: Entry[]): void;
 }
 
-/** Whether shared's avcs.json turns the merge queue on (`"queue": true`). */
+/** Whether shared's project file (abso.json, else avcs.json) turns the merge queue on (`"queue": true`). */
 export function queueOn(host: QueueHost): boolean {
 	if (!host.checkerReady()) return false;
-	const view = host.sharedView();
-	if (!view.hasFile("avcs.json")) return false;
+	const file = projectFileIn(host.sharedView());
+	if (!file) return false;
 	try {
-		return (JSON.parse(view.text("avcs.json")) as { queue?: unknown }).queue === true;
+		return (JSON.parse(file.text) as { queue?: unknown }).queue === true;
 	} catch {
 		return false;
 	}

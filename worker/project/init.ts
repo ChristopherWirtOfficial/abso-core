@@ -4,7 +4,7 @@
 import { type AttrSet, buildBase, canonicalText, type View } from "../../src/engine/index.ts";
 import { checkPath } from "./path-rules.ts";
 import { ProjectError } from "./project-error.ts";
-import { configProblem } from "./project-helpers.ts";
+import { configProblem, PROJECT_FILES, projectFileOf } from "./project-helpers.ts";
 import type { Entry, Modes, ProjectOptions } from "./project-types.ts";
 import { clashInPaths } from "./spelling.ts";
 import { checkModes } from "./view-changes.ts";
@@ -35,11 +35,13 @@ export function init(
 	if (typeof files !== "object" || files === null) throw new ProjectError("bad-request", "init needs {files}");
 	const clash = clashInPaths([...new Set([...Object.keys(files), ...Object.keys(blobs)])].toSorted());
 	if (clash) throw new ProjectError("bad-request", `init: ${clash} (#49)`);
-	const config = typeof files["avcs.json"] === "string" ? configProblem(files["avcs.json"]) : undefined;
-	if (config) throw new ProjectError("bad-request", `init: avcs.json ${config}`);
+	for (const name of PROJECT_FILES) {
+		const config = typeof files[name] === "string" ? configProblem(files[name]) : undefined;
+		if (config) throw new ProjectError("bad-request", `init: ${name} ${config}`);
+	}
 	if (host.whole) {
 		// The project file being created says which paths are whole (#46).
-		const config = typeof files["avcs.json"] === "string" ? files["avcs.json"] : undefined;
+		const config = projectFileOf(files)?.text;
 		({ files, blobs } = host.wholeOut(files, blobs, undefined, config) as {
 			files: Record<string, string>;
 			blobs: Record<string, string>;

@@ -32,8 +32,30 @@ export function countRefusals(list: readonly Refusal[]): RefusalCounts {
 	return counts;
 }
 
+/** The project file's names, the one read first first (224): abso.json, then avcs.json from before the rename. */
+export const PROJECT_FILES = ["abso.json", "avcs.json"] as const;
+
 /**
- * What's wrong with an avcs.json, or undefined (Git Lessons' review, batch 4):
+ * The project file a set of files holds: abso.json when it has one, else
+ * avcs.json. `ignored` names avcs.json when both are there, so status can say
+ * which one counts.
+ */
+export function projectFileIn(files: {
+	hasFile(path: string): boolean;
+	text(path: string): string;
+}): { name: (typeof PROJECT_FILES)[number]; text: string; ignored?: "avcs.json" } | undefined {
+	const [name, other] = PROJECT_FILES.filter((n) => files.hasFile(n));
+	if (!name) return undefined;
+	return { name, text: files.text(name), ...(other ? { ignored: "avcs.json" as const } : {}) };
+}
+
+/** projectFileIn for a plain path -> text record (init, git intake). */
+export function projectFileOf(files: Readonly<Record<string, unknown>>): ReturnType<typeof projectFileIn> {
+	return projectFileIn({ hasFile: (p) => typeof files[p] === "string", text: (p) => files[p] as string });
+}
+
+/**
+ * What's wrong with a project file (abso.json or avcs.json), or undefined (Git Lessons' review, batch 4):
  * it must be a JSON object, and the keys abso reads must have their types:
  * "whole" a list of globs, "queue" true or false, "review" a list of
  * {paths, reviewer}, and CI's "setup", "build", "check" and "out" strings.

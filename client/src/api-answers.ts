@@ -187,6 +187,8 @@ export interface StatusAnswer {
 	readonly ci?: CiStatus;
 	/** The merge queue (#39), while anything waits or it's paused. */
 	readonly queue?: QueueState | null;
+	/** Only when shared has both project files: abso.json counts, avcs.json is ignored. */
+	readonly projectFile?: { readonly used: string; readonly ignored: string };
 }
 /** `POST /a/:agent/draft` answers like a sync, naming the space the agent is now in. */
 export interface SwitchAnswer extends SyncAnswer {

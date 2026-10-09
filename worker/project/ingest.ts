@@ -3,7 +3,7 @@
 import { type AtomId, canonicalText, type Hunk, type View } from "../../src/engine/index.ts";
 import { checkPath } from "./path-rules.ts";
 import { ProjectError } from "./project-error.ts";
-import { configProblem } from "./project-helpers.ts";
+import { configProblem, PROJECT_FILES } from "./project-helpers.ts";
 import type { AgentState, Entry, IngestAnswer, LandAnswer, Meta, Mode, Modes, PublishAnswer } from "./project-types.ts";
 import type { Space } from "./spaces.ts";
 import { clashInPaths } from "./spelling.ts";
@@ -103,9 +103,11 @@ export function ingest(
 				"conflict",
 				`commit ${c.sha.slice(0, 12)}: ${clash} (#49); rename one with git mv and push again`,
 			);
-		const config = typeof c.files["avcs.json"] === "string" ? configProblem(c.files["avcs.json"]) : undefined;
-		if (config)
-			throw new ProjectError("conflict", `commit ${c.sha.slice(0, 12)}: avcs.json ${config}; fix it and push again`);
+		for (const name of PROJECT_FILES) {
+			const config = typeof c.files[name] === "string" ? configProblem(c.files[name]) : undefined;
+			if (config)
+				throw new ProjectError("conflict", `commit ${c.sha.slice(0, 12)}: ${name} ${config}; fix it and push again`);
+		}
 	}
 	const name = `git-${input.commits[0]!.sha.slice(0, 12)}`;
 	if (host.agents.has(name) || host.spaces.has(name)) {
