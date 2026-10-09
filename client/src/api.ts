@@ -517,6 +517,29 @@ export class Api {
 		return this.url(`/attachments/${id}`, this.issuesServer);
 	}
 
+	/** An attachment's bytes, or with `source` the svg it was drawn from; refused past `max` bytes. */
+	async attachmentBytes(id: string, source: boolean, max: number): Promise<Uint8Array> {
+		if (this.issuesServer === undefined)
+			throw new ApiError(`${this.config.server} has no Issues Worker beside it; ABSO_ISSUES_SERVER names one`);
+		const url = `${this.attachmentUrl(id)}${source ? "/source" : ""}`;
+		let res: Response;
+		try {
+			res = await fetch(url, {
+				headers: this.headers(),
+				signal: AbortSignal.timeout(Math.max(this.timeoutMs, 120_000)),
+			});
+		} catch (err) {
+			const e = err as Error;
+			throw new ApiError(
+				`could not reach ${this.issuesServer}: ${(e.cause as Error | undefined)?.message ?? e.message}`,
+			);
+		}
+		if (!res.ok) throw new ApiError(`${url} answered ${res.status}: ${errorSentence(await res.text())}`, res.status);
+		const bytes = new Uint8Array(await res.arrayBuffer());
+		if (bytes.length > max) throw new ApiError(`${url} sent ${bytes.length} bytes, more than an attachment may be`);
+		return bytes;
+	}
+
 	/** An edit (abso issue 3): it tells the issue's watchers, and `also`, unless `notify` is false. null clears a parent or Agent. */
 	issueEdit(
 		id: number,

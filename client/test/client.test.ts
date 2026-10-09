@@ -1925,16 +1925,22 @@ describe("abso export and status --short (#37, Playtester 1)", () => {
 		const one = await avcs(tester, "export", out, "--version", "1");
 		assert.equal(one.exit, 0, one.out);
 		assert.equal(one.json.version, 1);
-		assert.deepEqual(listAll(out), [".abso-export.json", ".absoignore", "index.html", "src/game.ts", "src/new.ts"]);
+		assert.deepEqual(listAll(out), [".abso-export", ".absoignore", "index.html", "src/game.ts", "src/new.ts"]);
 		assert.equal(read(out, "src/game.ts"), "game v1\n");
 		assert.equal(read(out, "index.html"), "<p>v0</p>\n", "published files, not the unpublished edit");
-		assert.equal(JSON.parse(read(out, ".abso-export.json")).version, 1);
-		// The newest by default; an earlier export's folder is replaced whole.
+		// One line, no extension: the exported project's own formatter has nothing to say about it.
+		const stamp = read(out, ".abso-export");
+		assert.equal(stamp.split("\n").length, 2, stamp);
+		assert.equal(JSON.parse(stamp).version, 1);
+		// The newest by default; an earlier export's folder is replaced whole, one stamped by an older client too.
+		rmSync(join(out, ".abso-export"));
+		write(out, { ".abso-export.json": "{}\n" });
 		const newest = await main(["export", out], { cwd: tester, env: ENV, write: () => {} });
 		assert.match(
 			newest.stdout,
-			/^Exported version 2 of shared to .*build: 4 files\. \.abso-export\.json there names the version/,
+			/^Exported version 2 of shared to .*build: 4 files\. \.abso-export there names the version/,
 		);
+		assert.equal(existsSync(join(out, ".abso-export.json")), false);
 		assert.equal(read(out, "src/game.ts"), "game v2\n");
 		// Exporting again keeps the build's node_modules (abso never exports it) and what --keep names, and nothing else.
 		write(out, {
@@ -2694,6 +2700,9 @@ describe("abso mcp (#44): the commands as MCP tools", () => {
 		assert.match(refused({ folder: "sub", attach: "../../x.png" }), /is outside/);
 		assert.match(refused({ clean: "../clean.json" }), /^--clean \.\.\/clean\.json is outside/);
 		assert.deepEqual(confineCall(start, { clean: "clean.json" }), { folder: start });
+		// A folder a tool writes to is confined the same way.
+		assert.match(refused({ "save-attachments": "../images" }), /^--save-attachments \.\.\/images is outside/);
+		assert.deepEqual(confineCall(start, { "save-attachments": "images" }), { folder: start });
 		assert.deepEqual(confineCall(start, { folder: "sub", attach: "../a.txt" }), { folder: join(start, "sub") });
 		const server = mcp(start);
 		try {

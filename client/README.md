@@ -152,9 +152,10 @@ name (`check-ignore` is `check_ignore`), runs the same code, and answers with th
 same text, so the tools and the command line can't drift apart. `json: true` on
 a call answers with the command's JSON instead. The folder and the token come from
 where the server runs, as for the command line; `folder` on a call points it at
-an abso folder inside that one. A call's `folder`, and the files the `issue`
-tool's `attach` names, must be in the folder the server started in or below it:
-anything outside is refused. Add it to Claude Code with:
+an abso folder inside that one. A call's `folder`, the files the `issue`
+tool's `attach` and `clean` name, and the folder its `save-attachments` writes
+to, must be in the folder the server started in or below it: anything outside is
+refused. Add it to Claude Code with:
 
 ```
 claude mcp add abso -- node <repo>/client/abso.ts mcp

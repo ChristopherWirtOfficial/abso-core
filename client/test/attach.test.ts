@@ -3,7 +3,7 @@
 // here is a stand-in that keeps what it was sent.
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -43,6 +43,20 @@ before(async () => {
 				});
 			if (req.url!.endsWith("/issue")) return json({ id: 7 });
 			if (/\/issue\/\d+\/comment$/.test(req.url!)) return json({ id: 3 });
+			// Issue 8 carries an svg-drawn image on itself and again on a comment, plus one more on the comment.
+			const logo = { id: "a00000000000b", name: "../shot one.png", type: "image/png", size: 13 };
+			if (req.method === "GET" && /\/issue\/8$/.test(req.url!))
+				return json({
+					issue: { id: 8, attachments: [{ ...logo, source: { name: "logo.svg", size: 20 } }] },
+					comments: [{ attachments: [logo, { id: "a00000000000c", name: "after.png", type: "image/png", size: 13 }] }],
+					edits: [],
+					asks: [],
+					claims: [],
+					children: [],
+				});
+			const served = /\/attachments\/(a[0-9a-f]{12})(\/source)?$/.exec(req.url!);
+			if (req.method === "GET" && served)
+				return res.writeHead(200, { "content-type": "image/png" }).end(`${served[1]}${served[2] ?? ""}`);
 			res.writeHead(404).end("{}");
 		});
 	});
@@ -140,6 +154,29 @@ describe("--attach (abso issue 171)", () => {
 		assert.equal(r.exit, 1);
 		assert.match(r.out, /--attach nope.png: no such file/);
 		assert.equal(seen.length, from);
+	});
+
+	it("--save-attachments saves each attachment once, an svg's own file too, outside the folder", async () => {
+		const dir = await folder();
+		const out = mkdtempSync(join(tmpdir(), "abso-saved-"));
+		dirs.push(out);
+		const r = await avcs(dir, ["issue", "8", "--save-attachments", join(out, "images")]);
+		assert.equal(r.exit, 0, r.out);
+		const names = readdirSync(join(out, "images")).sort();
+		assert.deepEqual(names, ["a00000000000b-logo.svg", "a00000000000b-shot_one.png", "a00000000000c-after.png"]);
+		assert.equal(readFileSync(join(out, "images", "a00000000000b-logo.svg"), "utf8"), "a00000000000b/source");
+		assert.equal(readFileSync(join(out, "images", "a00000000000c-after.png"), "utf8"), "a00000000000c");
+		assert.equal((r.json as { files: unknown[] }).files.length, 3);
+		// Into the folder only where abso leaves files out, or they'd be recorded as edits.
+		const inside = await avcs(dir, ["issue", "8", "--save-attachments", "images"]);
+		assert.equal(inside.exit, 1);
+		assert.match(inside.out, /inside this abso folder/);
+		assert.equal((await avcs(dir, ["issue", "8", "--save-attachments", "."])).exit, 1);
+		writeFileSync(join(dir, ".absoignore"), "saved/\n");
+		assert.equal((await avcs(dir, ["issue", "8", "--save-attachments", "saved"])).exit, 0);
+		const mixed = await avcs(dir, ["issue", "8", "--save-attachments", out, "--comment", "x"]);
+		assert.equal(mixed.exit, 1);
+		assert.match(mixed.out, /--save-attachments goes alone/);
 	});
 
 	it("an issue's page lists its attachments and each comment's, with links", () => {

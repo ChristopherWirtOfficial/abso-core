@@ -5,8 +5,8 @@
 // In review, and publish --done closes it. Other agents' and people's words
 // are quoted as JSON, so none can print as another line (#30).
 
-import { readFileSync, statSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import {
 	type Api,
 	ApiError,
@@ -25,13 +25,15 @@ import { type Env, type Output, open, plural } from "./commands.ts";
 import { type Config, readMachineServers, trustedServers } from "./config.ts";
 import { issuesServerFor, tokenGoesTo } from "./core.ts";
 import { fromEnv } from "./env-names.ts";
+import { ignoredHere } from "./fetch.ts";
+import { loadIgnore, relativeTo } from "./folder.ts";
 import { seenText, shortWhen } from "./times.ts";
 
 const q = (s: string): string => JSON.stringify(s);
 
 /** The folder, with its Api pointed at the Issues Worker: the token goes only where tokenGoesTo allows, as for the avcs server. */
-function openIssues(env: Env): { config: Config; api: Api } {
-	const { config, api } = open(env);
+function openIssues(env: Env): { root: string; config: Config; api: Api } {
+	const { root, config, api } = open(env);
 	const server = fromEnv(env.env, "ISSUES_SERVER") || issuesServerFor(config.server, readMachineServers(env.env));
 	if (server === undefined)
 		throw new UsageError(
@@ -43,7 +45,7 @@ function openIssues(env: Env): { config: Config; api: Api } {
 		);
 	}
 	api.issuesServer = server;
-	return { config, api };
+	return { root, config, api };
 }
 
 function issueNumber(word: string | undefined, what = "an issue number"): number {
@@ -170,6 +172,57 @@ function attachmentLines(
 				]
 			: []),
 	]);
+}
+
+/** A saved attachment's file name: its id, then its own name with anything but letters, digits, . - _ made _. */
+export function savedName(id: string, name: string): string {
+	const own = (name.split(/[\\/]/).pop() ?? "")
+		.replace(/[^A-Za-z0-9._-]/g, "_")
+		.replace(/^\.+/, "_")
+		.slice(0, 100);
+	return `${id}-${own || "file"}`;
+}
+
+/**
+ * abso issue N --save-attachments <folder>: every attachment on the issue and
+ * its comments, written to that folder as <id>-<name>; an svg's own file
+ * beside the png drawn from it. Not into the abso folder unless abso leaves
+ * that place out, or the images would be recorded as edits.
+ */
+async function saveAttachments(api: Api, root: string, cwd: string, dir: string, page: IssuePage): Promise<Output> {
+	const target = resolve(cwd, dir);
+	const inside = target === resolve(root) ? "" : relativeTo(root, target);
+	if (inside !== undefined && (inside === "" || !ignoredHere(loadIgnore(root), inside, true)))
+		throw new UsageError(
+			`${dir} is inside this abso folder, so abso would record the images as your edits. Save them outside the folder, or into a folder .absoignore leaves out`,
+		);
+	const seen = new Set<string>();
+	const all = [...(page.issue.attachments ?? []), ...page.comments.flatMap((c) => c.attachments ?? [])].filter(
+		(a) => !seen.has(a.id) && seen.add(a.id),
+	);
+	if (all.length === 0)
+		return {
+			text: `Issue ${page.issue.id} has no attachments.`,
+			json: { issue: page.issue.id, folder: target, files: [] },
+		};
+	mkdirSync(target, { recursive: true });
+	const files: { id: string; path: string; size: number }[] = [];
+	for (const a of all) {
+		const wanted = [{ name: a.name, source: false }, ...(a.source ? [{ name: a.source.name, source: true }] : [])];
+		for (const w of wanted) {
+			const bytes = await api.attachmentBytes(a.id, w.source, ATTACH_MAX);
+			const path = join(target, savedName(a.id, w.name));
+			writeFileSync(path, bytes);
+			files.push({ id: a.id, path, size: bytes.length });
+		}
+	}
+	return {
+		text: [
+			`Saved ${plural(files.length, "file")} from issue ${page.issue.id} to ${target}:`,
+			...files.map((f) => `  ${basename(f.path)}, ${sizeText(f.size)}`),
+		].join("\n"),
+		json: { issue: page.issue.id, folder: target, files },
+	};
 }
 
 /** An issue's page, as text. */
@@ -416,7 +469,15 @@ function readClean(path: string, given: string): Omit<CopyBody, "from" | "issue"
 
 export async function runIssue(args: Parsed, env: Env): Promise<Output> {
 	const [first, ...rest] = args.positionals;
-	const { api } = openIssues(env);
+	const { root, api } = openIssues(env);
+	const saveTo = str(args, "save-attachments");
+	if (saveTo !== undefined) {
+		const other = [...args.flags.keys()].filter((f) => f !== "save-attachments" && f !== "json");
+		if (other.length > 0 || first === "new" || first === "draft")
+			throw new UsageError(
+				`--save-attachments goes alone with an issue number: abso issue <N> --save-attachments <folder>${other.length > 0 ? `, not with --${other[0]}` : ""}`,
+			);
+	}
 	if (first === "draft") return runDraft(api, args, rest);
 	if (first === "new") {
 		if (rest.length === 0)
@@ -522,6 +583,7 @@ export async function runIssue(args: Parsed, env: Env): Promise<Output> {
 		};
 	}
 	const page = await api.issue(id);
+	if (saveTo !== undefined) return saveAttachments(api, root, env.cwd, saveTo, page);
 	return { text: issuePage(page, api).join("\n"), json: { ...page } };
 }
 

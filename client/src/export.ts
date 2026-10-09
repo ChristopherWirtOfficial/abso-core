@@ -1,8 +1,10 @@
 // abso export <dir> [--version N]: one published version of this folder's
 // space, written to a folder of its own, for a build that doesn't move while
-// shared does (#37, Playtester 1). The folder gets .abso-export.json (.avcs-export.json before the rename) naming
-// the version, to stamp the build with. Exporting again replaces the folder,
-// keeping node_modules (and what --keep names) so a build needs no new install.
+// shared does (#37, Playtester 1). The folder gets .abso-export naming the
+// version, to stamp the build with: JSON on one line, in a file with no
+// extension, so the exported project's own formatter and linter pass it by.
+// Exporting again replaces the folder, keeping node_modules (and what --keep
+// names) so a build needs no new install.
 //
 // The version is rebuilt as `abso run --at` rebuilds it (at.ts), from the
 // known copies and one compare; the server's listing of that version (#37,
@@ -19,9 +21,9 @@ import { loadIgnore, relativeTo } from "./folder.ts";
 import { type Refused, unsafePath } from "./safety.ts";
 
 /** The file an export leaves in its folder: what it holds, and the sign that the folder is one export may replace. */
-export const EXPORT_STAMP = ".abso-export.json";
-/** The name before the rename: an export made then still counts as one. */
-const OLD_EXPORT_STAMP = ".avcs-export.json";
+export const EXPORT_STAMP = ".abso-export";
+/** Its earlier names: an export made then still counts as one. A .json name drew the project's formatter. */
+const OLD_EXPORT_STAMPS = [".abso-export.json", ".avcs-export.json"];
 
 /** Where an export may go: outside the abso folder, or in a part of it abso leaves out. Empty, or an earlier export. */
 function checkTarget(root: string, target: string): void {
@@ -38,8 +40,7 @@ function checkTarget(root: string, target: string): void {
 	if (!statSync(target).isDirectory()) throw new UsageError(`${target} is a file; export to a folder`);
 	if (
 		readdirSync(target).length > 0 &&
-		!existsSync(join(target, EXPORT_STAMP)) &&
-		!existsSync(join(target, OLD_EXPORT_STAMP))
+		![EXPORT_STAMP, ...OLD_EXPORT_STAMPS].some((n) => existsSync(join(target, n)))
 	) {
 		throw new UsageError(
 			`${target} has files in it; export to an empty folder (an export replaces only a folder an earlier export made)`,
@@ -137,7 +138,7 @@ export async function runExport(args: Parsed, env: Env): Promise<Output> {
 		files: written,
 		exportedAt: new Date().toISOString(),
 	};
-	writeFileSync(join(target, EXPORT_STAMP), `${JSON.stringify(stamp, null, 2)}\n`);
+	writeFileSync(join(target, EXPORT_STAMP), `${JSON.stringify(stamp)}\n`);
 	return {
 		text: [
 			`Exported version ${version} of ${space} to ${target}: ${plural(written, "file")}. ${EXPORT_STAMP} there names the version; abso export to the same folder replaces it.`,

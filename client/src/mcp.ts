@@ -120,8 +120,8 @@ function inside(start: string, path: string): boolean {
 	return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
-/** The tool inputs that name files on this machine to read, comma-separated: each is confined like the folder. */
-export const FILE_INPUTS = ["attach", "clean"] as const;
+/** The tool inputs that name files or folders on this machine to read or write, comma-separated: each is confined like the folder. */
+export const FILE_INPUTS = ["attach", "clean", "save-attachments"] as const;
 
 /**
  * Where a tool call runs, and what it may read: its folder and
@@ -149,7 +149,7 @@ export function confineCall(
 			.filter((x) => x !== ""))
 			if (!inside(start, resolve(folder, p)))
 				return {
-					refused: `--${flag} ${p} is outside ${start}, the folder this server started in; a tool reads files from there or below`,
+					refused: `--${flag} ${p} is outside ${start}, the folder this server started in; a tool reads and writes files only there or below`,
 				};
 	}
 	return { folder };
