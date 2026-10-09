@@ -120,6 +120,21 @@ export function leftOutText(leftOut: readonly LeftOut[]): string[] {
 	];
 }
 
+/**
+ * A command that left files out for size did not do everything it was asked: say so in the exit code too, so
+ * a script, CI or an agent cannot read "ok" while a file is missing. Other exits (refused, queued) stay as they are.
+ */
+export function withLeftOut(out: Output, leftOut: readonly LeftOut[]): Output {
+	if (leftOut.length === 0) return out;
+	const text = out.text.includes("Left out,") ? out.text : [out.text, ...leftOutText(leftOut)].join("\n");
+	return {
+		...out,
+		text: `${text}\nExit ${EXIT.error}: ${leftOut.length} file${leftOut.length === 1 ? " was" : "s were"} not sent.`,
+		json: { ...out.json, leftOut },
+		exit: out.exit === undefined || out.exit === EXIT.ok ? EXIT.error : out.exit,
+	};
+}
+
 /** Upload binary files' bytes before the record or init that names them, each hash once. */
 export async function uploadBlobs(api: Api, blobs: ReadonlyMap<string, BlobToSend>): Promise<void> {
 	const seen = new Set<string>();
@@ -290,16 +305,19 @@ export async function runRecord(args: Parsed, env: Env): Promise<Output> {
 		r.sent === 0
 			? "Nothing to record: the folder matches what the server has."
 			: `Recorded ${recordedList(r)}${changed === undefined ? "" : `; ${changed} changed on the server`}.`;
-	return {
-		text: [...turnedBinaryText(r.turnedBinary), text, ...leftOutText(r.leftOut)].join("\n"),
-		json: {
-			sent: r.sent,
-			changed: r.changed ?? null,
-			news: newsLines(r.news),
-			leftOut: r.leftOut,
-			turnedBinary: r.turnedBinary,
+	return withLeftOut(
+		{
+			text: [...turnedBinaryText(r.turnedBinary), text, ...leftOutText(r.leftOut)].join("\n"),
+			json: {
+				sent: r.sent,
+				changed: r.changed ?? null,
+				news: newsLines(r.news),
+				leftOut: r.leftOut,
+				turnedBinary: r.turnedBinary,
+			},
 		},
-	};
+		r.leftOut,
+	);
 }
 
 // --- writing answers into the folder ---

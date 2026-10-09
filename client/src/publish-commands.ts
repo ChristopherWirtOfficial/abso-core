@@ -18,10 +18,11 @@ import {
 	syncFolder,
 	turnedBinaryText,
 	unwrittenText,
+	withLeftOut,
 } from "./commands.ts";
 import { type Config, isReader } from "./config.ts";
 import { ignoredHere } from "./fetch.ts";
-import { absolute, forgetKnown, isLocalOnly, loadIgnore, readText, writeFileAtomic } from "./folder.ts";
+import { absolute, forgetKnown, isLocalOnly, type LeftOut, loadIgnore, readText, writeFileAtomic } from "./folder.ts";
 import { PROJECT_FILE, readProjectFile } from "./project-file.ts";
 import { pulledText, STILL_QUEUED, standing, WAIT_SECONDS, waitForQueued } from "./queue.ts";
 import { type Refused, refusedText, unsafePath } from "./safety.ts";
@@ -186,15 +187,17 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 		say("avcs: the check passed; publishing.\n");
 	}
 	const checked = check !== undefined;
-	const steps = publishSteps(args, env, root, config, api, message, checked, waitSeconds, skippedCheck);
+	const leftOut: LeftOut[] = [];
+	const steps = publishSteps(args, env, root, config, api, message, checked, waitSeconds, skippedCheck, leftOut);
 	// Say how far it got when the server can't be reached (#37, GAME - UI/UX: did the check run? did the draft go up?).
-	const out = await unreached(
+	const reached = await unreached(
 		steps,
 		checked
 			? "The check passed, but the publish never reached the server: nothing was published."
 			: "Nothing was published.",
 		`${checked ? "The check passed; " : ""}the publish may have reached the server before its answer was lost: abso status shows whether your draft was published.`,
 	);
+	const out = withLeftOut(reached, leftOut);
 	// --done: this publish finishes the work the start note named (#44): take the note back once it's published or queued.
 	const went =
 		(out.json as { version?: unknown; queued?: unknown }).version !== undefined ||
@@ -282,8 +285,10 @@ async function publishSteps(
 	checked: boolean,
 	waitSeconds: number,
 	skippedCheck: boolean,
+	leftOut: LeftOut[],
 ): Promise<Output> {
 	const recorded = await recordFolder(root, api, false, meantBinary(args));
+	leftOut.push(...recorded.leftOut);
 	const pre = [...recordedFirst(recorded), ...droppedIgnoredText(await dropIgnoredFromDraft(root, api))];
 	if (recorded.turnedBinary.length > 0) {
 		// Publishing now would leave the others on the file's old text without anyone noticing (#25).

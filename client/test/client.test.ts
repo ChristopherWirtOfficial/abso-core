@@ -232,7 +232,12 @@ describe("init and join", () => {
 		assert.deepEqual(init.json.leftOut, [{ path: "huge.bin", reason: "too big" }]);
 		const hosted = fake.projects.get("blobs")!;
 		assert.deepEqual(Object.keys(hosted.project.blobs()).sort(), ["big.txt", "pic.bin"]);
-		assert.equal((await avcs(dir, "record")).json.sent, 0, "the known blobs match");
+		const again = await avcs(dir, "record");
+		assert.equal(again.json.sent, 0, "the known blobs match");
+		assert.equal(again.exit, 1, "a file left out for size is not a success");
+		const saidSo = await main(["record"], { cwd: dir, env: ENV, write: () => {} });
+		assert.match(saidSo.stdout, /Left out, over the server's 20 MB limit.*huge\.bin/);
+		assert.match(saidSo.stdout, /Exit 1: 1 file was not sent\./);
 
 		// Another agent gets the bytes.
 		const bob = temp();
@@ -251,7 +256,12 @@ describe("init and join", () => {
 			refused.stdout,
 			/NOT SENT: b\.txt was text and now has a NUL byte at line 1 \(byte 0\)\..*pass --binary b\.txt\.\nNot published\./,
 		);
-		assert.equal((await avcs(dir, "publish", "-m", "new picture, b is binary now", "--binary", "b.txt")).exit, 0);
+		// The publish goes through, and still says the huge file was left out, with a non-zero exit.
+		const published = await avcs(dir, "publish", "-m", "new picture, b is binary now", "--binary", "b.txt");
+		assert.equal(published.exit, 1, published.out);
+		assert.ok(published.json.version !== undefined, "the rest was published");
+		assert.deepEqual(published.json.leftOut, [{ path: "huge.bin", reason: "too big" }]);
+		rmSync(join(dir, "huge.bin")); // the rest of the test is about the files that do go
 		assert.equal("b.txt" in shared("blobs"), false);
 		assert.ok("b.txt" in hosted.project.blobs());
 		assert.equal((await avcs(bob, "sync")).exit, 0);
