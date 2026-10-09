@@ -1,0 +1,247 @@
+// Signing in once per box (abso issue 108). `abso login` asks the server for a
+// code, a person approves it on the website, and the box gets a credential
+// with a grant: projects, a role cap, an agent limit and an expiry. Agents on
+// the box then mint their own keys from it at `abso join`.
+//
+// The box credential lives in the user's config folder, one file per server,
+// never in a project folder. It is never printed, never an argument, and only
+// ever sent to the server that issued it, on /box/ routes.
+
+import { createHash } from "node:crypto";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, hostname } from "node:os";
+import { join } from "node:path";
+import { UsageError } from "./args.ts";
+
+/** What the person who approved the code allowed: each project with the highest role its agents get there, and how many agents. */
+export interface Grant {
+	readonly projects: readonly { readonly project: string; readonly role: string }[];
+	readonly max_agents: number;
+}
+
+export interface BoxRecord {
+	readonly server: string;
+	readonly id: string;
+	readonly credential: string;
+	readonly grant: Grant;
+	readonly expiresAt: number;
+}
+
+export function originOf(server: string): string {
+	try {
+		return new URL(server).origin;
+	} catch {
+		return server;
+	}
+}
+
+function boxPath(server: string, home: string): string {
+	const name = createHash("sha256").update(originOf(server)).digest("hex").slice(0, 16);
+	return join(home, ".avcs", "boxes", `${name}.json`);
+}
+
+export function readBox(server: string, home = homedir()): BoxRecord | undefined {
+	try {
+		const raw = JSON.parse(readFileSync(boxPath(server, home), "utf8")) as Partial<BoxRecord>;
+		if (
+			typeof raw.server !== "string" ||
+			originOf(raw.server) !== originOf(server) ||
+			typeof raw.credential !== "string" ||
+			typeof raw.id !== "string" ||
+			typeof raw.expiresAt !== "number" ||
+			!isGrant(raw.grant)
+		)
+			return undefined;
+		return raw as BoxRecord;
+	} catch {
+		return undefined;
+	}
+}
+
+export function writeBox(record: BoxRecord, home = homedir()): void {
+	const path = boxPath(record.server, home);
+	mkdirSync(join(home, ".avcs", "boxes"), { recursive: true });
+	writeFileSync(path, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+	try {
+		chmodSync(path, 0o600);
+	} catch {
+		// Windows has no owner-only mode; the file is still outside every project folder.
+	}
+}
+
+export function forgetBox(server: string, home = homedir()): boolean {
+	const path = boxPath(server, home);
+	try {
+		readFileSync(path);
+	} catch {
+		return false;
+	}
+	rmSync(path, { force: true });
+	return true;
+}
+
+/** Error text with the credential (and anything shaped like a key) taken out. */
+function scrub(text: string, secrets: readonly string[]): string {
+	let out = text.replace(/abso_(sk|bx)_[A-Za-z0-9_-]+/g, "[redacted]");
+	for (const s of secrets) if (s.length > 0) out = out.split(s).join("[redacted]");
+	return out;
+}
+
+interface Answer {
+	readonly status: number;
+	readonly body: Record<string, unknown>;
+}
+
+async function call(
+	server: string,
+	path: string,
+	body: unknown,
+	credential: string | undefined,
+	fetcher: typeof fetch,
+): Promise<Answer> {
+	const secrets = credential ? [credential] : [];
+	let response: Response;
+	try {
+		response = await fetcher(`${originOf(server)}${path}`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				...(credential ? { authorization: `Box ${credential}` } : {}),
+			},
+			body: JSON.stringify(body),
+			signal: AbortSignal.timeout(30_000),
+		});
+	} catch (err) {
+		throw new UsageError(
+			`couldn't reach ${originOf(server)}: ${scrub(err instanceof Error ? err.message : String(err), secrets)}`,
+		);
+	}
+	const text = await response.text();
+	let parsed: Record<string, unknown> = {};
+	try {
+		parsed = JSON.parse(text) as Record<string, unknown>;
+	} catch {
+		if (response.ok) throw new UsageError(`${originOf(server)}${path} didn't answer JSON`);
+	}
+	if (!response.ok && !(response.status === 400 && path === "/login/token")) {
+		const said = typeof parsed.error === "string" ? parsed.error : text.slice(0, 300);
+		throw new UsageError(scrub(`${originOf(server)} refused (${response.status}): ${said}`, secrets));
+	}
+	return { status: response.status, body: parsed };
+}
+
+/** This machine's name, as the server takes a box's name: 1-64 letters, digits, '.', '_' or '-'. */
+function boxName(): string {
+	const name = hostname()
+		.replace(/[^A-Za-z0-9._-]/g, "-")
+		.replace(/^[^A-Za-z0-9]+/, "")
+		.slice(0, 64);
+	return name || "box";
+}
+
+function isGrant(g: unknown): g is Grant {
+	const x = g as Partial<Grant> | null;
+	return (
+		typeof x === "object" &&
+		x !== null &&
+		Array.isArray(x.projects) &&
+		x.projects.every((p) => typeof p?.project === "string" && typeof p.role === "string") &&
+		typeof x.max_agents === "number"
+	);
+}
+
+export interface LoginIo {
+	readonly fetch?: typeof fetch;
+	readonly sleep?: (ms: number) => Promise<void>;
+	readonly now?: () => number;
+	/** Where the code and link go while login waits: stderr, so stdout stays quiet. */
+	readonly say: (line: string) => void;
+}
+
+/**
+ * Asks `server` for a code, shows it with its link, and waits for a person to
+ * approve it. Answers the box's record, already written to the config folder.
+ */
+export async function login(server: string, io: LoginIo, home = homedir()): Promise<BoxRecord> {
+	const fetcher = io.fetch ?? fetch;
+	const sleep = io.sleep ?? ((ms) => new Promise((done) => setTimeout(done, ms)));
+	const now = io.now ?? Date.now;
+	const start = await call(server, "/login/device", { name: boxName(), client: "abso" }, undefined, fetcher);
+	const { device_code: device, user_code: code, verification_uri_complete: link } = start.body;
+	let interval = Number(start.body.interval) || 5;
+	const expiresIn = Number(start.body.expires_in) || 900;
+	if (typeof code !== "string" || typeof link !== "string" || typeof device !== "string")
+		throw new UsageError(`${originOf(server)} didn't give a code to approve`);
+	io.say(`To sign this box in, open ${link} and approve the code ${code}.`);
+	const until = now() + expiresIn * 1000;
+	while (now() < until) {
+		await sleep(interval * 1000);
+		const a = await call(server, "/login/token", { device_code: device }, undefined, fetcher);
+		if (a.status === 400) {
+			if (a.body.error === "authorization_pending") continue;
+			if (a.body.error === "slow_down") {
+				interval += 5;
+				continue;
+			}
+			if (a.body.error === "access_denied") throw new UsageError(`the code ${code} was turned down.`);
+			throw new UsageError(`the code ${code} ran out. Run abso login again.`);
+		}
+		const { box_token: credential, box_id: id, grant, expires_at } = a.body;
+		const expiresAt = typeof expires_at === "string" ? Date.parse(expires_at) : Number.NaN;
+		if (typeof credential !== "string" || typeof id !== "string" || !isGrant(grant) || Number.isNaN(expiresAt))
+			throw new UsageError(`${originOf(server)} approved the code but sent no credential`);
+		const record: BoxRecord = { server: originOf(server), id, credential, grant, expiresAt };
+		writeBox(record, home);
+		return record;
+	}
+	throw new UsageError(`nobody approved the code ${code} in time. Run abso login again.`);
+}
+
+/** An agent's own key, minted from the box's credential: `{key, id}`, as `abso key install` takes it. */
+export async function mintKey(
+	record: BoxRecord,
+	project: string,
+	agent: string,
+	fetcher: typeof fetch = fetch,
+): Promise<{ key: string; id: string }> {
+	const a = await call(record.server, "/box/agent-key", { project, agent }, record.credential, fetcher);
+	const { key, id } = a.body;
+	if (typeof key !== "string" || typeof id !== "string")
+		throw new UsageError(`${record.server} didn't send a key for ${agent}`);
+	return { key, id };
+}
+
+/** Ends the box on the server, then forgets it here. Forgets it even when the server can't be reached. */
+export async function logout(record: BoxRecord, fetcher: typeof fetch = fetch, home = homedir()): Promise<boolean> {
+	let ended = true;
+	try {
+		await call(record.server, "/box/logout", {}, record.credential, fetcher);
+	} catch {
+		ended = false;
+	}
+	forgetBox(record.server, home);
+	return ended;
+}
+
+const day = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace("T", " ");
+
+/** What `abso box` prints: the grant, never the credential. */
+export function boxText(record: BoxRecord | undefined, server: string, now = Date.now()): string {
+	if (!record) return `This box isn't signed in to ${originOf(server)}. abso login signs it in.`;
+	const g = record.grant;
+	const expired = record.expiresAt <= now;
+	return [
+		`Signed in to ${record.server} as box ${record.id}${expired ? ", but the sign-in has expired. abso login renews it." : "."}`,
+		`Projects: ${g.projects.map((p) => `${p.project} (${p.role})`).join(", ")}. Up to ${g.max_agents} agents.`,
+		`${expired ? "Expired" : "Expires"} ${day(record.expiresAt)} UTC.`,
+	].join("\n");
+}
+
+/** What `abso box --json` answers: the record without its credential. */
+export function boxPublic(
+	record: BoxRecord | undefined,
+): { server: string; id: string; grant: Grant; expiresAt: string } | null {
+	return record
+		? { server: record.server, id: record.id, grant: record.grant, expiresAt: new Date(record.expiresAt).toISOString() }
+		: null;
+}

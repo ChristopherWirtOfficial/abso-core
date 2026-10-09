@@ -1,0 +1,28 @@
+# Files avcs leaves out, on top of .gitignore (#56). Same rules as .gitignore;
+# this file wins over .gitignore in the same folder. `avcs check-ignore <path>`
+# says which line decided. .git, .avcs, .claude and node_modules are always
+# left out.
+
+# Each session's own Claude Code state
+.claude/
+
+# Local config and secrets
+.env
+.env.*
+.dev.vars*
+*.local
+
+# Build output, and types wrangler writes
+dist/
+.wrangler/
+worker-configuration.d.ts
+
+# Trial runs and logs
+trial/runs/
+*.log
+
+# Operating system files
+.DS_Store
+._*
+Thumbs.db
+desktop.ini

@@ -1,0 +1,47 @@
+// Refuse work whose paths would clash in shared. Reads go through
+// CheckClashHost; today the host is Project.
+
+import type { AtomId, View } from "../../src/engine/index.ts";
+import { ProjectError } from "./project-error.ts";
+import { configProblem } from "./project-helpers.ts";
+import type { Space } from "./spaces.ts";
+import { clashIn } from "./spelling.ts";
+
+/** What the spelling clash check needs from a project. */
+export interface CheckClashHost {
+	shared(): Space;
+	view(set: ReadonlySet<AtomId>): View;
+	sharedView(): View;
+	touchedFiles(ids: Iterable<AtomId>, views: readonly View[]): Set<string>;
+}
+
+/**
+ * Refuse work whose paths would clash in shared (#49), before anything of it
+ * is written.
+ */
+export function checkClash(
+	host: CheckClashHost,
+	changes: readonly AtomId[],
+	ahead: ReadonlySet<AtomId> = new Set(),
+): void {
+	if (changes.length === 0) return;
+	let view: View;
+	let now: View;
+	try {
+		// Publishes queued ahead (#39) land first, so they count as shared (Git Lessons' review).
+		view = host.view(new Set([...host.shared().own, ...ahead, ...changes]));
+		now = ahead.size === 0 ? host.sharedView() : host.view(new Set([...host.shared().own, ...ahead]));
+	} catch (e) {
+		if ((e as { code?: string }).code === "not-closed") return; // stranded by a drop: the publish says so itself
+		throw e;
+	}
+	const touched = host.touchedFiles(changes, [view]);
+	const why = clashIn(view, touched, now);
+	if (why) throw new ProjectError("conflict", why);
+	// A broken avcs.json would quietly switch off files kept whole, the queue and reviewers (Git Lessons' review, batch 4).
+	if (touched.has("avcs.json") && view.hasFile("avcs.json")) {
+		const bad = configProblem(view.text("avcs.json"));
+		if (bad)
+			throw new ProjectError("conflict", `avcs.json ${bad}. Shared keeps the one it has; fix yours and publish again.`);
+	}
+}

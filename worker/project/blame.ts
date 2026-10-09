@@ -1,0 +1,236 @@
+// Blame and why for shared, read from the engine's graph (slice 2 of #18).
+// A line's id names the atom that inserted it, so blame is a lookup per line:
+// that change's author and message, and the publish that brought it into
+// shared, with its message. Why adds the change's reasons, what it settled,
+// and the reasons other changes give that point at it.
+import type { AtomId } from "../../src/engine/index.ts";
+import { pathKey } from "./pathkey.ts";
+import type { Project } from "./project.ts";
+
+export interface BlameLine {
+	n: number;
+	text: string;
+	atom: AtomId;
+	author: string;
+	/** The shared version that brought it in; null while it's only in a draft. */
+	version: number | null;
+	/** Not published anywhere yet: the agent's own unpublished change. */
+	unpublished?: true;
+}
+
+interface Publish {
+	/** null for shared, else the named draft it was published into. */
+	draft: string | null;
+	version: number;
+	agent: string;
+	message: string;
+	time: number;
+}
+
+/** Whose view: shared (the default, at `version`), a named draft (at `version`), or an agent's view now. */
+export interface BlameWhere {
+	version?: number;
+	draft?: string;
+	agent?: string;
+}
+
+function publishOf(project: Project, atom: AtomId): Publish | null {
+	return project.publishOf(atom) ?? null;
+}
+
+const badRequest = (message: string) => Object.assign(new Error(message), { code: "bad-request" });
+
+function viewOf(project: Project, where: BlameWhere) {
+	let view;
+	let name: string;
+	if (where.agent !== undefined) {
+		if (where.version !== undefined || where.draft !== undefined)
+			throw badRequest("an agent's view is its current one: give agent alone");
+		const draft = project.draftOf(where.agent);
+		if (!draft) throw badRequest(`there is no agent ${JSON.stringify(where.agent)}`);
+		view = draft.view;
+		name = `${where.agent}'s view`;
+	} else if (where.draft !== undefined) {
+		const version = where.version ?? project.lastVersion(where.draft);
+		view = project.viewAt(version, { draft: where.draft });
+		name = `draft ${where.draft} at version ${version}`;
+	} else {
+		view = where.version === undefined ? project.sharedView() : project.viewAt(where.version);
+		name = where.version === undefined ? "shared" : `shared at version ${where.version}`;
+	}
+	return { view, name };
+}
+
+/** A file's lines, by any spelling (#41, F7), and the stored spelling. */
+function lines(project: Project, asked: string, where: BlameWhere) {
+	const { view, name } = viewOf(project, where);
+	const file = project.spellingIn(view, asked);
+	if (!view.hasFile(file)) throw badRequest(`${asked} isn't in ${name}`);
+	return { file, all: view.lines(file) };
+}
+
+/**
+ * Every line of a file (or lines from..to), with who wrote it and the
+ * publishes behind them: in shared, a named draft, or an agent's view with
+ * its unpublished changes.
+ */
+export function blame(
+	project: Project,
+	asked: string,
+	from?: number,
+	to?: number,
+	version?: number,
+	where: Omit<BlameWhere, "version"> = {},
+) {
+	const { file, all } = lines(project, asked, { version, ...where });
+	const first = Math.max(1, from ?? 1);
+	const last = Math.min(all.length, to ?? all.length);
+	const graph = project.graph;
+	const rows: BlameLine[] = all.slice(first - 1, last).map((l, i) => ({
+		n: first + i,
+		text: l.text,
+		atom: l.atom,
+		author: graph.atom(l.atom).author,
+		version: project.versionOf(l.atom) ?? null,
+		...(project.publishOf(l.atom) === undefined ? { unpublished: true as const } : {}),
+	}));
+	const atoms = [...new Set(rows.map((r) => r.atom))]
+		.sort((a, b) => graph.atom(a).seq - graph.atom(b).seq)
+		.map((id) => {
+			const a = graph.atom(id);
+			return { atom: id, author: a.author, message: a.message, time: a.time, publish: publishOf(project, id) };
+		});
+	return {
+		file,
+		version: where.agent !== undefined ? null : (version ?? project.lastVersion(where.draft ?? null)),
+		...(where.draft !== undefined ? { draft: where.draft } : {}),
+		...(where.agent !== undefined ? { agent: where.agent } : {}),
+		total: all.length,
+		from: first,
+		to: last,
+		lines: rows,
+		atoms,
+	};
+}
+
+/** One line: the change that wrote it, the publish behind it, its reasons, and what it settled. */
+export function why(project: Project, asked: string, n: number, where: BlameWhere = {}) {
+	const { file, all } = lines(project, asked, where);
+	const line = all[n - 1];
+	if (!line)
+		throw Object.assign(new Error(`${file} has ${all.length} lines; ask for one in 1-${all.length}`), {
+			code: "bad-request",
+		});
+	const graph = project.graph;
+	const atom = graph.atom(line.atom);
+	const publish = publishOf(project, atom.id);
+	const reasons = atom.reasons.map((r) => ({
+		kind: r.kind,
+		text: r.text,
+		to: r.to,
+		toAuthor: graph.atom(r.to).author,
+		toMessage: graph.atom(r.to).message,
+	}));
+	const reasonsIn: { from: AtomId; kind: string; text: string; fromAuthor: string; fromMessage: string }[] = [];
+	for (const other of graph.atoms()) {
+		for (const r of other.reasons) {
+			if (r.to === atom.id)
+				reasonsIn.push({
+					from: other.id,
+					kind: r.kind,
+					text: r.text,
+					fromAuthor: other.author,
+					fromMessage: other.message,
+				});
+		}
+	}
+	// What it built on (#41, FE Lead, the line's story): the versions that brought in the changes it
+	// depends on (its needs, and the changes whose lines it edited beside), nearest first, once each.
+	const builtOn: { version: number; agent: string; message: string; draft?: string }[] = [];
+	const own = publish ? `${publish.draft ?? ""} ${publish.version}` : undefined;
+	const seen = new Set<string>(own ? [own] : []);
+	for (const id of atom.deps) {
+		const p = publishOf(project, id);
+		if (!p || seen.has(`${p.draft ?? ""} ${p.version}`)) continue;
+		seen.add(`${p.draft ?? ""} ${p.version}`);
+		builtOn.push({
+			version: p.version,
+			agent: p.agent,
+			message: p.message,
+			...(p.draft !== null ? { draft: p.draft } : {}),
+		});
+	}
+	builtOn.sort((a, b) =>
+		(a.draft === undefined) !== (b.draft === undefined) ? (a.draft === undefined ? -1 : 1) : b.version - a.version,
+	);
+	const settled = atom.resolves.map((id) => {
+		const a = graph.atom(id);
+		return { atom: id, author: a.author, message: a.message, publish: publishOf(project, id) };
+	});
+	return {
+		file,
+		line: n,
+		text: line.text,
+		id: line.id,
+		change: {
+			atom: atom.id,
+			author: atom.author,
+			message: atom.message,
+			time: atom.time,
+			needs: atom.needs,
+			deps: atom.deps,
+		},
+		publish,
+		reasons,
+		reasonsIn,
+		settled,
+		builtOn,
+	};
+}
+
+/**
+ * Who wrote a folder (#41, F33): every line of every file under it (the
+ * whole project for ""), counted by the agent that wrote it, most first.
+ * Binary files and files kept whole have no lines, so they count as files
+ * only. The folder is matched by any spelling.
+ */
+export function folderBlame(
+	project: Project,
+	folder: string,
+	version?: number,
+	where: Omit<BlameWhere, "version"> = {},
+) {
+	const { view, name } = viewOf(project, { version, ...where });
+	const want = folder.split("/").filter((s) => s !== "" && s !== ".");
+	const key = pathKey(want.join("/"));
+	const graph = project.graph;
+	const counts = new Map<string, number>();
+	let files = 0;
+	let total = 0;
+	let stored: string | undefined;
+	for (const path of view.paths()) {
+		const parts = path.split("/");
+		if (want.length > 0 && (parts.length <= want.length || pathKey(parts.slice(0, want.length).join("/")) !== key))
+			continue;
+		stored ??= parts.slice(0, want.length).join("/");
+		files++;
+		for (const l of view.lines(path)) {
+			const author = graph.atom(l.atom).author;
+			counts.set(author, (counts.get(author) ?? 0) + 1);
+			total++;
+		}
+	}
+	if (want.length > 0 && stored === undefined)
+		throw Object.assign(new Error(`there is no folder ${want.join("/")} in ${name}`), { code: "not-found" });
+	return {
+		folder: stored ?? "",
+		version: where.agent !== undefined ? null : (version ?? project.lastVersion(where.draft ?? null)),
+		...(where.draft !== undefined ? { draft: where.draft } : {}),
+		...(where.agent !== undefined ? { agent: where.agent } : {}),
+		files,
+		lines: total,
+		authors: [...counts]
+			.map(([agent, lines]) => ({ agent, lines }))
+			.sort((a, b) => b.lines - a.lines || (a.agent < b.agent ? -1 : 1)),
+	};
+}

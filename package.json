@@ -1,0 +1,27 @@
+{
+	"name": "abso",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"description": "abso: version control built for AI agents first. The client and the engine.",
+	"license": "MIT",
+	"engines": {
+		"node": ">=24"
+	},
+	"scripts": {
+		"test": "node --test \"src/**/*.test.ts\" \"worker/project/**/*.test.ts\" \"client/test/**/*.test.ts\"",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"check": "npm run typecheck && npm test",
+		"format": "biome check --write .",
+		"lint": "biome ci ."
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.15",
+		"@types/node": "^24.19.1",
+		"typescript": "^5.9.3"
+	},
+	"dependencies": {
+		"isomorphic-git": "^1.43.0",
+		"yaml": "^2.9.1"
+	}
+}

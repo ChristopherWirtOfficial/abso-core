@@ -1,0 +1,64 @@
+{
+	"$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+	"files": {
+		"includes": [
+			"client/**",
+			"src/**",
+			"worker/project/**",
+			"*.json",
+			"!**/node_modules",
+			"!**/.avcs",
+			"!**/dist",
+			"!**/.wrangler",
+			"!**/worker-configuration.d.ts",
+			"!**/package-lock.json"
+		]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"lineWidth": 120
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double"
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true,
+			"style": {
+				"noNonNullAssertion": "off"
+			},
+			"suspicious": {
+				"noAssignInExpressions": "off",
+				"noControlCharactersInRegex": "off",
+				"useIterableCallbackReturn": "off",
+				"noImplicitAnyLet": "off",
+				"noShadowRestrictedNames": "off"
+			},
+			"complexity": {
+				"noCommaOperator": "off"
+			},
+			"correctness": {
+				"noVoidTypeReturn": "off"
+			}
+		}
+	},
+	"assist": {
+		"enabled": true
+	},
+	"overrides": [
+		{
+			"includes": ["**/test/**", "**/*.test.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off"
+					}
+				}
+			}
+		}
+	]
+}
