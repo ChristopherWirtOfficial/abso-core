@@ -313,9 +313,13 @@ describe("installing a mod", () => {
 			spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-C", spec.from, ...args], {
 				encoding: "utf8",
 			}).stdout.trim();
-		// Every mod file a minute old, so a kept answer can be trusted.
+		// Every mod file minutes old, so a kept answer can be trusted. Each call sets a whole minute earlier
+		// than the last: git's own index compares times by the second, and a same-size edit given the time
+		// git last saw would look unchanged to git itself.
+		let minutes = 0;
 		const age = () => {
-			const old = new Date(Date.now() - 60_000);
+			minutes += 1;
+			const old = new Date(Date.now() - minutes * 60_000);
 			for (const rel of FILES) utimesSync(at(spec.from, rel), old, old);
 		};
 		// Swaps every kept answer for a made-up one: what comes back says whether git ran.
