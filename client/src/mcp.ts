@@ -121,7 +121,7 @@ function inside(start: string, path: string): boolean {
 }
 
 /**
- * Where a tool call runs, and what it may read (Security on 233): its folder and
+ * Where a tool call runs, and what it may read: its folder and
  * every --attach file stay inside the folder the server started in. A relative
  * path that climbs out (..), an absolute one elsewhere, or a link out is
  * refused, so no tool reads a file outside the project. Answers the folder, or

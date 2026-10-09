@@ -148,7 +148,9 @@ name (`check-ignore` is `check_ignore`), runs the same code, and answers with th
 same text, so the tools and the command line can't drift apart. `json: true` on
 a call answers with the command's JSON instead. The folder and the token come from
 where the server runs, as for the command line; `folder` on a call points it at
-another abso folder. Add it to Claude Code with:
+an abso folder inside that one. A call's `folder`, and the files the `issue`
+tool's `attach` names, must be in the folder the server started in or below it:
+anything outside is refused. Add it to Claude Code with:
 
 ```
 claude mcp add abso -- node <repo>/client/abso.ts mcp
@@ -157,6 +159,15 @@ claude mcp add abso -- node <repo>/client/abso.ts mcp
 The box commands (`run`, `shot`, `bisect`, `prep`, `logs`, `fetch`) stream for
 minutes and stay in the shell, as do `init` and `join`, and the commands that
 rewrite history or move between drafts.
+
+## The skill
+
+`abso skill install` writes the abso skill for Claude Code to
+`~/.claude/skills/abso/SKILL.md` (`--dir` names another skills folder). The skill
+says how to work in an abso folder and what never to share. It's instructions
+only: it names no tools to allow, and installing it changes no settings. Its
+source is [skills/abso/SKILL.md](skills/abso/SKILL.md). `abso skill show` prints
+it. Run `abso skill install` again after updating abso.
 
 ## The hook
 

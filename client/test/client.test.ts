@@ -2641,7 +2641,7 @@ describe("abso mcp (#44): the commands as MCP tools", () => {
 		assert.deepEqual(parsed.positionals, ["--server=x"]);
 	});
 
-	it("keeps a tool call's folder and --attach files inside the folder the server started in (Security on 233)", async () => {
+	it("keeps a tool call's folder and --attach files inside the folder the server started in", async () => {
 		const { folders } = await project({ "a.txt": "one\n" }, "alice");
 		const start = folders.alice!;
 		const refused = (input: Record<string, unknown>) => {

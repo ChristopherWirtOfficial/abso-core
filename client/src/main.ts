@@ -45,6 +45,7 @@ import { runAnswer, runAsk, runIssue, runIssues, runSearch, runWaiting } from ".
 import { adminToken, issuedPublic, keyList, keyListText, keyNew, keyRevoke } from "./key-admin.ts";
 import { runUnqueue } from "./queue.ts";
 import { runNote, runNotes, runReview } from "./review.ts";
+import { installSkill, SKILL, skillPath } from "./skill.ts";
 import { runAmend, runDrop, runFollow, runLabel, runLabels, runPluck } from "./versions.ts";
 import { runVisibility } from "./visibility-commands.ts";
 
@@ -203,6 +204,25 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 					? `Signed this box out of ${record.server}.`
 					: `Forgot this box's sign-in here, but ${record.server} couldn't be reached to end it. Revoke the box on the website.`,
 				json: { loggedOut: true, ended },
+			};
+		},
+	},
+	skill: {
+		flags: { dir: "string" },
+		usage: "abso skill install [--dir <skills folder>] | abso skill show",
+		about:
+			"The abso skill for Claude Code: how to work in an abso folder, and what never to share. install writes it to ~/.claude/skills/abso/SKILL.md (--dir names another skills folder) and changes no settings; run it again after updating abso. show prints it.",
+		run: async (args, env) => {
+			const [verb, ...more] = args.positionals;
+			if (verb === "show" && more.length === 0) return { text: SKILL, json: { skill: SKILL } };
+			if (verb !== "install" || more.length > 0)
+				throw new UsageError("abso skill install [--dir <skills folder>] | abso skill show");
+			const path = skillPath(str(args, "dir"), env.cwd);
+			const done = installSkill(path);
+			const said = { installed: "Installed", updated: "Updated", current: "Already current:" }[done];
+			return {
+				text: `${said} the abso skill at ${path}. New Claude Code sessions load it.`,
+				json: { path, done },
 			};
 		},
 	},
