@@ -63,7 +63,7 @@ export interface Settled {
 	readonly file: string;
 	readonly kept: "yours" | "theirs" | "both" | "rewrote";
 	readonly theirs: { readonly agent: string; readonly version: number };
-	/** Lines both sides still had that the settled file no longer has (#37, Playtester 1). */
+	/** Lines both sides still had that the settled file no longer has (#37). */
 	readonly lost?: readonly string[];
 }
 export interface RecordAnswer {

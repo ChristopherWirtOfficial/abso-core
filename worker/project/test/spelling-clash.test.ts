@@ -1,5 +1,4 @@
-// Two spellings of one name never both reach shared (#49; Git
-// Lessons' review, batch 3): two agents creating README.md and
+// Two spellings of one name never both reach shared (#49): two agents creating README.md and
 // readme.md at once, one record naming both, init, a file and a folder with
 // one name, and plain git. A clash shared already holds isn't charged to new
 // work.

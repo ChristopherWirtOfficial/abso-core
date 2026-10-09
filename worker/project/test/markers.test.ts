@@ -188,7 +188,7 @@ test("a block is labeled by whose lines are newer, not by an older line it start
 	);
 });
 
-test("a settle that loses lines both sides still had says so, to the settler and the other author (#37, Playtester 1)", () => {
+test("a settle that loses lines both sides still had says so, to the settler and the other author (#37)", () => {
 	const notes =
 		"# playtest\n- [ ] **Beam engine on a Cove with no lighthouse**\n  Check it feeds the Fjord.\n- [ ] **Gauge**\n";
 	const project = new Project(new MemoryStore());

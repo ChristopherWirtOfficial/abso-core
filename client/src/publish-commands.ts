@@ -316,7 +316,7 @@ async function publishSteps(
 	try {
 		answer = await api.publish(message, asIs);
 	} catch (err) {
-		// The answer can be lost after the publish committed (Cloud: a storage reset killed the reply to
+		// The answer can be lost after the publish committed (a storage reset killed the reply to
 		// two publishes that had landed). Look before saying it failed; never publish again by itself.
 		const found = await afterLostPublish(api, config.agent, message, started, err);
 		if (found) return { ...found, text: [...pre, found.text].join("\n") };
@@ -536,7 +536,7 @@ export async function runSync(args: Parsed, env: Env): Promise<Output> {
 function settledText(settled: readonly Settled[], version: number | undefined): string[] {
 	if (settled.length === 0) return [];
 	const said = { yours: "kept yours", theirs: "kept theirs", both: "kept both", rewrote: "rewrote them" } as const;
-	// Lines both sides still had that the settled file no longer has (#37, Playtester 1): the settler should look.
+	// Lines both sides still had that the settled file no longer has (#37): the settler should look.
 	const quote = (l: string) => `"${l.trim().length > 60 ? `${l.trim().slice(0, 57)}...` : l.trim()}"`;
 	return [
 		`Settled ${plural(settled.length, "collision")}: ${settled.map((s) => `${s.file} (${said[s.kept]}, against ${s.theirs.agent}'s version ${s.theirs.version})`).join("; ")}. ${[...new Set(settled.map((s) => s.theirs.agent))].join(", ")} will hear what you kept.`,

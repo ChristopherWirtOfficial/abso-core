@@ -8,7 +8,7 @@ import { type Env, EXIT, type Output, open } from "./command-env.ts";
 import { fetchedText, fetchFromBox } from "./fetch.ts";
 import { untarGz } from "./tar.ts";
 
-/** abso serve [--version N]: a preview of one version of shared at a stable URL, built once on the server (#37, Playtester 1). */
+/** abso serve [--version N]: a preview of one version of shared at a stable URL, built once on the server (#37). */
 export async function runServe(args: Parsed, env: Env): Promise<Output> {
 	const raw = str(args, "version");
 	if (raw !== undefined && !/^\d+$/.test(raw))

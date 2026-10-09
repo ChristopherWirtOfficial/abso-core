@@ -444,7 +444,7 @@ export interface Settled {
 	file: string;
 	kept: Kept;
 	theirs: { agent: string; version: number };
-	/** Lines both sides still had that the settled file lost (#37, Playtester 1): check them. */
+	/** Lines both sides still had that the settled file lost (#37): check them. */
 	lost?: string[];
 }
 /** A line both sides changed that a sync merged word by word (#37): check it. */

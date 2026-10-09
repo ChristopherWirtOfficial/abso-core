@@ -193,8 +193,7 @@ function alike(a: string, b: string): boolean {
 }
 
 /**
- * Lines both sides still had that the settled file has lost (#37, Playtester
- * 1): neither side deleted them, yet neither side's version, nor the base's,
+ * Lines both sides still had that the settled file has lost (#37): neither side deleted them, yet neither side's version, nor the base's,
  * nor anything reading like a rewording of one, is left. When both sides
  * changed line for line, each position is one line in three versions;
  * otherwise only lines both sides kept word for word count. Answers each

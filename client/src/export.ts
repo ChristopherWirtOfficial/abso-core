@@ -1,14 +1,14 @@
 // abso export <dir> [--version N]: one published version of this folder's
 // space, written to a folder of its own, for a build that doesn't move while
-// shared does (#37, Playtester 1). The folder gets .abso-export naming the
+// shared does (#37). The folder gets .abso-export naming the
 // version, to stamp the build with: JSON on one line, in a file with no
 // extension, so the exported project's own formatter and linter pass it by.
 // Exporting again replaces the folder, keeping node_modules (and what --keep
 // names) so a build needs no new install.
 //
 // The version is rebuilt as `abso run --at` rebuilds it (at.ts), from the
-// known copies and one compare; the server's listing of that version (#37,
-// Engine 522be7f) then checks that no file is left out.
+// known copies and one compare; the server's listing of that version (#37)
+// then checks that no file is left out.
 
 import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";

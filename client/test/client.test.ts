@@ -1216,7 +1216,7 @@ describe("abso run keeps stderr apart, and --detach with abso logs (trial reques
 	});
 });
 
-describe("a name defined twice (#25, Engine e94f772)", () => {
+describe("a name defined twice (#25)", () => {
 	it("says which definition is whose, and that one has to go", () => {
 		const text = collisionText({
 			kind: "duplicate",
@@ -1811,7 +1811,7 @@ describe("publish and sync say what happened to others' work (#37, the game tria
 		);
 	});
 
-	it("a settle that loses lines both sides had says which, under the Settled line (#37, Playtester 1)", async () => {
+	it("a settle that loses lines both sides had says which, under the Settled line (#37)", async () => {
 		const { folders } = await project({ "a.txt": "one\nx\nthree\n" }, "alice", "bob");
 		write(folders.bob!, { "a.txt": "one\nB1\nshared line\nthree\n" });
 		assert.equal((await avcs(folders.bob!, "publish", "-m", "bob")).exit, 0);
@@ -1922,7 +1922,7 @@ describe("recording first says what was deleted (#37)", () => {
 	});
 });
 
-describe("abso export and status --short (#37, Playtester 1)", () => {
+describe("abso export and status --short (#37)", () => {
 	const FILES = { "index.html": "<p>v0</p>\n", "src/game.ts": "game v0\n", "src/old.ts": "old\n" };
 	const listAll = (dir: string): string[] =>
 		readdirSync(dir, { recursive: true, withFileTypes: true })
@@ -2085,7 +2085,7 @@ describe("a folder missing files its view has (#37, Artist 1)", () => {
 	});
 });
 
-describe("lines merged item by item at sync (#37, Engine c164c1a)", () => {
+describe("lines merged item by item at sync (#37)", () => {
 	it("names the merged line, so the agent reads it before publishing", async () => {
 		const { folders } = await project({ "src/main.ts": "const SYSTEMS = [input, physics, render];\n" }, "alice", "bob");
 		write(folders.bob!, { "src/main.ts": "const SYSTEMS = [input, physics, audio, render];\n" });
@@ -2792,7 +2792,7 @@ describe("abso mcp (#44): the commands as MCP tools", () => {
 	});
 });
 
-describe("a publish whose answer is lost (Cloud: a storage reset after the publish landed)", () => {
+describe("a publish whose answer is lost (a storage reset after the publish landed)", () => {
 	it("looks at shared before saying it failed, and never publishes again by itself", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice");
 		write(folders.alice!, { "a.txt": "b\n" });
@@ -3311,7 +3311,7 @@ describe("CEO's roundup: --check without a prep, run --quiet, restore some lines
 	});
 });
 
-describe("abso bisect and publish --check (Cloud d49759d, #37)", () => {
+describe("abso bisect and publish --check (#37)", () => {
 	const CHECK = "const t = require('fs').readFileSync('state.txt', 'utf8'); process.exit(t.includes('bad') ? 1 : 0);\n";
 
 	it("bisect names the first failing version, its author and message", async () => {

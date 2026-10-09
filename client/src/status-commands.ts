@@ -269,7 +269,7 @@ export async function runStatus(args: Parsed, env: Env): Promise<Output> {
 	const pending = unrecorded(root);
 	const local = new Set([...pending.files.keys(), ...pending.blobs.keys(), ...Object.keys(pending.modes)]);
 	if (short) {
-		// One word to stamp a build with (#37, Playtester 1): 214, coast@3, 214+unpublished.
+		// One word to stamp a build with (#37): 214, coast@3, 214+unpublished.
 		const me = status.agents.find((a) => a.agent === config.agent);
 		const unpublished = local.size > 0 || (me?.draftChanges ?? 0) > 0;
 		// +queued: published into the merge queue, not landed yet (#39).

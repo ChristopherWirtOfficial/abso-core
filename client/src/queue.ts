@@ -9,7 +9,7 @@ import { type Parsed, UsageError } from "./args.ts";
 import { type Env, type Output, open, plural } from "./commands.ts";
 import { logNews } from "./folder.ts";
 
-/** How long publish waits by default: under the 2 minutes a Claude Code shell command gets (#39, agreed with Engine). */
+/** How long publish waits by default: under the 2 minutes a Claude Code shell command gets (#39). */
 export const WAIT_SECONDS = 100;
 
 /** Exit code for a publish still in the queue when the wait ends (#39). */
@@ -95,7 +95,7 @@ async function outcomeOf(api: Api, id: number, state: QueueState): Promise<Queue
 }
 
 /**
- * A pull, said for the publisher (#39, agreed with Engine): the check's output
+ * A pull, said for the publisher (#39): the check's output
  * first, then the verdict as the last line, since that's the line an agent
  * acts on. The engine's news has the output in the middle of its sentence.
  */
