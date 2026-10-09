@@ -11,6 +11,10 @@
 //
 // Only status and the checks it prints use this. record reads every file: a
 // line status misses is a nuisance, a change record misses is lost work.
+//
+// The gap it shares with git: a tool that puts back a file's exact old time
+// at the same size and inode (rsync -t, touch -d) hides that edit from status
+// until something else changes the file. record still sends it.
 
 import { lstatSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
