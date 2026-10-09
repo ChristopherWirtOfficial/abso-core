@@ -60,7 +60,11 @@ if (after !== undefined && start === 0) fail(`${values.after} isn't on ${values.
 const dir = values.dir ? resolve(values.dir) : mkdtempSync(join(tmpdir(), "avcs-import-"));
 mkdirSync(dir, { recursive: true });
 if (after === undefined && readdirSync(dir).length > 0) fail(`${dir} isn't empty`);
-if (after !== undefined && !existsSync(join(dir, ".avcs", "config.json")))
+if (
+	after !== undefined &&
+	!existsSync(join(dir, ".abso", "config.json")) &&
+	!existsSync(join(dir, ".avcs", "config.json"))
+)
 	fail(`${dir} isn't an abso folder; --after goes on in an earlier run's folder`);
 
 // The last commit first: nothing is created unless it passes.
@@ -140,15 +144,16 @@ async function skipCi(through: number): Promise<void> {
 	}
 }
 
-/** The commit's tree in `dir`, replacing everything but .avcs; its files, folder-relative. */
+/** The commit's tree in `dir`, replacing everything but .avcs and .abso; its files, folder-relative. */
 function extract(sha: string, into: string): string[] {
-	for (const e of readdirSync(into)) if (e !== ".avcs") rmSync(join(into, e), { recursive: true, force: true });
+	for (const e of readdirSync(into))
+		if (e !== ".avcs" && e !== ".abso") rmSync(join(into, e), { recursive: true, force: true });
 	// Piped, with tar in the folder: no path for tar to misread (GNU tar takes "C:" for a remote host).
 	const archive = spawnSync("git", ["archive", "--format=tar", sha], { maxBuffer: 1 << 30 });
 	if (archive.status !== 0) fail(`git archive: ${archive.stderr.toString().trim()}`);
 	const untar = spawnSync("tar", ["-xf", "-"], { cwd: into, input: archive.stdout, encoding: "utf8" });
 	if (untar.status !== 0) fail(`tar couldn't unpack ${sha}: ${untar.stderr}`);
-	return walk(into).filter((rel) => !rel.startsWith(".avcs/"));
+	return walk(into).filter((rel) => !rel.startsWith(".avcs/") && !rel.startsWith(".abso/"));
 }
 
 /** Why abso would store these bytes differently from git, or undefined. Binary files (NUL, or not UTF-8) go up byte for byte. */

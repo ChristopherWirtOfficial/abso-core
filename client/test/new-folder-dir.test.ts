@@ -27,3 +27,12 @@ test("a new folder keeps .avcs while any installed mod is older than the rename"
 	assert.equal(newFolderDir(claudeWith({ avcs: "0.2.0", "avcs-view": "0.1.0" })), ".avcs");
 	assert.equal(newFolderDir(claudeWith({ avcs: "unreadable" })), ".avcs");
 });
+
+test("a mod folder with no readable install record counts as old", () => {
+	const env = claudeWith({});
+	const mod = join(env.CLAUDE_CONFIG_DIR, "skills", "avcs");
+	mkdirSync(mod, { recursive: true }); // copied in by hand: no .avcs-install.json
+	assert.equal(newFolderDir(env), ".avcs");
+	writeFileSync(join(mod, ".avcs-install.json"), "not json");
+	assert.equal(newFolderDir(env), ".avcs");
+});

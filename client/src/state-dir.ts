@@ -39,12 +39,13 @@ function versionAtLeast(version: string, min: readonly number[]): boolean {
 export function newFolderDir(env: Readonly<Record<string, string | undefined>> = process.env): string {
 	const skills = join(env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "skills");
 	for (const name of MOD_NAMES) {
+		if (!existsSync(join(skills, name))) continue; // not installed
 		let version: unknown;
 		try {
 			version = (JSON.parse(readFileSync(join(skills, name, ".avcs-install.json"), "utf8")) as { version?: unknown })
 				.version;
 		} catch {
-			continue; // not installed, or no readable record
+			return OLD_STATE_DIR; // installed, but no readable record: count it as old
 		}
 		if (typeof version !== "string" || !versionAtLeast(version, MOD_KNOWS_ABSO)) return OLD_STATE_DIR;
 	}
