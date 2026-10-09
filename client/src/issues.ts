@@ -7,7 +7,7 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import type { Api, Ask, Attachment, Draft, DraftBody, IssuePage, IssueRow } from "./api.ts";
+import type { Api, Ask, Attachment, Draft, DraftBody, IssuePage, IssueRow, IssueSearchHit } from "./api.ts";
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { type Env, type Output, open, plural } from "./commands.ts";
 import { type Config, readMachineServers, trustedServers } from "./config.ts";
@@ -477,6 +477,41 @@ async function withdrawAsk(args: Parsed, env: Env, word: string): Promise<Output
 	const note = str(args, "note");
 	const r = await api.withdraw(id, note !== undefined ? { note } : {});
 	return { text: `Withdrew ask ${id}. ${r.ask.of} hears it, and it no longer waits on them.`, json: { ask: r.ask } };
+}
+
+/** One search hit as two lines: the issue, then where it matched and the words around it. */
+export function searchLines(h: IssueSearchHit): string[] {
+	const where = h.meaning ? "by meaning" : h.where === "comment" ? `in comment ${h.comment}` : `in the ${h.where}`;
+	const words = h.snippet
+		.replace(/[\u0001\u0002]/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
+	return [
+		`  ${String(h.issue.id).padStart(3)}  ${h.issue.status.padEnd(11)}  ${q(h.issue.title)}`,
+		`       ${where}${words && words !== h.issue.title ? `: ${q(words)}` : ""}`,
+	];
+}
+
+export async function runSearch(args: Parsed, env: Env): Promise<Output> {
+	const words = args.positionals.join(" ").trim();
+	if (words === "") throw new UsageError('search needs words: abso search "<words>" [--limit <N>]');
+	const limitWord = str(args, "limit");
+	const limit = limitWord === undefined ? undefined : Number(limitWord);
+	if (limit !== undefined && !(Number.isInteger(limit) && limit >= 1 && limit <= 50))
+		throw new UsageError("--limit is a number from 1 to 50");
+	const { api } = openIssues(env);
+	const { hits } = await api.issueSearch(words, limit);
+	return {
+		text:
+			hits.length === 0
+				? `Nothing matches ${q(words)}.`
+				: [
+						`${plural(hits.length, "issue")} for ${q(words)}, best first:`,
+						...hits.flatMap(searchLines),
+						"abso issue <N> shows one.",
+					].join("\n"),
+		json: { hits },
+	};
 }
 
 export async function runWaiting(args: Parsed, env: Env): Promise<Output> {

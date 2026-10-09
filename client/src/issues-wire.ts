@@ -134,3 +134,14 @@ export interface Draft {
 	body: DraftBody;
 	saved: number;
 }
+
+/** One issue search hit: the issue, where it matched, a few words around it. */
+export interface IssueSearchHit {
+	issue: { id: number; title: string; status: Status; updated: number; labels: string[] };
+	where: "title" | "description" | "comment";
+	comment?: number;
+	/** The words around the match; char(1) and char(2) bracket each matched span. */
+	snippet: string;
+	/** Only meaning search found it: the words differ, the meaning matches. */
+	meaning?: true;
+}

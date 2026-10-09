@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { readMachineServers } from "../src/config.ts";
 import { issuesServerFor, tokenGoesTo } from "../src/core.ts";
+import { searchLines } from "../src/issues.ts";
 import { main } from "../src/main.ts";
 import { argvFor, mcpTools } from "../src/mcp.ts";
 import { type Fake, startFake } from "./fake-server.ts";
@@ -106,7 +107,7 @@ describe("issues commands, the client's part (#54)", () => {
 
 	it("are MCP tools", () => {
 		const names = mcpTools().map((t) => t.name);
-		for (const n of ["issues", "issue", "ask", "waiting", "answer"]) assert.ok(names.includes(n), n);
+		for (const n of ["issues", "issue", "search", "ask", "waiting", "answer"]) assert.ok(names.includes(n), n);
 		assert.deepEqual(argvFor("ask", { args: ["alice", "Which login?"], issue: "3", review: true }), [
 			"ask",
 			"--issue=3",
@@ -133,11 +134,27 @@ describe("issues commands, the client's part (#54)", () => {
 			["ask", "--withdraw", "3", "--issue", "2"],
 			["ask", "--withdraw", "3", "--task"],
 			["ask", "alice", "q", "--note", "a note without --withdraw"],
+			["search"],
+			["search", "words", "--limit", "0"],
+			["search", "words", "--limit", "51"],
 		]) {
 			const r = await avcs(erin, argv);
 			assert.equal(r.exit, 1, `${argv.join(" ")}: ${r.out}`);
 		}
 		assert.equal(seen.length, before);
+	});
+
+	it("shows a search hit as the issue, then where it matched, without the match markers", () => {
+		const issue = { id: 12, title: "Sync is slow", status: "open" as const, updated: 0, labels: [] };
+		assert.deepEqual(
+			searchLines({ issue, where: "comment", comment: 40, snippet: "the \u0001network\u0002 drops mid-sync" }),
+			['   12  open         "Sync is slow"', '       in comment 40: "the network drops mid-sync"'],
+		);
+		assert.deepEqual(searchLines({ issue, where: "description", snippet: "Pages load late.", meaning: true }), [
+			'   12  open         "Sync is slow"',
+			'       by meaning: "Pages load late."',
+		]);
+		assert.deepEqual(searchLines({ issue, where: "title", snippet: "Sync is slow" })[1], "       in the title");
 	});
 
 	it("withdraw is one POST to the asker's own withdraw/<ask> route", async () => {

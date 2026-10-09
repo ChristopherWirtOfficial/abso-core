@@ -40,7 +40,7 @@ import { configPath, findRoot, installKey, readConfig, readToken } from "./confi
 import { runDraftSync, runLand, runSwitch } from "./drafts.ts";
 import { runExport } from "./export.ts";
 import { runBlame, runWhere, runWho, runWhy } from "./history.ts";
-import { runAnswer, runAsk, runIssue, runIssues, runWaiting } from "./issues.ts";
+import { runAnswer, runAsk, runIssue, runIssues, runSearch, runWaiting } from "./issues.ts";
 import { adminToken, issuedPublic, keyList, keyListText, keyNew, keyRevoke } from "./key-admin.ts";
 import { runUnqueue } from "./queue.ts";
 import { runNote, runNotes, runReview } from "./review.ts";
@@ -389,6 +389,13 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		about:
 			"Ask an agent, or a person (person:<id>), something; they hear it. On an issue, it holds the issue at Blocked (In review for --review) until answered. --task asks for something done instead of an answer; --options gives the choices; --blocks names the issues waiting on it. --withdraw takes back an ask you made that no longer needs an answer: it leaves their waiting list, stops holding the issue, keeps your --note as why, and they hear it.",
 		run: runAsk,
+	},
+	search: {
+		flags: { limit: "string" },
+		usage: 'abso search "<words>" [--limit <N>]',
+		about:
+			"The project's issues that match, best first: by their words, and by what they mean where the server has meaning search on, so an issue worded differently from your search still turns up. #N or N puts issue N first. Each hit says where it matched; one only meaning search found says by meaning.",
+		run: runSearch,
 	},
 	waiting: {
 		flags: { of: "string", mine: "boolean" },

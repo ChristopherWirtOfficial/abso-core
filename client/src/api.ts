@@ -50,7 +50,16 @@ import type {
 	WhereAnswer,
 	WhyAnswer,
 } from "./history-answers.ts";
-import type { Ask, Attachment, Draft, DraftBody, News as IssueNews, IssuePage, IssueRow } from "./issues-wire.ts";
+import type {
+	Ask,
+	Attachment,
+	Draft,
+	DraftBody,
+	News as IssueNews,
+	IssuePage,
+	IssueRow,
+	IssueSearchHit,
+} from "./issues-wire.ts";
 import type { Modes } from "./modes.ts";
 
 export * from "./api-answers.ts";
@@ -65,7 +74,7 @@ export {
 } from "./box-run.ts";
 export * from "./ci-answers.ts";
 export * from "./history-answers.ts";
-export type { Ask, Attachment, Draft, DraftBody, IssueNews, IssuePage, IssueRow };
+export type { Ask, Attachment, Draft, DraftBody, IssueNews, IssuePage, IssueRow, IssueSearchHit };
 
 /**
  * How long a call may take: the base, plus 1 s for each 100 KB it sends
@@ -373,6 +382,14 @@ export class Api {
 			"GET",
 			`/issues?${query({ status: q.status, agent: q.agent, parent: q.parent, open: q.open ? 1 : undefined, label: q.labels && q.labels.length > 0 ? q.labels.join(",") : undefined })}`,
 		);
+	}
+
+	/**
+	 * The project's issues matching q, best first: by its words and, where
+	 * the server has it on, by what it means.
+	 */
+	issueSearch(q: string, limit?: number): Promise<{ hits: readonly IssueSearchHit[] }> {
+		return this.#issues("GET", `/search?${query({ q, limit })}`);
 	}
 
 	/** Every label in use, with how many issues have it and how many of those are open. */

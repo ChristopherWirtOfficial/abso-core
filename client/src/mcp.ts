@@ -47,6 +47,7 @@ export const MCP_COMMANDS = [
 	"notes",
 	"issues",
 	"issue",
+	"search",
 	"ask",
 	"waiting",
 	"answer",
