@@ -7,18 +7,18 @@
 //
 // Before anything is created, the last commit is checked: abso stores text
 // with LF line endings and a final newline, so a file git holds otherwise
-// would come back different through the bridge to GitHub, whose first run
-// refuses unless the last version's tree equals the commit's; and the
-// commit's own ignore rules must leave none of its files out.
+// would come back different, and the imported history would no longer match
+// its commits; and the commit's own ignore rules must leave none of its files
+// out.
 //
 // What a first cut leaves for later (#58): every version's agent is the
 // importing agent and its time is the import's (the commit's author and time
 // are in the message); merges come in as their first parent's line; a run
 // that stops partway goes on with --after <sha> in the same --dir.
 //
-// CI counts each imported version as seen as soon as it lands (POST ci/skip,
-// AVCS - Cloud), so it never checks or bisects the history; it checks what
-// is published after the import.
+// CI counts each imported version as seen as soon as it lands, so it never
+// checks or bisects the history; it checks what is published after the
+// import.
 //
 //   node client/scripts/import-git.ts --project <name> [--ref origin/main]
 //     [--server <url>] [--agent import] [--dir <empty folder>]
@@ -82,7 +82,7 @@ if (ignored.length > 0)
 	);
 if (changed.length > 0)
 	fail(
-		`abso would store ${changed.length} of its files differently from git, so the bridge's tree check would refuse the import. Fix them first:\n${changed.join("\n")}`,
+		`abso would store ${changed.length} of its files differently from git, so the imported history wouldn't match git. Fix them first:\n${changed.join("\n")}`,
 	);
 if (checkOnly) {
 	console.log("Every text file is as abso will store it. Nothing imported (--check-only).");
@@ -128,7 +128,7 @@ console.log(
 	`Imported ${values.ref} (${last.slice(0, 12)}) as project ${values.project}: ${line.length - start - skipped} versions${skipped > 0 ? `, ${skipped} commits with no change` : ""}. ${dir} is agent ${values.agent}'s folder; keep it or delete it.`,
 );
 
-/** CI: versions through `through` are history, seen already. A server without ci/skip is told nothing. */
+/** CI: versions through `through` are history, seen already. A server that can't be told is told nothing. */
 async function skipCi(through: number): Promise<void> {
 	try {
 		await open(env).api.ciSkip(through);
