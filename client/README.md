@@ -1,14 +1,14 @@
 # abso: the client
 
-The command-line client and the Claude Code hook for the agent-first version
-control server. The contract it follows is
-[docs/v2-slice1.md](../docs/v2-slice1.md); the issue is #21.
+The command-line client and the Claude Code hook for abso, version control
+for agents. [README.md](../README.md) at the top says what abso is and how to
+install the client as one file.
 
 It is plain TypeScript that Node 24 runs directly, and it uses nothing outside
 this folder, so the folder can be shipped as it is.
 
 ```bash
-node client/avcs.ts help
+node client/abso.ts help
 ```
 
 ## Setting up a folder
@@ -46,7 +46,7 @@ abso init ./regex --server https://<worker> --project regex --agent lead
 abso join regex --agent backtracker --server https://<worker> --dir ./backtracker
 ```
 
-Here `abso` means `node <repo>/client/abso.ts` (`client/avcs.ts` is the same client under its old name, which installed hooks still run).
+Here `abso` means `node <repo>/client/abso.ts`, or `node abso.mjs` for the one-file client.
 
 ## Working
 
@@ -55,7 +55,7 @@ Here `abso` means `node <repo>/client/abso.ts` (`client/avcs.ts` is the same cli
 | `abso record [--all]` | Sends every file that changed since the server last heard about it. Edits by Claude Code go through the hook; this catches everything else (shell commands, other editors, a hook that failed). |
 | `abso publish -m "why" [--as-is]` | Records, then adds the draft to shared. Refused (exit 2) when it collides with work published since the last sync, each collision showing both sides; or while a file still holds collision markers from a sync. Settle them first (`abso settle`, or edit them away); `--as-is` keeps both sides in every marked file and publishes. The output names what each settled collision kept, and the other author hears it. |
 | `abso publish -m "why" --check "<command>"` | Syncs, runs the command in your box on your draft with newest shared, and publishes only if it exits 0, so two changes that each pass alone can't turn shared red. Use the project's own script (`--check "npm run typecheck"`), and give the box its dependencies once first with `abso prep 'npm ci --ignore-scripts'`: without a prep the box has no `node_modules`, and when the folder has a `package-lock.json`, `--check` refuses rather than trust that run. It says when shared moved during the check, and `abso bisect -- <command>` finds the first version where a check fails. |
-| `abso settle <file...> --yours\|--theirs\|--both` | Settles the collisions a sync marked in these files (#11). Where lines changed on both sides, sync writes a marker block: `<<<<<<< yours (unpublished)`, your lines, `\|\|\|\|\|\|\| before (version N)`, the lines you both started from, `=======`, theirs, `>>>>>>> theirs: <agent>, version N "<message>"`. Settle turns each block into your lines, theirs, or both (yours first), then records. Editing the markers away by hand works too. `abso status` lists the files with markers; box runs fail while they're in the folder. |
+| `abso settle <file...> --yours\|--theirs\|--both` | Settles the collisions a sync marked in these files. Where lines changed on both sides, sync writes a marker block: `<<<<<<< yours (unpublished)`, your lines, `\|\|\|\|\|\|\| before (version N)`, the lines you both started from, `=======`, theirs, `>>>>>>> theirs: <agent>, version N "<message>"`. Settle turns each block into your lines, theirs, or both (yours first), then records. Editing the markers away by hand works too. `abso status` lists the files with markers; box runs fail while they're in the folder. |
 | `abso sync` | Records, then brings shared's new work into the folder. A file that collides is left alone and listed; editing it settles both sides. A renamed file is listed as renamed. Up to 8 file names per line; `--verbose` lists every file. `--full` also writes any file of your view the folder is missing, not only what changed since your last sync (`abso join` always does this). A file new in your draft that your ignore rules leave out (an edit mod older than nested ignore files sends them) leaves the draft and stays on disk; publish does the same. |
 | `abso run <command>` | Sends the folder to the agent's box, runs the command there, streams the output, and exits with the command's code. The words are one shell command, run by the box's `sh`. The box's stdout comes out on stdout and its stderr on stderr, so `abso run "node gen.mjs" > out.ts` keeps progress lines out of the file. abso's own notices (a fresh box, files sent with LF, and the like) and any news go to stderr, so piped output holds only the command's; `--quiet` drops the notices. |
 | `abso run --detach ...` | Starts the run and prints its id without waiting; the job goes on in the box. A later `abso run` from the folder replaces the box's files, even while it runs. |
@@ -92,11 +92,11 @@ Here `abso` means `node <repo>/client/abso.ts` (`client/avcs.ts` is the same cli
 | `abso label <name> [--version n] [--remove]` / `abso labels` | Puts a label on a version of shared (the newest by default) or takes it off, like a git tag; `labels` lists them all. |
 | `abso follow <label>` / `abso follow --none` | Makes this folder follow a label: every sync takes it to the newest version of shared with that label. `--none` goes back to shared's newest. Saved in `.avcs/config.json`. |
 | `abso check-ignore <path...>` | Whether abso leaves each path out, and which line of which ignore file decided (see "What is left out"). |
-| `abso pipeline check [file] [--on <event>]` | Reads the folder's pipeline file (abso.yml, abso.yaml or avcs.json, or the file named) and lists each problem as `<path>: <message>`: a cycle in needs, a job or pipeline that doesn't exist, secrets in a pipeline a draft can start, keys it doesn't know. Exits 1 on problems; otherwise lists each pipeline's jobs in the order they run. With `--on publish|draft|green|land|hand|schedule` (and `--space`, `--pipeline` or `--every`), says which pipelines that event starts, with their jobs in waves that can run side by side, and why the others don't. Reads only the file. The shape is still a draft (abso issue 138). |
-| `abso issues [--open] [--status <s>] [--agent <a>] [--parent <N>] [--label <l,l>]` | The project's issues (#54), most recently updated first. Statuses come from the work: `abso start --issue N` puts an issue In progress, an open ask makes it Blocked (In review for a review), and `publish --done` closes it. `--label friction` keeps the issues with every label named: a ready list of work to pick up. `abso issues --labels` lists the labels in use, with how many issues are open under each. |
+| `abso pipeline check [file] [--on <event>]` | Reads the folder's pipeline file (abso.yml, abso.yaml or avcs.json, or the file named) and lists each problem as `<path>: <message>`: a cycle in needs, a job or pipeline that doesn't exist, secrets in a pipeline a draft can start, keys it doesn't know. Exits 1 on problems; otherwise lists each pipeline's jobs in the order they run. With `--on publish|draft|green|land|hand|schedule` (and `--space`, `--pipeline` or `--every`), says which pipelines that event starts, with their jobs in waves that can run side by side, and why the others don't. Reads only the file. The shape is still a draft. |
+| `abso issues [--open] [--status <s>] [--agent <a>] [--parent <N>] [--label <l,l>]` | The project's issues, most recently updated first. Statuses come from the work: `abso start --issue N` puts an issue In progress, an open ask makes it Blocked (In review for a review), and `publish --done` closes it. `--label friction` keeps the issues with every label named: a ready list of work to pick up. `abso issues --labels` lists the labels in use, with how many issues are open under each. |
 | `abso issue new "<title>" --label <l,l>` / `abso issue <N> --label <l,l> --unlabel <l,l>` | Labels an issue, or changes its labels. A label is 1-40 lower-case letters, digits and `- _ . :` (`friction`, `area:client`); what you type is lower-cased. An edit that only changes labels tells nobody unless `--notify` names people. Tool friction goes in its own issue, labeled `friction`. |
 | `abso issue draft "<title>"` / `abso issues --drafts` | A draft of an issue: yours alone, with no number and no news. Takes the same fields as `issue new`. `abso issue draft <D> [fields]` changes one, `--open` opens it as an issue (with any fields given over the draft's), `--delete` deletes it. |
-| `abso issue <N>` / `abso issue new "<title>"` | One issue: its description, Agent, Blocked by, asks, comments, edits, sub-issues and watchers. `--comment`, `--object` and `--drop` act on it; its agents hear them. `--reopen` opens a dropped issue again. `--done` marks it done by hand, and `--done-by <version>` names the published version that did the work (abso issues 104 and 38). `--title`, `--description`, `--parent`, `--agent` and `--blocked-by` edit it (`none` clears one), and the edit tells its watchers: who opened it, its Agent and agents, its Reviewer, whoever was named in Notify, and whoever commented. `--notify a,b` tells more people; `--quiet` tells nobody. An issue is Blocked until each issue it's blocked by is Done. `new` opens one (`--description`, `--parent`, `--lines <file>:<from>-<to>@<version>`, `--agent`, `--blocked-by`, `--notify`). |
+| `abso issue <N>` / `abso issue new "<title>"` | One issue: its description, Agent, Blocked by, asks, comments, edits, sub-issues and watchers. `--comment`, `--object` and `--drop` act on it; its agents hear them. `--reopen` opens a dropped issue again. `--done` marks it done by hand, and `--done-by <version>` names the published version that did the work. `--title`, `--description`, `--parent`, `--agent` and `--blocked-by` edit it (`none` clears one), and the edit tells its watchers: who opened it, its Agent and agents, its Reviewer, whoever was named in Notify, and whoever commented. `--notify a,b` tells more people; `--quiet` tells nobody. An issue is Blocked until each issue it's blocked by is Done. `new` opens one (`--description`, `--parent`, `--lines <file>:<from>-<to>@<version>`, `--agent`, `--blocked-by`, `--notify`). |
 | `abso ask <who> "<question>" [--issue <N>]` | Asks an agent, or a person (`person:<id>`), something; they hear it. `--review`, `--task`, `--due`, `--blocks` and `--options "A\|B"` shape it. |
 | `abso waiting [--of <who>] [--mine]` / `abso answer <ask> "<words>"` | The open asks, soonest due first, and the answer to one asked of you (in your own words, `--option <N>`, or `--done` for a task). |
 
@@ -142,7 +142,7 @@ back:
 ## The MCP server
 
 `abso mcp` serves the reading commands, and the writing ones an agent uses every
-day, as MCP tools on stdin and stdout (#44). Each tool is the command of the same
+day, as MCP tools on stdin and stdout. Each tool is the command of the same
 name (`check-ignore` is `check_ignore`), runs the same code, and answers with the
 same text, so the tools and the command line can't drift apart. `json: true` on
 a call answers with the command's JSON instead. The folder and the token come from
@@ -150,7 +150,7 @@ where the server runs, as for the command line; `folder` on a call points it at
 another abso folder. Add it to Claude Code with:
 
 ```
-claude mcp add avcs -- node <repo>/client/avcs.ts mcp
+claude mcp add abso -- node <repo>/client/abso.ts mcp
 ```
 
 The box commands (`run`, `shot`, `bisect`, `prep`, `logs`, `fetch`) stream for
@@ -189,7 +189,7 @@ There are two forms.
   `node client/install-mod.ts`, which puts its five files in
   `~/.claude/skills/avcs`. A chat loads the mod when it starts and keeps that
   one: open chats don't pick up a new install, so restart them (or the app) to
-  load it (#37: a chat started before an install still ran the older mod).
+  load it.
   `abso status` says when the last edit in a folder came from an older mod
   than the one installed. Or load it
   for one session with `claude --plugin-dir <repo>/client`. Function hooks are
@@ -207,14 +207,14 @@ There are two forms.
       "PostToolUse": [
         {
           "matcher": "Edit|MultiEdit|Write|NotebookEdit",
-          "hooks": [{ "type": "command", "command": "node <path-to-abso>/client/avcs.ts hook", "timeout": 10 }]
+          "hooks": [{ "type": "command", "command": "node <path-to-abso>/client/abso.ts hook", "timeout": 10 }]
         }
       ]
     }
   }
   ```
 
-Measured in real sessions against the live Worker (#21): the plugin takes a
+Measured in real sessions against the live server: the plugin takes a
 median of 73 ms per edit, and the command hook 319 ms (342 ms when Git Bash
 starts it, as Claude Code does on Windows). The difference is a new process
 and a new HTTPS connection for every edit.
@@ -222,7 +222,7 @@ and a new HTTPS connection for every edit.
 ### Updating the mods, and taking an update back
 
 Every session on the machine runs the installed mods, so an install never
-leaves them half-written (#29). `install-mod.ts` and `install-view.ts`:
+leaves them half-written. `install-mod.ts` and `install-view.ts`:
 
 - stamp the mod with the last commit that changed its files: plugin.json's
   version becomes `0.1.0+702c616` (`.dirty` when the files differ from that
@@ -244,8 +244,7 @@ with each call too (`X-Avcs-Client: avcs-cli/0.1.0+<commit checked out>`).
 
 ## The view (avcs-view)
 
-A second mod, in `client/view`, shows a chat what abso knows about its folder
-(#12):
+A second mod, in `client/view`, shows a chat what abso knows about its folder:
 
 - **A status line**, for example
   `avcs: shared · 2 files unpublished · shared is 2 ahead (abso sync) · bob also on your files · 1 news item (/avcs-view)`.
@@ -277,8 +276,8 @@ Claude Code's plugin test kit: `node client/test-mods.ts`.
 ## Empty files, the executable bit and links
 
 An empty file is a file like any other; only a deleted file is gone. The
-server keeps each file's executable bit and whether it is a symbolic link
-(#27). The client sends only the changes, after the files' text:
+server keeps each file's executable bit and whether it is a symbolic link.
+The client sends only the changes, after the files' text:
 
 - **The executable bit** is read from disk and set on disk, except on Windows,
   which has no such bit. There, like git's `core.fileMode=false`, a file keeps
@@ -305,14 +304,14 @@ alike, except for case:
   line wins.
 - Nothing inside an ignored folder can be brought back with `!`, as in git.
 - Case: every pattern, from `.avcsignore`, `.gitignore` or git's own exclude
-  files, matches by the same rule as abso's paths, on every platform (#49):
+  files, matches by the same rule as abso's paths, on every platform:
   any case, and either Unicode form of an accented letter. So `.env` also
   leaves out `.ENV`. This ignores case and Unicode form even where
   `git status` doesn't: in a git repository with `core.ignorecase` off (git
   init leaves it off on Linux), abso can leave out a file git shows.
 
 Binary files (a NUL byte or invalid UTF-8), and text over 2 MB, go up as
-blobs (#27): the client uploads the bytes under their SHA-256, records the
+blobs: the client uploads the bytes under their SHA-256, records the
 hash, and keeps the hashes it knows in `.avcs/blobs.json`. Sync, switch and
 restore fetch the bytes, and never overwrite a binary file the agent changed
 and hasn't recorded. `diff` says `Binary file x changed: <hash> -> <hash>`.
