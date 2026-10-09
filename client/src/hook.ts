@@ -65,9 +65,11 @@ export async function runHook(
 	}
 	// With the abso mod installed, every Claude Code session on this machine sends
 	// its edits in-process, so this hook stands down rather than send them twice.
-	if (fromEnv(env, "HOOK_FORCE") !== "1" && (existsSync(join(modDir(env), ".claude-plugin", "plugin.json")) ||
-			existsSync(join(oldModDir(env), ".claude-plugin", "plugin.json"))))
-	{
+	if (
+		fromEnv(env, "HOOK_FORCE") !== "1" &&
+		(existsSync(join(modDir(env), ".claude-plugin", "plugin.json")) ||
+			existsSync(join(oldModDir(env), ".claude-plugin", "plugin.json")))
+	) {
 		return { stdout: "", outcome: "skipped: the abso mod sends edits" };
 	}
 	const tool = input.tool_name ?? "";
