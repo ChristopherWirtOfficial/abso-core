@@ -50,7 +50,7 @@ import type {
 	WhereAnswer,
 	WhyAnswer,
 } from "./history-answers.ts";
-import type { Ask, Draft, DraftBody, News as IssueNews, IssuePage, IssueRow } from "./issues-wire.ts";
+import type { Ask, Attachment, Draft, DraftBody, News as IssueNews, IssuePage, IssueRow } from "./issues-wire.ts";
 import type { Modes } from "./modes.ts";
 
 export * from "./api-answers.ts";
@@ -65,7 +65,7 @@ export {
 } from "./box-run.ts";
 export * from "./ci-answers.ts";
 export * from "./history-answers.ts";
-export type { Ask, Draft, DraftBody, IssueNews, IssuePage, IssueRow };
+export type { Ask, Attachment, Draft, DraftBody, IssueNews, IssuePage, IssueRow };
 
 /**
  * How long a call may take: the base, plus 1 s for each 100 KB it sends
@@ -400,8 +400,37 @@ export class Api {
 		}
 	}
 
-	issueOpen(body: DraftBody & { title: string }): Promise<{ id: number; news?: IssueNews }> {
+	issueOpen(body: DraftBody & { title: string; attachments?: string[] }): Promise<{ id: number; news?: IssueNews }> {
 		return this.#issues("POST", this.agentPath("issue"), body);
+	}
+
+	/** Uploads an image to the Issues Worker (abso issue 171): it checks the type by the bytes, strips metadata and answers its id. */
+	async attachmentUpload(bytes: Uint8Array, name: string): Promise<Attachment> {
+		if (this.issuesServer === undefined)
+			throw new ApiError(`${this.config.server} has no Issues Worker beside it; AVCS_ISSUES_SERVER names one`);
+		const path = this.agentPath("attachments");
+		let res: Response;
+		try {
+			res = await fetch(this.url(path, this.issuesServer), {
+				method: "POST",
+				headers: { ...this.headers("application/octet-stream"), "x-avcs-name": encodeURIComponent(name) },
+				body: bytes as Uint8Array<ArrayBuffer>,
+				signal: AbortSignal.timeout(Math.max(this.timeoutMs, 120_000)),
+			});
+		} catch (err) {
+			const e = err as Error;
+			throw new ApiError(
+				`could not reach ${this.issuesServer}: ${(e.cause as Error | undefined)?.message ?? e.message}`,
+			);
+		}
+		const text = await res.text();
+		if (!res.ok) throw new ApiError(`uploading ${name} answered ${res.status}: ${errorSentence(text)}`, res.status);
+		return JSON.parse(text) as Attachment;
+	}
+
+	/** Where an attachment is served. */
+	attachmentUrl(id: string): string {
+		return this.url(`/attachments/${id}`, this.issuesServer);
 	}
 
 	/** An edit (abso issue 3): it tells the issue's watchers, and `also`, unless `notify` is false. null clears a parent or Agent. */
@@ -422,8 +451,17 @@ export class Api {
 		return this.#issues("POST", this.agentPath(`issue/${id}/edit`), body);
 	}
 
-	issueComment(id: number, text: string, objection = false): Promise<{ id: number; news?: IssueNews }> {
-		return this.#issues("POST", this.agentPath(`issue/${id}/comment`), { text, ...(objection ? { objection } : {}) });
+	issueComment(
+		id: number,
+		text: string,
+		objection = false,
+		attachments: readonly string[] = [],
+	): Promise<{ id: number; news?: IssueNews }> {
+		return this.#issues("POST", this.agentPath(`issue/${id}/comment`), {
+			text,
+			...(objection ? { objection } : {}),
+			...(attachments.length > 0 ? { attachments } : {}),
+		});
 	}
 
 	issueDrop(id: number): Promise<{ news?: IssueNews }> {

@@ -45,6 +45,17 @@ export interface Comment {
 	kind: "comment" | "objection";
 	text: string;
 	at: number;
+	/** Images it carries (abso issue 171); left out when none. */
+	attachments?: Attachment[];
+}
+
+/** An image on an issue or comment (abso issue 171): GET /p/:project/attachments/<id> serves it. */
+export interface Attachment {
+	/** "a" and the first 12 hex of its sha256: what a text points at. */
+	id: string;
+	name: string;
+	type: string;
+	size: number;
 }
 
 export interface Ask {
@@ -74,7 +85,7 @@ export interface Claim {
 }
 
 export interface IssuePage {
-	issue: IssueRow & { description: string; lines: Lines | null; watchers: string[] };
+	issue: IssueRow & { description: string; lines: Lines | null; watchers: string[]; attachments?: Attachment[] };
 	comments: Comment[];
 	edits: Edit[];
 	asks: Ask[];

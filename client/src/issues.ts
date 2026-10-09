@@ -5,7 +5,9 @@
 // In review, and publish --done closes it. Other agents' and people's words
 // are quoted as JSON, so none can print as another line (#30).
 
-import type { Api, Ask, Draft, DraftBody, IssuePage, IssueRow } from "./api.ts";
+import { readFileSync, statSync } from "node:fs";
+import { basename, resolve } from "node:path";
+import type { Api, Ask, Attachment, Draft, DraftBody, IssuePage, IssueRow } from "./api.ts";
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { type Env, type Output, open, plural } from "./commands.ts";
 import { type Config, readMachineServers, trustedServers } from "./config.ts";
@@ -107,8 +109,48 @@ function listOf(value: string): string[] {
 				.filter((v) => v !== "");
 }
 
+/** The most one attachment may be: the Issues Worker's cap, checked here before sending (abso issue 171). */
+const ATTACH_MAX = 10 * 1024 * 1024;
+
+/** Uploads each file --attach names (comma-separated), in order, and answers their ids. Nothing is sent if a file is missing or too big. */
+async function uploadAttachments(api: Api, cwd: string, value: string | undefined): Promise<string[]> {
+	if (value === undefined) return [];
+	const paths = listOf(value);
+	if (paths.length === 0) throw new UsageError("--attach names files, comma-separated: --attach shot.png,after.png");
+	const files = paths.map((p) => {
+		const full = resolve(cwd, p);
+		let size: number;
+		try {
+			size = statSync(full).size;
+		} catch {
+			throw new UsageError(`--attach ${p}: no such file`);
+		}
+		if (size > ATTACH_MAX)
+			throw new UsageError(`--attach ${p} is ${sizeText(size)}; one attachment is at most ${sizeText(ATTACH_MAX)}`);
+		return { full, name: basename(full) };
+	});
+	const ids: string[] = [];
+	for (const f of files) ids.push((await api.attachmentUpload(readFileSync(f.full), f.name)).id);
+	return ids;
+}
+
+function sizeText(n: number): string {
+	return n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Attachments as lines under what carries them: name, size and where it's served. */
+function attachmentLines(
+	api: Pick<Api, "attachmentUrl"> | undefined,
+	files: readonly Attachment[] | undefined,
+	indent: string,
+): string[] {
+	return (files ?? []).map(
+		(a) => `${indent}attached ${a.id}: ${q(a.name)}, ${sizeText(a.size)}${api ? `, ${api.attachmentUrl(a.id)}` : ""}`,
+	);
+}
+
 /** An issue's page, as text. */
-export function issuePage(p: IssuePage): string[] {
+export function issuePage(p: IssuePage, api?: Pick<Api, "attachmentUrl">): string[] {
 	const i = p.issue;
 	const facts = [
 		i.parent !== null ? `Under issue ${i.parent}.` : "",
@@ -128,14 +170,16 @@ export function issuePage(p: IssuePage): string[] {
 		facts.join(" "),
 		...(i.lines ? [`From ${i.lines.file} lines ${i.lines.from}-${i.lines.to} at version ${i.lines.version}.`] : []),
 		...(i.description !== "" ? ["", ...i.description.split("\n").map((l) => `  ${l}`)] : []),
+		...attachmentLines(api, i.attachments, "  "),
 		...(p.asks.length > 0 ? ["", "Asks:", ...p.asks.map(askLine)] : []),
 		...(p.comments.length > 0
 			? [
 					"",
 					"Comments:",
-					...p.comments.map(
-						(c) => `  ${c.by}${c.kind === "objection" ? " objects" : ""}, ${shortWhen(c.at)}: ${q(c.text)}`,
-					),
+					...p.comments.flatMap((c) => [
+						`  ${c.by}${c.kind === "objection" ? " objects" : ""}, ${shortWhen(c.at)}: ${q(c.text)}`,
+						...attachmentLines(api, c.attachments, "    "),
+					]),
 				]
 			: []),
 		...((p.edits ?? []).length > 0 ? ["", "Edits:", ...p.edits.map(editLine)] : []),
@@ -286,8 +330,13 @@ export async function runIssue(args: Parsed, env: Env): Promise<Output> {
 			throw new UsageError(
 				'avcs issue new "<title>" [--description "..."] [--parent <N>] [--lines <file>:<from>-<to>@<version>] [--agent <agent>] [--blocked-by <N,N>] [--notify <who,who>] [--label <l,l>]',
 			);
-		const r = await api.issueOpen({ ...openFields(args, rest.join(" ")), title: rest.join(" ") });
-		return { text: `Opened issue ${r.id}. avcs start "..." --issue ${r.id} starts on it.`, json: { id: r.id } };
+		const fields = { ...openFields(args, rest.join(" ")), title: rest.join(" ") };
+		const attachments = await uploadAttachments(api, env.cwd, str(args, "attach"));
+		const r = await api.issueOpen({ ...fields, ...(attachments.length > 0 ? { attachments } : {}) });
+		return {
+			text: `Opened issue ${r.id}${attachments.length > 0 ? ` with ${plural(attachments.length, "attachment")} (${attachments.join(", ")})` : ""}. avcs start "..." --issue ${r.id} starts on it.`,
+			json: { id: r.id, ...(attachments.length > 0 ? { attachments } : {}) },
+		};
 	}
 	if (first === undefined || rest.length > 0)
 		throw new UsageError(
@@ -340,11 +389,14 @@ export async function runIssue(args: Parsed, env: Env): Promise<Output> {
 		throw new UsageError(
 			"--quiet and --notify go with an edit (--title, --description, --parent, --agent, --blocked-by, --label or --unlabel)",
 		);
+	if (str(args, "attach") !== undefined && comment === undefined && object === undefined)
+		throw new UsageError("--attach goes with avcs issue new or --comment (or --object)");
 	if (comment !== undefined || object !== undefined) {
-		const r = await api.issueComment(id, (comment ?? object)!, object !== undefined);
+		const attachments = await uploadAttachments(api, env.cwd, str(args, "attach"));
+		const r = await api.issueComment(id, (comment ?? object)!, object !== undefined, attachments);
 		return {
-			text: `${object !== undefined ? "Objected" : "Commented"} on issue ${id}. Its agents hear it.`,
-			json: { id: r.id, issue: id },
+			text: `${object !== undefined ? "Objected" : "Commented"} on issue ${id}${attachments.length > 0 ? ` with ${plural(attachments.length, "attachment")} (${attachments.join(", ")})` : ""}. Its agents hear it.`,
+			json: { id: r.id, issue: id, ...(attachments.length > 0 ? { attachments } : {}) },
 		};
 	}
 	if (bool(args, "drop")) {
@@ -373,7 +425,7 @@ export async function runIssue(args: Parsed, env: Env): Promise<Output> {
 		};
 	}
 	const page = await api.issue(id);
-	return { text: issuePage(page).join("\n"), json: { ...page } };
+	return { text: issuePage(page, api).join("\n"), json: { ...page } };
 }
 
 export async function runAsk(args: Parsed, env: Env): Promise<Output> {
