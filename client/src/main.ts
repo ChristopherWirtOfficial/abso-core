@@ -89,7 +89,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { server: "string", project: "string", agent: "string", "as-is": "boolean" },
 		usage: "abso init [folder] --server <url> --project <name> --agent <name> [--as-is]",
 		about:
-			"Create a project on the server from a folder's text files. The folder becomes that agent's folder. It writes a starting .avcsignore, and, when the folder has no avcs.json and package.json gives a check or a build to guess, an avcs.json (setup, check, build and out): what the server's CI runs on each new version of shared. Without one, CI runs what it can guess itself, or nothing. --as-is writes neither: the folder goes up exactly as it is (an import).",
+			"Create a project on the server from a folder's text files. The folder becomes that agent's folder. It writes a starting .absoignore, and, when the folder has no avcs.json and package.json gives a check or a build to guess, an avcs.json (setup, check, build and out): what the server's CI runs on each new version of shared. Without one, CI runs what it can guess itself, or nothing. --as-is writes neither: the folder goes up exactly as it is (an import).",
 		run: runInit,
 	},
 	key: {
@@ -562,7 +562,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { version: "string", keep: "string" },
 		usage: "abso export <dir> [--version <N>] [--keep <glob>]",
 		about:
-			"Write one published version of this folder's space (the newest unless --version) into a folder of its own, for a build that doesn't move. The folder must be empty, an earlier export (which it replaces, keeping node_modules and what --keep names), or one .avcsignore leaves out; .avcs-export.json there names the version.",
+			"Write one published version of this folder's space (the newest unless --version) into a folder of its own, for a build that doesn't move. The folder must be empty, an earlier export (which it replaces, keeping node_modules and what --keep names), or one .absoignore leaves out; .avcs-export.json there names the version.",
 		run: runExport,
 	},
 	files: {
@@ -686,7 +686,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: {},
 		usage: "abso check-ignore <path...>",
 		about:
-			"Whether abso leaves each path out, and which line of which ignore file decided (git's rules, for .gitignore and .avcsignore).",
+			"Whether abso leaves each path out, and which line of which ignore file decided (git's rules, for .gitignore and .absoignore).",
 		run: runCheckIgnore,
 	},
 	pipeline: {
@@ -725,7 +725,7 @@ function help(): string {
 		"  abso --version",
 		"      This client's version and commit, and the abso mods installed on this machine.",
 		"",
-		"Every command takes --json. Settings live in .abso/config.json (.avcs/config.json in a folder from before the rename). The token comes from AVCS_TOKEN, or else ~/.abso/token (or ~/.avcs/token from before).",
+		"Every command takes --json. Settings live in .abso/config.json (.avcs/config.json in a folder from before the rename). The token comes from ABSO_TOKEN, or else ~/.abso/token (or ~/.avcs/token from before).",
 	].join("\n");
 }
 

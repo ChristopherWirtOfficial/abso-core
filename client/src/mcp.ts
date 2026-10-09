@@ -2,7 +2,7 @@
 // command, run by the same code as the command line and answering with the
 // same text, so the CLI and the tools can't drift apart and an agent learns
 // one set of words. The folder and the token come from where the server runs,
-// as for the CLI: .avcs/config.json, and AVCS_TOKEN or ~/.avcs/token.
+// as for the CLI: .avcs/config.json, and ABSO_TOKEN or ~/.abso/token.
 //
 //   claude mcp add avcs -- node <repo>/client/avcs.ts mcp
 //

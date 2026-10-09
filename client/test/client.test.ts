@@ -206,7 +206,7 @@ describe("init and join", () => {
 		);
 		writeFileSync(join(folders.alice!, "pic.bin"), new Uint8Array([1, 0, 2]));
 		assert.deepEqual(Object.keys(shared(name)).sort(), [
-			".avcsignore",
+			".absoignore",
 			".gitignore",
 			"empty.ts",
 			"keep.log",
@@ -215,7 +215,7 @@ describe("init and join", () => {
 			"src/a.ts",
 		]);
 		assert.equal(shared(name)["empty.ts"], "", "an empty file is a file");
-		assert.match(shared(name)[".avcsignore"]!, /^\.claude\/$/m, "init writes a starting .avcsignore");
+		assert.match(shared(name)[".absoignore"]!, /^\.claude\/$/m, "init writes a starting .absoignore");
 		assert.equal((await avcs(folders.alice!, "record")).json.sent, 1, "a binary file added later goes up as a blob");
 		assert.ok(
 			calls(name, "alice").some(
@@ -1566,7 +1566,7 @@ describe("the token goes only to abso servers (Security, #30)", () => {
 		assert.equal(r.exit, 1);
 		assert.match(
 			r.stderr,
-			/this folder's server is https:\/\/evil\.example, and abso sends your token only to .*If https:\/\/evil\.example is yours, name it in ~\/\.abso\/servers\.json or AVCS_TRUSTED_SERVERS/,
+			/this folder's server is https:\/\/evil\.example, and abso sends your token only to .*If https:\/\/evil\.example is yours, name it in ~\/\.abso\/servers\.json or ABSO_TRUSTED_SERVERS/,
 		);
 		const join2 = await main(["join", "x", "--agent", "bob", "--server", "https://evil.example"], {
 			cwd: temp(),
@@ -1832,7 +1832,7 @@ describe("abso fetch and run --fetch (#37, Builder 4)", () => {
 	it("brings back what abso ignores, and names what it would not write", async () => {
 		const { folders } = await project({ "make.js": `${MAKE}\n`, "notes.txt": "mine\n" }, "alice");
 		const alice = folders.alice!;
-		writeFileSync(join(alice, ".avcsignore"), `${read(alice, ".avcsignore")}out/\n`);
+		writeFileSync(join(alice, ".absoignore"), `${read(alice, ".absoignore")}out/\n`);
 		let err = "";
 		const r = await main(["run", "--fetch", "out/*,notes.txt", "node", "make.js"], {
 			cwd: alice,
@@ -1844,7 +1844,7 @@ describe("abso fetch and run --fetch (#37, Builder 4)", () => {
 		assert.match(err, /Fetched 2 files from the box: out\/run\.log, out\/shot\.png\.\n/);
 		assert.match(
 			err,
-			/Not fetched \(1\):\n {2}notes\.txt: abso records it, so writing it would make an edit; add it to \.avcsignore to fetch it\n/,
+			/Not fetched \(1\):\n {2}notes\.txt: abso records it, so writing it would make an edit; add it to \.absoignore to fetch it\n/,
 		);
 		assert.deepEqual([...readFileSync(join(alice, "out", "shot.png"))], [137, 80, 78, 71, 0, 1, 2]);
 		assert.equal(read(alice, "notes.txt"), "mine\n", "a recorded file is left alone");
@@ -1867,7 +1867,7 @@ describe("abso fetch and run --fetch (#37, Builder 4)", () => {
 	it("screens the box's paths as a sync's: nothing outside the folder, in .git, or a link", async () => {
 		const { folders } = await project({ "make.js": `${MAKE}\n` }, "alice");
 		const alice = folders.alice!;
-		writeFileSync(join(alice, ".avcsignore"), `${read(alice, ".avcsignore")}out/\n`);
+		writeFileSync(join(alice, ".absoignore"), `${read(alice, ".absoignore")}out/\n`);
 		await main(["run", "node", "make.js"], { cwd: alice, env: ENV, write: () => {}, writeErr: () => {} });
 		fake.boxExtra = [
 			{ path: "../evil.txt", data: new TextEncoder().encode("x") },
@@ -1925,15 +1925,15 @@ describe("abso export and status --short (#37, Playtester 1)", () => {
 		const one = await avcs(tester, "export", out, "--version", "1");
 		assert.equal(one.exit, 0, one.out);
 		assert.equal(one.json.version, 1);
-		assert.deepEqual(listAll(out), [".avcs-export.json", ".avcsignore", "index.html", "src/game.ts", "src/new.ts"]);
+		assert.deepEqual(listAll(out), [".abso-export.json", ".absoignore", "index.html", "src/game.ts", "src/new.ts"]);
 		assert.equal(read(out, "src/game.ts"), "game v1\n");
 		assert.equal(read(out, "index.html"), "<p>v0</p>\n", "published files, not the unpublished edit");
-		assert.equal(JSON.parse(read(out, ".avcs-export.json")).version, 1);
+		assert.equal(JSON.parse(read(out, ".abso-export.json")).version, 1);
 		// The newest by default; an earlier export's folder is replaced whole.
 		const newest = await main(["export", out], { cwd: tester, env: ENV, write: () => {} });
 		assert.match(
 			newest.stdout,
-			/^Exported version 2 of shared to .*build: 4 files\. \.avcs-export\.json there names the version/,
+			/^Exported version 2 of shared to .*build: 4 files\. \.abso-export\.json there names the version/,
 		);
 		assert.equal(read(out, "src/game.ts"), "game v2\n");
 		// Exporting again keeps the build's node_modules (abso never exports it) and what --keep names, and nothing else.
@@ -1968,7 +1968,7 @@ describe("abso export and status --short (#37, Playtester 1)", () => {
 		assert.equal(inside.exit, 1);
 		assert.match(inside.out, /abso would record the export/);
 		assert.match((await avcs(folders.alice!, "export", ".")).out, /holds this abso folder/);
-		write(folders.alice!, { ".avcsignore": `${read(folders.alice!, ".avcsignore")}build/\n` });
+		write(folders.alice!, { ".absoignore": `${read(folders.alice!, ".absoignore")}build/\n` });
 		assert.equal((await avcs(folders.alice!, "export", "build")).exit, 0);
 		assert.equal(read(folders.alice!, "build/src/game.ts"), "game v0\n");
 	});
@@ -2021,7 +2021,7 @@ describe("a folder missing files its view has (#37, Artist 1)", () => {
 			listed.stdout,
 			[
 				"Your view holds 5 files: shared at version 0, with your unpublished changes. 2 of them are missing from this folder (abso sync --full writes them).",
-				".avcsignore",
+				".absoignore",
 				"src/main.ts",
 				"src/state.ts  (missing from this folder)",
 				"tools/play.mjs",
@@ -2054,7 +2054,7 @@ describe("a folder missing files its view has (#37, Artist 1)", () => {
 		const { folders } = await project(FILES, "alice", "bob");
 		write(folders.alice!, { "src/new.ts": "new\n" });
 		assert.equal((await avcs(folders.alice!, "publish", "-m", "new")).exit, 0);
-		assert.equal((await avcs(folders.bob!, "files", "--version", "0")).json.files.length, 5, "4 files and .avcsignore");
+		assert.equal((await avcs(folders.bob!, "files", "--version", "0")).json.files.length, 5, "4 files and .absoignore");
 		const now = await main(["files", "--draft", "shared"], { cwd: folders.bob!, env: ENV, write: () => {} });
 		assert.match(now.stdout, /^shared at version 1 holds 6 files\.\n/);
 		assert.match(now.stdout, /\nsrc\/new\.ts\n/);
@@ -2860,7 +2860,7 @@ describe("the project file, avcs.json (#39)", () => {
 		});
 		assert.equal(imported.exit, 0, imported.stdout + imported.stderr);
 		assert.equal(existsSync(join(asIs, "avcs.json")), false);
-		assert.equal(existsSync(join(asIs, ".avcsignore")), false);
+		assert.equal(existsSync(join(asIs, ".absoignore")), false);
 		assert.doesNotMatch(imported.stdout, /Wrote|No avcs\.json written/);
 	});
 
@@ -4239,7 +4239,7 @@ describe("renames that change only case", { skip: !caseInsensitiveDisk() && "thi
 		const { name, folders } = await project({ "a.ts": "one\n", "b.ts": "b\n" }, "alice", "bob");
 		renameSync(join(folders.alice!, "a.ts"), join(folders.alice!, "A.ts"));
 		assert.equal((await avcs(folders.alice!, "publish", "-m", "rename a.ts to A.ts")).exit, 0);
-		assert.deepEqual(Object.keys(shared(name)).sort(), [".avcsignore", "A.ts", "b.ts"]);
+		assert.deepEqual(Object.keys(shared(name)).sort(), [".absoignore", "A.ts", "b.ts"]);
 		assert.equal(
 			(await avcs(folders.alice!, "status")).json.unrecorded?.length ?? 0,
 			0,
@@ -4277,7 +4277,7 @@ describe("one file whatever its spelling, and abso mv (#49)", () => {
 			"nothing left to record: the moves are in the draft",
 		);
 		assert.equal((await avcs(folders.alice!, "publish", "-m", "renames")).exit, 0);
-		assert.deepEqual(Object.keys(shared(name)).sort(), [".avcsignore", "README.md", "lib/a.ts"]);
+		assert.deepEqual(Object.keys(shared(name)).sort(), [".absoignore", "README.md", "lib/a.ts"]);
 		// The lines kept their history: blame still names the init version.
 		assert.match((await run(folders.alice!, "blame", "README.md")).stdout, /\binit\b/);
 		assert.equal((await avcs(folders.bob!, "sync")).exit, 0);

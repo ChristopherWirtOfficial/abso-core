@@ -18,6 +18,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { Api, type News, newsLines } from "./api.ts";
 import { findRoot, isReader, readConfig } from "./config.ts";
 import { editBody, newsContext, normalize, spellingText, uncomposedText } from "./core.ts";
+import { fromEnv } from "./env-names.ts";
 import { forgetKnown, isPaused, loadIgnore, logNews, readKnown, readText, relativeTo, writeKnown } from "./folder.ts";
 import { tryFolderLock } from "./lock.ts";
 import { readKnownModes } from "./modes.ts";
@@ -59,7 +60,7 @@ export async function runHook(
 	}
 	// With the abso mod installed, every Claude Code session on this machine sends
 	// its edits in-process, so this hook stands down rather than send them twice.
-	if (env.AVCS_HOOK_FORCE !== "1" && existsSync(join(modDir(env), ".claude-plugin", "plugin.json"))) {
+	if (fromEnv(env, "HOOK_FORCE") !== "1" && existsSync(join(modDir(env), ".claude-plugin", "plugin.json"))) {
 		return { stdout: "", outcome: "skipped: the abso mod sends edits" };
 	}
 	const tool = input.tool_name ?? "";
@@ -87,7 +88,7 @@ export async function runHook(
 			outcome = "skipped: a link (a file standing in for one); abso record sends links";
 		} else {
 			const config = readConfig(root, env);
-			const timeout = Number(env.AVCS_HOOK_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS;
+			const timeout = Number(fromEnv(env, "HOOK_TIMEOUT_MS")) || DEFAULT_TIMEOUT_MS;
 			const api = new Api(config, timeout);
 			const who = {
 				...(input.session_id ? { session: input.session_id } : {}),

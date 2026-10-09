@@ -1,6 +1,6 @@
 // abso export <dir> [--version N]: one published version of this folder's
 // space, written to a folder of its own, for a build that doesn't move while
-// shared does (#37, Playtester 1). The folder gets .avcs-export.json naming
+// shared does (#37, Playtester 1). The folder gets .abso-export.json (.avcs-export.json before the rename) naming
 // the version, to stamp the build with. Exporting again replaces the folder,
 // keeping node_modules (and what --keep names) so a build needs no new install.
 //
@@ -19,7 +19,9 @@ import { loadIgnore, relativeTo } from "./folder.ts";
 import { type Refused, unsafePath } from "./safety.ts";
 
 /** The file an export leaves in its folder: what it holds, and the sign that the folder is one export may replace. */
-export const EXPORT_STAMP = ".avcs-export.json";
+export const EXPORT_STAMP = ".abso-export.json";
+/** The name before the rename: an export made then still counts as one. */
+const OLD_EXPORT_STAMP = ".avcs-export.json";
 
 /** Where an export may go: outside the abso folder, or in a part of it abso leaves out. Empty, or an earlier export. */
 function checkTarget(root: string, target: string): void {
@@ -29,12 +31,16 @@ function checkTarget(root: string, target: string): void {
 	}
 	if (inside !== undefined && !ignoredHere(loadIgnore(root), inside, true)) {
 		throw new UsageError(
-			`${inside} is inside this abso folder, so abso would record the export as your edits. Export outside the folder, or into a folder .avcsignore leaves out`,
+			`${inside} is inside this abso folder, so abso would record the export as your edits. Export outside the folder, or into a folder .absoignore leaves out`,
 		);
 	}
 	if (!existsSync(target)) return;
 	if (!statSync(target).isDirectory()) throw new UsageError(`${target} is a file; export to a folder`);
-	if (readdirSync(target).length > 0 && !existsSync(join(target, EXPORT_STAMP))) {
+	if (
+		readdirSync(target).length > 0 &&
+		!existsSync(join(target, EXPORT_STAMP)) &&
+		!existsSync(join(target, OLD_EXPORT_STAMP))
+	) {
 		throw new UsageError(
 			`${target} has files in it; export to an empty folder (an export replaces only a folder an earlier export made)`,
 		);

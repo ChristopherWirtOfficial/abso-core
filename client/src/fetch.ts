@@ -50,7 +50,7 @@ export async function fetchFromBox(root: string, api: Api, globs: readonly strin
 				(throughLink(root, e.path) ? "a folder on its way is a link" : undefined) ??
 				(e.link !== undefined ? "it is a link; fetch makes none" : undefined) ??
 				(!ignoredHere(ignore, e.path)
-					? "abso records it, so writing it would make an edit; add it to .avcsignore to fetch it"
+					? "abso records it, so writing it would make an edit; add it to .absoignore to fetch it"
 					: undefined);
 			if (why !== undefined) {
 				skipped.push({ path: e.path, why });

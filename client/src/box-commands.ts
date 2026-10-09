@@ -10,6 +10,7 @@ import { globTest, snapshotAt, snapshotEntries } from "./at.ts";
 import { type Env, EXIT, type Output, open, plural } from "./command-env.ts";
 import { LISTED, recordFolder } from "./commands.ts";
 import { findRoot } from "./config.ts";
+import { fromEnv, withOldNames } from "./env-names.ts";
 import { fetchedText, fetchFromBox } from "./fetch.ts";
 import { absolute, isLocalOnly, loadIgnore, readText, walk, writeFileAtomic } from "./folder.ts";
 import { onDisk, PLAIN, readKnownModes } from "./modes.ts";
@@ -380,10 +381,10 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 	if (at !== undefined) {
 		// A past version in the box; the folder's files stay as they are (Backtracker's bisect).
 		const snap = await snapshotAt(root, api, at);
-		const space = stamp.AVCS_SPACE === "shared" ? "shared" : `draft ${stamp.AVCS_SPACE}`;
+		const space = stamp.ABSO_SPACE === "shared" ? "shared" : `draft ${stamp.ABSO_SPACE}`;
 		if (filesGlob === undefined) {
 			entries = await snapshotEntries(api, snap);
-			stamp = { ...stamp, AVCS_VERSION: String(at), AVCS_DRAFT: "0", AVCS_DRAFT_HASH: "", AVCS_AT: String(at) };
+			stamp = { ...stamp, ABSO_VERSION: String(at), ABSO_DRAFT: "0", ABSO_DRAFT_HASH: "", ABSO_AT: String(at) };
 			notice(
 				`abso: running version ${at} of ${space} in the box (${plural(entries.length, "file")}); your folder is untouched.\n`,
 			);
@@ -392,7 +393,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 			const old = await snapshotEntries(api, snap, pick);
 			const gone = entries.filter((e) => pick(e.path) && !old.some((o) => o.path === e.path)).map((e) => e.path);
 			entries = [...entries.filter((e) => !pick(e.path)), ...old].sort((a, b) => a.path.localeCompare(b.path));
-			stamp = { ...stamp, AVCS_AT: `${at} files ${filesGlob}` };
+			stamp = { ...stamp, ABSO_AT: `${at} files ${filesGlob}` };
 			const said =
 				old.length === 0 && gone.length === 0
 					? `no file matches ${filesGlob} in your folder or at version ${at}`
@@ -444,15 +445,15 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 			json: { ...p },
 		};
 	}
-	// A broken stream reconnects to the run quietly; .avcs/run.log says when and why.
+	// A broken stream reconnects to the run quietly; .abso/run.log says when and why.
 	// (Tests shorten the waits with these.)
 	const delays = (name: string) =>
-		env.env[name]
+		fromEnv(env.env, name)
 			?.split(",")
 			.map(Number)
 			.filter((n) => Number.isFinite(n) && n >= 0);
-	const reconnect = delays("AVCS_RUN_RECONNECT_MS");
-	const retry = delays("AVCS_RUN_RETRY_MS");
+	const reconnect = delays("RUN_RECONNECT_MS");
+	const retry = delays("RUN_RETRY_MS");
 	const runner =
 		reconnect?.length || retry?.length
 			? new Api(api.config, api.timeoutMs, reconnect?.length ? reconnect : undefined, retry?.length ? retry : undefined)
@@ -512,8 +513,8 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 /** abso fetch <glob...>: files the box made, written into the folder where abso ignores them. */
 /**
  * Which of the agent's boxes run, logs and fetch use (#37): --box <name>, else
- * AVCS_BOX, else the agent's own. A lead can give each subagent its own box
- * (AVCS_BOX=2 in its environment), so their runs don't wait on each other.
+ * ABSO_BOX (or the older AVCS_BOX), else the agent's own. A lead can give each subagent its own box
+ * (ABSO_BOX=2 in its environment), so their runs don't wait on each other.
  */
 /**
  * What this folder last heard about a box's prep: a run's X-Avcs-Prep, or
@@ -549,7 +550,7 @@ function rememberPrep(root: string, box: string | undefined, state: string | nul
 }
 
 export function boxOf(args: Parsed, env: Env): string | undefined {
-	const box = str(args, "box") ?? (env.env.AVCS_BOX || undefined);
+	const box = str(args, "box") ?? fromEnv(env.env, "BOX");
 	if (box !== undefined && !/^[A-Za-z0-9_-]{1,24}$/.test(box))
 		throw new UsageError(`a box name is 1-24 letters, digits, - or _ (got ${JSON.stringify(box)})`);
 	return box;
@@ -581,17 +582,17 @@ export async function runLogs(args: Parsed, env: Env): Promise<Output> {
 
 /** What `abso run` tells the command about the code it runs, as environment variables. */
 export interface RunStamp {
-	readonly AVCS_AGENT: string;
+	readonly ABSO_AGENT: string;
 	/** shared, or the named draft. */
-	readonly AVCS_SPACE: string;
+	readonly ABSO_SPACE: string;
 	/** The version of that space the draft builds on. */
-	readonly AVCS_VERSION: string;
+	readonly ABSO_VERSION: string;
 	/** How many unpublished changes the draft holds (0: the run is exactly that version). */
-	readonly AVCS_DRAFT: string;
+	readonly ABSO_DRAFT: string;
 	/** A short hash of the draft's files as they are, "" when the draft is empty. */
-	readonly AVCS_DRAFT_HASH: string;
+	readonly ABSO_DRAFT_HASH: string;
 	/** With abso run --at: the version run ("12"), or the files taken from it ("12 files src/*.ts"). */
-	readonly AVCS_AT?: string;
+	readonly ABSO_AT?: string;
 }
 
 async function runStamp(root: string, agent: string, api: Api): Promise<RunStamp> {
@@ -605,18 +606,19 @@ async function runStamp(root: string, agent: string, api: Api): Promise<RunStamp
 		hash = h.digest("hex").slice(0, 12);
 	}
 	return {
-		AVCS_AGENT: agent,
-		AVCS_SPACE: me?.draft ?? "shared",
-		AVCS_VERSION: String(me?.base ?? status.version),
-		AVCS_DRAFT: String(me?.draftChanges ?? 0),
-		AVCS_DRAFT_HASH: hash,
+		ABSO_AGENT: agent,
+		ABSO_SPACE: me?.draft ?? "shared",
+		ABSO_VERSION: String(me?.base ?? status.version),
+		ABSO_DRAFT: String(me?.draftChanges ?? 0),
+		ABSO_DRAFT_HASH: hash,
 	};
 }
 
 /** `export A='x' B='y'; `: on every part of a compound command, unlike a bare assignment prefix. */
 function stampPrefix(stamp: RunStamp): string {
 	const quote = (v: string) => `'${v.replace(/'/g, `'''`)}'`;
-	return `export ${Object.entries(stamp)
+	return `export ${Object.entries(withOldNames({ ...stamp }))
+		.filter((e): e is [string, string] => e[1] !== undefined)
 		.map(([k, v]) => `${k}=${quote(v)}`)
 		.join(" ")}; `;
 }

@@ -17,6 +17,7 @@ import { closeSync, linkSync, openSync, readFileSync, renameSync, rmSync, statSy
 import { basename, join } from "node:path";
 import { UsageError } from "./args.ts";
 import { LOCK_FILE, LOCK_STALE_MS, type LockInfo } from "./core.ts";
+import { fromEnv } from "./env-names.ts";
 import { writeFileAtomic } from "./folder.ts";
 import { stateDir } from "./state-dir.ts";
 
@@ -142,8 +143,8 @@ export async function withFolderLock<T>(root: string, what: string, fn: () => Pr
 	const mine = held.get(root);
 	if (mine) mine.depth++;
 	else {
-		// AVCS_LOCK_WAIT_MS shortens the wait in tests.
-		const until = Date.now() + (Number(process.env.AVCS_LOCK_WAIT_MS) || WAIT_MS);
+		// ABSO_LOCK_WAIT_MS shortens the wait in tests.
+		const until = Date.now() + (Number(fromEnv(process.env, "LOCK_WAIT_MS")) || WAIT_MS);
 		for (;;) {
 			const got = take(root, what);
 			if (got === "no folder") return fn(); // no .avcs/ yet (init): nothing to protect

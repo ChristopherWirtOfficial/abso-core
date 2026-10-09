@@ -36,15 +36,15 @@ export async function runServe(args: Parsed, env: Env): Promise<Output> {
 }
 
 /**
- * The script abso shot runs in the box (from /w/.avcs-shot, so 'playwright' is
- * the project's own). It reads its setup from AVCS_SHOT and prints marked
- * lines the client picks out: AVCS_SHOT_IMAGE {json}, blocks between
- * AVCS_SHOT_BEGIN <name> and AVCS_SHOT_END, and "eval: ", "page error: ",
+ * The script abso shot runs in the box (from /w/.abso-shot, so 'playwright' is
+ * the project's own). It reads its setup from ABSO_SHOT and prints marked
+ * lines the client picks out: ABSO_SHOT_IMAGE {json}, blocks between
+ * ABSO_SHOT_BEGIN <name> and ABSO_SHOT_END, and "eval: ", "page error: ",
  * "console " lines. No backticks or dollar-braces in here: it's a raw string.
  */
 const SHOOTER = String.raw`import { chromium } from 'playwright';
 import { writeFileSync } from 'node:fs';
-const c = JSON.parse(process.env.AVCS_SHOT);
+const c = JSON.parse(process.env.ABSO_SHOT);
 const b = await chromium.launch();
 const p = await b.newPage({ viewport: { width: c.w, height: c.h } });
 const logged = [];
@@ -97,9 +97,9 @@ const inPage = (o) => {
   return out;
 };
 const block = (name, text, max) => {
-  console.log('AVCS_SHOT_BEGIN ' + name);
+  console.log('ABSO_SHOT_BEGIN ' + name);
   console.log(text.length > max ? text.slice(0, max) + '\n... (' + (text.length - max) + ' more characters; --max-chars raises the cap)' : text);
-  console.log('AVCS_SHOT_END');
+  console.log('ABSO_SHOT_END');
 };
 const at = async (spec) => {
   if (spec.ref === undefined) return [spec.x, spec.y];
@@ -148,7 +148,7 @@ if (c.image) {
     h = sh;
   }
   writeFileSync(c.out, png);
-  console.log('AVCS_SHOT_IMAGE ' + JSON.stringify({ w, h, bytes: png.length }));
+  console.log('ABSO_SHOT_IMAGE ' + JSON.stringify({ w, h, bytes: png.length }));
 }
 for (const l of logged) console.log('console ' + l);
 if (dropped > 0) console.log('console (' + dropped + ' more messages not shown)');
@@ -260,7 +260,7 @@ export async function runShot(args: Parsed, env: Env): Promise<Output> {
 		eval: evalJs ?? null,
 		clicks,
 		mouse,
-		out: `.avcs-shot/${name}`,
+		out: `.abso-shot/${name}`,
 		image,
 		scale,
 		region,
@@ -281,9 +281,9 @@ export async function runShot(args: Parsed, env: Env): Promise<Output> {
 		"(npx --no-install vite --host 127.0.0.1 --port 4173 --strictPort >/tmp/shot-vite.log 2>&1 &)",
 		"for i in $(seq 120); do curl -sf -o /dev/null http://127.0.0.1:4173/ && break; sleep 0.5; done",
 		'curl -sf -o /dev/null http://127.0.0.1:4173/ || { echo "the vite dev server did not start:"; tail -20 /tmp/shot-vite.log; exit 1; }',
-		"mkdir -p .avcs-shot",
-		`cat > .avcs-shot/shoot.mjs <<'AVCS_SHOT_EOF'\n${SHOOTER}\nAVCS_SHOT_EOF`,
-		`AVCS_SHOT=${shellWord(JSON.stringify(setup))} node .avcs-shot/shoot.mjs`,
+		"mkdir -p .abso-shot",
+		`cat > .abso-shot/shoot.mjs <<'ABSO_SHOT_EOF'\n${SHOOTER}\nABSO_SHOT_EOF`,
+		`ABSO_SHOT=${shellWord(JSON.stringify(setup))} node .abso-shot/shoot.mjs`,
 	].join("\n");
 	const said: string[] = [];
 	const keep = (t: string) => void said.push(t);
@@ -308,10 +308,10 @@ export async function runShot(args: Parsed, env: Env): Promise<Output> {
 	}
 	const blocks: { name: string; text: string }[] = [];
 	for (let i = 0; i < lines.length; i++) {
-		if (!lines[i]!.startsWith("AVCS_SHOT_BEGIN ")) continue;
-		const end = lines.indexOf("AVCS_SHOT_END", i + 1);
+		if (!lines[i]!.startsWith("ABSO_SHOT_BEGIN ")) continue;
+		const end = lines.indexOf("ABSO_SHOT_END", i + 1);
 		blocks.push({
-			name: lines[i]!.slice("AVCS_SHOT_BEGIN ".length),
+			name: lines[i]!.slice("ABSO_SHOT_BEGIN ".length),
 			text: lines.slice(i + 1, end < 0 ? undefined : end).join("\n"),
 		});
 		if (end > i) i = end;
@@ -327,15 +327,15 @@ export async function runShot(args: Parsed, env: Env): Promise<Output> {
 	const out: string[] = [];
 	let shot: { path: string; w: number; h: number; bytes: number; tokens: number } | null = null;
 	if (image) {
-		const info = lines.find((l) => l.startsWith("AVCS_SHOT_IMAGE "));
+		const info = lines.find((l) => l.startsWith("ABSO_SHOT_IMAGE "));
 		const { root, api } = open(env);
 		void root;
 		api.box = boxOf(args, env);
-		const gz = await api.boxFiles(`.avcs-shot/${name}`);
-		const png = gz === null ? undefined : untarGz(gz).find((e) => e.path === `.avcs-shot/${name}`);
+		const gz = await api.boxFiles(`.abso-shot/${name}`);
+		const png = gz === null ? undefined : untarGz(gz).find((e) => e.path === `.abso-shot/${name}`);
 		if (!png || !info)
 			return { exit: EXIT.error, text: "The screenshot ran but its file was not in the box.", json: { notes } };
-		const { w, h } = JSON.parse(info.slice("AVCS_SHOT_IMAGE ".length)) as { w: number; h: number };
+		const { w, h } = JSON.parse(info.slice("ABSO_SHOT_IMAGE ".length)) as { w: number; h: number };
 		const path = resolve(env.cwd, str(args, "out") ?? join(".avcs", "shots", name));
 		mkdirSync(join(path, ".."), { recursive: true });
 		writeFileSync(path, png.data);

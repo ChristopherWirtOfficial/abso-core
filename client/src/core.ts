@@ -91,7 +91,7 @@ export function isLocalOnly(rel: string): boolean {
  * The servers abso sends the token to on its own (#30): abso's hosted server and its Issues Worker.
  * A folder's .avcs/config.json can name any server, and a planted or cloned
  * one would otherwise receive every edit with the token. Others are trusted by
- * this machine's ~/.abso/servers.json (machineServers) or AVCS_TRUSTED_SERVERS
+ * this machine's ~/.abso/servers.json (machineServers) or ABSO_TRUSTED_SERVERS
  * (comma-separated): a server you run yourself, or a test one.
  */
 export const TOKEN_SERVERS: readonly string[] = ["https://api.abso.dev", "https://issues.abso.dev"];
@@ -140,14 +140,14 @@ export function machineServers(text: string | undefined): MachineServers {
 	return { trusted, issues };
 }
 
-/** The servers trusted beyond TOKEN_SERVERS, as tokenGoesTo takes them: AVCS_TRUSTED_SERVERS, then this machine's. */
+/** The servers trusted beyond TOKEN_SERVERS, as tokenGoesTo takes them: ABSO_TRUSTED_SERVERS, then this machine's. */
 export function trustedList(fromEnv: string | undefined, machine: MachineServers): string {
 	return [...(fromEnv ?? "").split(","), ...machine.trusted].filter((t) => t.trim() !== "").join(",");
 }
 
 /**
  * The Issues Worker beside an avcs server (#54): this machine's servers.json
- * first, then abso's own. AVCS_ISSUES_SERVER overrides both (issues.ts).
+ * first, then abso's own. ABSO_ISSUES_SERVER overrides both (issues.ts).
  */
 export function issuesServerFor(server: string, machine?: MachineServers): string | undefined {
 	const o = serverOrigin(server);
@@ -197,11 +197,11 @@ export function looksBinary(text: string): boolean {
 
 // --- ignore rules ---
 //
-// git's rules (gitignore(5)), for .gitignore and .avcsignore alike:
+// git's rules (gitignore(5)), for .gitignore, .avcsignore and .absoignore alike:
 //
 // - Every folder may have both files. Their patterns are relative to their
 //   folder and apply only below it. A deeper file beats a shallower one, and
-//   in one folder .avcsignore beats .gitignore.
+//   in one folder .absoignore beats .avcsignore, which beats .gitignore.
 // - Below those come .git/info/exclude, then git's global excludes file
 //   (core.excludesFile, or ~/.config/git/ignore), both relative to the root.
 // - Within a file the last matching line wins, and `!` brings a path back.
@@ -214,7 +214,7 @@ export function looksBinary(text: string): boolean {
 // any number of folders.
 
 /** The per-folder ignore files, weakest first. */
-export const IGNORE_FILES: readonly string[] = [".gitignore", ".avcsignore"];
+export const IGNORE_FILES: readonly string[] = [".gitignore", ".avcsignore", ".absoignore"];
 
 export interface IgnoreRule {
 	/** Where the line came from: a folder-relative path such as `src/.gitignore`, or the global file's path. */

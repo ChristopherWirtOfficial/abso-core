@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { UsageError } from "./args.ts";
 import type { Config } from "./config.ts";
+import { fromEnv } from "./env-names.ts";
 import { homeFile } from "./state-dir.ts";
 
 function originOf(server: string): string {
@@ -16,7 +17,7 @@ function originOf(server: string): string {
 	}
 }
 
-/** The admin token goes only to a server named in AVCS_ADMIN_SERVERS (comma-separated): none is built in. */
+/** The admin token goes only to a server named in ABSO_ADMIN_SERVERS (comma-separated): none is built in. */
 export function adminGoesTo(server: string, extra = ""): boolean {
 	const allowed = [
 		...extra
@@ -29,13 +30,13 @@ export function adminGoesTo(server: string, extra = ""): boolean {
 }
 
 export function adminToken(env: Readonly<Record<string, string | undefined>> = process.env): string {
-	const fromEnv = env.AVCS_ADMIN_TOKEN?.trim();
-	if (fromEnv) return fromEnv;
+	const fromVar = fromEnv(env, "ADMIN_TOKEN")?.trim();
+	if (fromVar) return fromVar;
 	try {
 		const fromFile = readFileSync(homeFile(homedir(), "admin-token"), "utf8").trim();
 		if (fromFile) return fromFile;
 	} catch {}
-	throw new UsageError("abso key needs the admin token in AVCS_ADMIN_TOKEN or ~/.abso/admin-token");
+	throw new UsageError("abso key needs the admin token in ABSO_ADMIN_TOKEN or ~/.abso/admin-token");
 }
 
 function scrub(text: string, secrets: readonly string[]): string {
@@ -45,9 +46,9 @@ function scrub(text: string, secrets: readonly string[]): string {
 }
 
 async function call(config: Config, admin: string, method: "GET" | "POST", path: string): Promise<unknown> {
-	if (!adminGoesTo(config.server, process.env.AVCS_ADMIN_SERVERS))
+	if (!adminGoesTo(config.server, fromEnv(process.env, "ADMIN_SERVERS")))
 		throw new UsageError(
-			`abso key will not send the admin token to ${config.server}; AVCS_ADMIN_SERVERS names the servers it may go to`,
+			`abso key will not send the admin token to ${config.server}; ABSO_ADMIN_SERVERS names the servers it may go to`,
 		);
 	const secrets = [admin, config.token ?? ""].filter((s) => s.length > 0);
 	let response: Response;

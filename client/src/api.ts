@@ -141,7 +141,7 @@ export class Api {
 	/** Waits between tries when a run's stream breaks; tests shorten them. */
 	readonly reconnectDelaysMs: readonly number[];
 	readonly startRetryDelaysMs: readonly number[];
-	/** Another box of this agent for run, logs and fetch (--box or AVCS_BOX, #37); undefined is its own box. */
+	/** Another box of this agent for run, logs and fetch (--box or ABSO_BOX, #37); undefined is its own box. */
 	box: string | undefined;
 
 	constructor(
@@ -419,7 +419,7 @@ export class Api {
 	/** A call to the Issues Worker (#54), with the same token. */
 	#issues<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
 		if (this.issuesServer === undefined)
-			throw new ApiError(`${this.config.server} has no Issues Worker beside it; AVCS_ISSUES_SERVER names one`);
+			throw new ApiError(`${this.config.server} has no Issues Worker beside it; ABSO_ISSUES_SERVER names one`);
 		return this.json(method, path, body, this.issuesServer);
 	}
 
@@ -473,7 +473,7 @@ export class Api {
 	/** Uploads an image to the Issues Worker (abso issue 171): it checks the type by the bytes, strips metadata and answers its id. */
 	async attachmentUpload(bytes: Uint8Array, name: string): Promise<Attachment> {
 		if (this.issuesServer === undefined)
-			throw new ApiError(`${this.config.server} has no Issues Worker beside it; AVCS_ISSUES_SERVER names one`);
+			throw new ApiError(`${this.config.server} has no Issues Worker beside it; ABSO_ISSUES_SERVER names one`);
 		const path = this.agentPath("attachments");
 		let res: Response;
 		try {

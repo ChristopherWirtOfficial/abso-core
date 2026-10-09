@@ -21,6 +21,7 @@ import {
 	withLeftOut,
 } from "./commands.ts";
 import { type Config, isReader } from "./config.ts";
+import { fromEnv } from "./env-names.ts";
 import { ignoredHere } from "./fetch.ts";
 import { absolute, forgetKnown, isLocalOnly, type LeftOut, loadIgnore, readText, writeFileAtomic } from "./folder.ts";
 import { PROJECT_FILE, readProjectFile } from "./project-file.ts";
@@ -352,7 +353,7 @@ async function publishSteps(
 			answer.queued,
 			waitSeconds * 1000,
 			say,
-			Number(env.env.AVCS_QUEUE_POLL_MS) || 3000,
+			Number(fromEnv(env.env, "QUEUE_POLL_MS")) || 3000,
 		);
 		if (out.kind !== "waiting") heard(root, out.news);
 		if (out.kind === "landed")

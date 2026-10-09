@@ -305,6 +305,24 @@ describe("ignore rules", { skip: hasGit ? false : "git is not installed" }, () =
 		assert.equal(ignore.why("src/b.md", false).rule?.source, "src/.avcsignore");
 	});
 
+	it("read .absoignore, which beats .avcsignore and .gitignore in the same folder", () => {
+		const root = temp();
+		write(root, {
+			".gitignore": "*.txt\n",
+			".avcsignore": "*.md\n",
+			".absoignore": "!a.txt\n!a.md\n*.log\n",
+			"a.txt": "x",
+			"a.md": "x",
+			"b.md": "x",
+			"c.log": "x",
+		});
+		const ignore = loadIgnore(root, { home: temp() });
+		assert.equal(ignore("a.txt", false), false);
+		assert.equal(ignore("a.md", false), false);
+		assert.equal(ignore("c.log", false), true);
+		assert.equal(ignore.why("c.log", false).rule?.source, ".absoignore");
+	});
+
 	it("always skip .git, .abso, .claude and node_modules", () => {
 		const ignore = loadIgnore(temp(), {});
 		assert.equal(ignore.why(".claude/scheduled_tasks.lock", false).alwaysSkipped, ".claude");

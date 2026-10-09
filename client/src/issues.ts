@@ -1,6 +1,6 @@
 // Issues (#54): abso issues, abso issue, abso ask, abso waiting and avcs
 // answer. The Issues Worker keeps them (avcs-issues beside avcs, or
-// AVCS_ISSUES_SERVER), and takes the same token. Statuses come from the work: a start note naming
+// ABSO_ISSUES_SERVER), and takes the same token. Statuses come from the work: a start note naming
 // an issue (abso start --issue N) puts it In progress, an open ask Blocked or
 // In review, and publish --done closes it. Other agents' and people's words
 // are quoted as JSON, so none can print as another line (#30).
@@ -24,6 +24,7 @@ import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { type Env, type Output, open, plural } from "./commands.ts";
 import { type Config, readMachineServers, trustedServers } from "./config.ts";
 import { issuesServerFor, tokenGoesTo } from "./core.ts";
+import { fromEnv } from "./env-names.ts";
 import { seenText, shortWhen } from "./times.ts";
 
 const q = (s: string): string => JSON.stringify(s);
@@ -31,14 +32,14 @@ const q = (s: string): string => JSON.stringify(s);
 /** The folder, with its Api pointed at the Issues Worker: the token goes only where tokenGoesTo allows, as for the avcs server. */
 function openIssues(env: Env): { config: Config; api: Api } {
 	const { config, api } = open(env);
-	const server = env.env.AVCS_ISSUES_SERVER || issuesServerFor(config.server, readMachineServers(env.env));
+	const server = fromEnv(env.env, "ISSUES_SERVER") || issuesServerFor(config.server, readMachineServers(env.env));
 	if (server === undefined)
 		throw new UsageError(
-			`${config.server} has no Issues Worker beside it that abso knows; ~/.abso/servers.json or AVCS_ISSUES_SERVER names one`,
+			`${config.server} has no Issues Worker beside it that abso knows; ~/.abso/servers.json or ABSO_ISSUES_SERVER names one`,
 		);
 	if (config.token !== undefined && !tokenGoesTo(server, trustedServers(env.env))) {
 		throw new UsageError(
-			`the Issues Worker is ${server}, and abso sends your token only to its own servers and this machine. If ${server} is yours, name it in ~/.abso/servers.json or AVCS_TRUSTED_SERVERS.`,
+			`the Issues Worker is ${server}, and abso sends your token only to its own servers and this machine. If ${server} is yours, name it in ~/.abso/servers.json or ABSO_TRUSTED_SERVERS.`,
 		);
 	}
 	api.issuesServer = server;

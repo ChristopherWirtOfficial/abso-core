@@ -97,7 +97,7 @@ for (let i = start; i < line.length; i++) {
 	extract(sha, dir);
 	const message = `${git(["log", "-1", "--format=%B", sha]).trim()}\n\ngit ${sha.slice(0, 12)}, ${git(["log", "-1", "--format=%an, %aI", sha]).trim()}`;
 	const subject = message.split("\n")[0]!.slice(0, 72);
-	// The first commit makes the project; --as-is adds no starting .avcsignore or avcs.json git never had.
+	// The first commit makes the project; --as-is adds no starting .absoignore or avcs.json git never had.
 	const argv =
 		i === 0
 			? ["init", dir, "--server", values.server!, "--project", values.project!, "--agent", values.agent!, "--as-is"]

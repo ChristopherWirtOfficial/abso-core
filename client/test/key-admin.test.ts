@@ -60,7 +60,8 @@ test("the key is left out unless printing was asked for", () => {
 
 test("the admin token comes from the environment, not from a file argument", () => {
 	assert.equal(adminToken({ AVCS_ADMIN_TOKEN: ADMIN }), ADMIN);
-	assert.throws(() => adminToken({}), /AVCS_ADMIN_TOKEN/);
+	assert.equal(adminToken({ ABSO_ADMIN_TOKEN: ADMIN }), ADMIN);
+	assert.throws(() => adminToken({}), /ABSO_ADMIN_TOKEN/);
 });
 
 test("key new sends the admin token as a header and returns the key once", async () => {

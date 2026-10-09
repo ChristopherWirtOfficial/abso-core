@@ -8,6 +8,7 @@ import { join } from "node:path";
 import type { ChangeAnswer, NoteAnswer } from "./api.ts";
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { type Env, type Output, open, plural, recordFolder } from "./commands.ts";
+import { fromEnv } from "./env-names.ts";
 import { writeFileAtomic } from "./folder.ts";
 import { fileArg, when } from "./history.ts";
 import { stateDir } from "./state-dir.ts";
@@ -170,8 +171,8 @@ export async function runReview(args: Parsed, env: Env): Promise<Output> {
 	// A first look shows the newest 20. Otherwise every change since the mark (or the span) is listed, page by
 	// page, before the mark moves past them (AVCS - Git Lessons' review): one page would drop the older ones.
 	const firstLook = mark === undefined && raw === undefined;
-	// AVCS_REVIEW_PAGE shortens the page in tests.
-	const pageSize = Number(process.env.AVCS_REVIEW_PAGE) || 200;
+	// ABSO_REVIEW_PAGE shortens the page in tests.
+	const pageSize = Number(fromEnv(process.env, "REVIEW_PAGE")) || 200;
 	const answer = await api.changes(since, firstLook ? 20 : pageSize);
 	const all = [...answer.changes];
 	for (

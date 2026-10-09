@@ -6,11 +6,12 @@ import { Api, ApiError } from "./api.ts";
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { writeKnownBlobs } from "./blobs.ts";
 import { mintKey, readBox } from "./box.ts";
-import { STARTING_AVCSIGNORE } from "./check-ignore.ts";
+import { STARTING_ABSOIGNORE } from "./check-ignore.ts";
 import { CLIENT_DIR } from "./client-version.ts";
 import { type Env, type Output, plural } from "./command-env.ts";
 import { leftOutText, syncFolder, uploadBlobs } from "./commands.ts";
 import { findRoot, installKey, readConfig, type Settings, tokenFor, writeConfig } from "./config.ts";
+import { fromEnv } from "./env-names.ts";
 import { clearKnown, loadIgnore, readFolder, writeKnown } from "./folder.ts";
 import { modInstalled } from "./install.ts";
 import { type FullMode, foldModes, writeKnownModes } from "./modes.ts";
@@ -19,8 +20,8 @@ import { refusedText } from "./safety.ts";
 import { stateDir } from "./state-dir.ts";
 
 function serverFrom(args: Parsed, env: Env): string {
-	const server = str(args, "server") ?? env.env.AVCS_SERVER;
-	if (!server) throw new UsageError("give the server with --server <url> (or AVCS_SERVER)");
+	const server = str(args, "server") ?? fromEnv(env.env, "SERVER");
+	if (!server) throw new UsageError("give the server with --server <url> (or ABSO_SERVER)");
 	return server;
 }
 
@@ -45,9 +46,9 @@ export async function runInit(args: Parsed, env: Env): Promise<Output> {
 	if (!project) throw new UsageError("give the project a name with --project <name>");
 	const config = makeSettings(args, env, project);
 	const asIs = bool(args, "as-is");
-	const avcsignore = join(root, ".avcsignore");
-	const wroteIgnore = !asIs && !existsSync(avcsignore);
-	if (wroteIgnore) writeFileSync(avcsignore, STARTING_AVCSIGNORE);
+	const absoignore = join(root, ".absoignore");
+	const wroteIgnore = !asIs && !existsSync(absoignore) && !existsSync(join(root, ".avcsignore"));
+	if (wroteIgnore) writeFileSync(absoignore, STARTING_ABSOIGNORE);
 	// What the server runs on each new version (#39), guessed from package.json; recorded with the rest.
 	const wroteProject = asIs ? "exists" : writeStartingProjectFile(root);
 	const { files, blobs, modes, leftOut } = readFolder(root, loadIgnore(root));
@@ -72,7 +73,7 @@ export async function runInit(args: Parsed, env: Env): Promise<Output> {
 			`Created project ${project} at version ${answer.version} from ${plural(files.size, "text file")} in ${root}.`,
 			...leftOutText(leftOut),
 			...(wroteIgnore
-				? ["Wrote a starting .avcsignore (Claude Code state and operating system files); edit it like .gitignore."]
+				? ["Wrote a starting .absoignore (Claude Code state and operating system files); edit it like .gitignore."]
 				: []),
 			...startingProjectFileText(wroteProject),
 			...(answer.skipped && answer.skipped.length > 0 ? [`The server skipped: ${answer.skipped.join(", ")}.`] : []),
@@ -87,7 +88,7 @@ export async function runInit(args: Parsed, env: Env): Promise<Output> {
 			files: files.size,
 			root,
 			agent: config.agent,
-			wroteAvcsignore: wroteIgnore,
+			wroteAbsoignore: wroteIgnore,
 			wroteProjectFile: typeof wroteProject === "string" ? null : wroteProject,
 			leftOut,
 		},

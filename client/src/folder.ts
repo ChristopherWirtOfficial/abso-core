@@ -7,7 +7,7 @@
 // edit, and `sync` only overwrites files that still match it.
 //
 // Skipped everywhere: .git, .avcs, .claude and node_modules, plus what git's
-// ignore rules leave out: every .gitignore and .avcsignore in the folder,
+// ignore rules leave out: every .gitignore and .absoignore in the folder,
 // .git/info/exclude and git's global excludes file (core.ts has the rules).
 
 import { execFileSync } from "node:child_process";

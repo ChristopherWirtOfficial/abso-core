@@ -13,28 +13,32 @@ node client/abso.ts help
 
 ## Setting up a folder
 
-The token comes from the `AVCS_TOKEN` environment variable, or else from
-`~/.avcs/token`, outside every repo. It is never written into the folder.
+Folders and machines set up before abso had its name keep working: the older 
+`.avcs/` folder, `~/.avcs/` files, `AVCS_` environment names and `.avcsignore` are 
+read when the new ones are not there. New things are written under the new names.
+
+The token comes from the `ABSO_TOKEN` environment variable, or else from
+`~/.abso/token`, outside every repo. It is never written into the folder.
 It goes only to abso's server (`https://api.abso.dev`) and its Issues Worker
 (`https://issues.abso.dev`), to servers this
-machine names, and to this machine itself, since any `.avcs/config.json` can
+machine names, and to this machine itself, since any `.abso/config.json` can
 name a server and anyone can write one. A folder naming another server is
 refused before any call. To use a server you run, or a test one, name it in
-`~/.avcs/servers.json`, beside the token, with its Issues Worker if it has one:
+`~/.abso/servers.json`, beside the token, with its Issues Worker if it has one:
 
 ```json
 { "servers": { "https://abso.example.com": { "issues": "https://issues.example.com" } } }
 ```
 
-`AVCS_TRUSTED_SERVERS` (comma-separated) adds servers for one shell, and
-`AVCS_ISSUES_SERVER` names the Issues Worker. The mods follow the same rule.
+`ABSO_TRUSTED_SERVERS` (comma-separated) adds servers for one shell, and
+`ABSO_ISSUES_SERVER` names the Issues Worker. The mods follow the same rule.
 Off this machine only `https://` servers count. A server you trust gets your
 token: the same token goes to every server named, so name only servers you
 would hand it to.
 
 Every path a sync, switch, join or restore answer names is checked before
 the client touches the disk: nothing is written outside the folder, into
-`.git`, `.claude` or `.avcs` (in any case), onto a Windows device name, or
+`.git`, `.claude` or `.abso` (in any case), onto a Windows device name, or
 through a folder that is a link. A refused path is named in the output
 ("REFUSED ... paths from the server").
 
@@ -62,14 +66,14 @@ Here `abso` means `node <repo>/client/abso.ts`, or `node abso.mjs` for the one-f
 | `abso run --parallel "<command>" "<command>"...` | One upload, then the commands run at once in the box. Each line a command prints starts with its label (`[1]`, `[2]`, ...; the labels are listed first), stdout and stderr kept apart; at the end, each command's exit code, and `abso run` exits with the worst (highest) of them. |
 | `abso run --at <version> [--files <glob>] ...` | Runs a past version of the folder's space in the box instead of the folder (for bisecting), or, with `--files`, the folder with only the matching files as they were at that version (`*` within a folder, `**` across folders, comma-separated; a plain path takes a file or a whole folder). The folder is never touched, so nothing old gets recorded. The run sees `AVCS_AT`. |
 | `abso run --with <box path>=<local path>[,...] ...` | Adds files, or every file under a local folder, to this run only: they go to the box (text with LF line endings) and are never written to your folder or recorded, so an A/B run leaves the project alone. A path already in the folder is replaced for this run. |
-| `abso fetch <glob...>` / `abso run --fetch <glob>[,<glob>...] ...` | Files a run left in the box's `/w` (bash globs: `out/*.png`, `**/*.log`; `fetch` takes them space-separated, `run --fetch` comma-separated in one argument), written into the folder, but only where abso ignores them (add `out/` to `.avcsignore`, say), so a fetched file never becomes an edit; the rest are named and left alone, and every path is screened as a sync's are. `run --fetch` fetches when the run ends. The box's `/w` is replaced by your folder on every run; the rest of the box (`/tmp`, `~/.cache`, `/w/node_modules`) lasts between runs until the box stops (idle 30 minutes, or restarted). |
+| `abso fetch <glob...>` / `abso run --fetch <glob>[,<glob>...] ...` | Files a run left in the box's `/w` (bash globs: `out/*.png`, `**/*.log`; `fetch` takes them space-separated, `run --fetch` comma-separated in one argument), written into the folder, but only where abso ignores them (add `out/` to `.absoignore`, say), so a fetched file never becomes an edit; the rest are named and left alone, and every path is screened as a sync's are. `run --fetch` fetches when the run ends. The box's `/w` is replaced by your folder on every run; the rest of the box (`/tmp`, `~/.cache`, `/w/node_modules`) lasts between runs until the box stops (idle 30 minutes, or restarted). |
 | `abso pause` / `abso resume` | While paused, nothing from the folder is sent: the edit hook skips, `abso record` refuses, and other commands don't record first. For swapping files in by hand; `abso run --at` usually does it better. |
 | `abso logs <run id>` | A run's output from its start (stdout and stderr apart), for as long as the box keeps it, waiting until it ends; exits with its code. For a detached run, or one whose connection was lost. |
 | `abso run -- <program> <arg...>` | The same, but each word reaches the program exactly as typed: the client quotes it for the box's shell, so quotes, backslashes and regex text (`'a(b)'`, `'\w+'`) need no second layer of quoting. |
 | `abso status` | Shared's version, each agent's base and draft, what in this folder is not yet recorded, any file of your view the folder is missing, and files that differ from what abso recorded only in line endings (CRLF on disk; abso records them, and `abso run` sends them, with LF). `--short` prints one word to stamp a build with: the version the folder is on (`214`), with a named draft (`coast@3`), and `+unpublished` when it holds changes not yet published. |
 | `abso who <file...>` | For each file: who last changed it, who has unpublished changes in it (and at which lines), and whose `abso start` note names it. For asking before you work in someone's file. |
 | `abso fix-eol` | Rewrites the files that differ from what abso recorded only in line endings (CRLF here) with LF, as recorded. Their text is unchanged, so nothing is recorded; `abso status` stops counting them. |
-| `abso export <dir> [--version <N>]` | Writes one published version of this folder's space (the newest unless `--version`) into a folder of its own, for a build that doesn't move while shared does. The folder must be empty, an earlier export (which it replaces, keeping its `node_modules` and whatever `--keep <glob>` names), or inside the abso folder only where `.avcsignore` leaves it out. `.avcs-export.json` there names the version. Your folder and your base are untouched. |
+| `abso export <dir> [--version <N>]` | Writes one published version of this folder's space (the newest unless `--version`) into a folder of its own, for a build that doesn't move while shared does. The folder must be empty, an earlier export (which it replaces, keeping its `node_modules` and whatever `--keep <glob>` names), or inside the abso folder only where `.absoignore` leaves it out. `.avcs-export.json` there names the version. Your folder and your base are untouched. |
 | `abso files [glob...]` | The files your folder should hold (your view), marking any it's missing. `--draft <name>` (or `--draft shared`) and `--version <N>` list a space's files as published. |
 | `abso switch <draft>` / `abso switch shared` | Records, then moves the folder to a named draft (made on shared's newest version if it's new) or back to shared. Your unpublished changes are parked on the server where you leave, and come back when you return. Then it syncs, so the folder shows the space as it is now; collisions are listed as sync lists them. |
 | `abso switch -c <draft>` | Starts a new named draft that carries your current unpublished changes. |
@@ -90,7 +94,7 @@ Here `abso` means `node <repo>/client/abso.ts`, or `node abso.mjs` for the one-f
 | `abso pluck <draft> <version...> -m "why" [--with-dependencies]` | Takes some versions of a named draft into shared as one version, like `git cherry-pick`. The draft stays as it is. |
 | `abso amend -m "new message"` | Corrects the message of your newest publish in this space. The log keeps the first message. |
 | `abso label <name> [--version n] [--remove]` / `abso labels` | Puts a label on a version of shared (the newest by default) or takes it off, like a git tag; `labels` lists them all. |
-| `abso follow <label>` / `abso follow --none` | Makes this folder follow a label: every sync takes it to the newest version of shared with that label. `--none` goes back to shared's newest. Saved in `.avcs/config.json`. |
+| `abso follow <label>` / `abso follow --none` | Makes this folder follow a label: every sync takes it to the newest version of shared with that label. `--none` goes back to shared's newest. Saved in `.abso/config.json`. |
 | `abso check-ignore <path...>` | Whether abso leaves each path out, and which line of which ignore file decided (see "What is left out"). |
 | `abso pipeline check [file] [--on <event>]` | Reads the folder's pipeline file (abso.yml, abso.yaml or avcs.json, or the file named) and lists each problem as `<path>: <message>`: a cycle in needs, a job or pipeline that doesn't exist, secrets in a pipeline a draft can start, keys it doesn't know. Exits 1 on problems; otherwise lists each pipeline's jobs in the order they run. With `--on publish|draft|green|land|hand|schedule` (and `--space`, `--pipeline` or `--every`), says which pipelines that event starts, with their jobs in waves that can run side by side, and why the others don't. Reads only the file. The shape is still a draft. |
 | `abso issues [--open] [--status <s>] [--agent <a>] [--parent <N>] [--label <l,l>]` | The project's issues, most recently updated first. Statuses come from the work: `abso start --issue N` puts an issue In progress, an open ask makes it Blocked (In review for a review), and `publish --done` closes it. `--label friction` keeps the issues with every label named: a ready list of work to pick up. `abso issues --labels` lists the labels in use, with how many issues are open under each. |
@@ -104,8 +108,8 @@ Here `abso` means `node <repo>/client/abso.ts`, or `node abso.mjs` for the one-f
 Every command takes `--json`.
 
 The Issues commands talk to the Issues Worker beside the folder's server,
-with the same token: the one `~/.avcs/servers.json` names for that server, or
-`AVCS_ISSUES_SERVER`. The token goes there only where it would go as a
+with the same token: the one `~/.abso/servers.json` names for that server, or
+`ABSO_ISSUES_SERVER`. The token goes there only where it would go as a
 folder's server: abso's, one this machine names, or this machine itself.
 
 ### Text with several lines: `--comment-file`, `--file`
@@ -174,14 +178,14 @@ it. Run `abso skill install` again after updating abso.
 After each Edit, MultiEdit, Write or NotebookEdit, the hook:
 
 1. finds the abso folder above the edited file (and does nothing outside one);
-2. replays the edit on `.avcs/known/<file>`, the client's copy of what the
+2. replays the edit on `.abso/known/<file>`, the client's copy of what the
    server has. If the replay gives exactly the file on disk, it sends the edit
    (old and new text, with the session and subagent ids). If not, it sends the
    whole file with `record`. That happens after a shell command changed the
    file, for `replace_all`, or when the server answers "out of step";
 3. hands any news back to the agent as extra context.
 
-It never stops the agent. On any error it writes a line to `.avcs/hook.log`
+It never stops the agent. On any error it writes a line to `.abso/hook.log`
 and forgets the file's known copy, so the next `abso record` sends it whole.
 Every call is logged with its timing. The decisions live in `src/core.ts`,
 shared by both forms below.
@@ -207,7 +211,7 @@ There are two forms.
   for one session with `claude --plugin-dir <repo>/client`. Function hooks are
   an early-access Claude Code API; a headless `claude -p` loads them only with
   `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`. While the mod is installed, the command
-  hook below stands down (`AVCS_HOOK_FORCE=1` overrides), so no edit is sent
+  hook below stands down (`ABSO_HOOK_FORCE=1` overrides), so no edit is sent
   twice.
 - **The command hook (about 320 ms per edit), for anything else.** `abso hook`
   reads Claude Code's PostToolUse JSON on stdin, always exits 0, and prints the
@@ -265,7 +269,7 @@ A second mod, in `client/view`, shows a chat what abso knows about its folder:
   the same files, and news you haven't looked at.
 - **`/avcs-view`** opens a pane with the whole picture: the space and version,
   your draft's files, work parked in other spaces, who else is on which of
-  your files, and the latest news (from `.avcs/news.log`, which the hooks and
+  your files, and the latest news (from `.abso/news.log`, which the hooks and
   commands write).
 
 Outside an abso folder it costs one folder lookup when the chat starts. In one,
@@ -275,15 +279,15 @@ Claude Code's plugin test kit: `node client/test-mods.ts`.
 
 ## What the folder holds
 
-- `.avcs/config.json`: `{server, project, agent}`. When the folder is a git
-  repo, `/.avcs/` goes into `.git/info/exclude`. Nothing under `.avcs/` is
+- `.abso/config.json`: `{server, project, agent}`. When the folder is a git
+  repo, `/.abso/` goes into `.git/info/exclude`. Nothing under `.abso/` is
   ever recorded, published or sent to a box.
-- `.avcs/known/`: the known copy described above.
-- `.avcs/modes.json`: the executable files and links the server has, as far
+- `.abso/known/`: the known copy described above.
+- `.abso/modes.json`: the executable files and links the server has, as far
   as the client knows. It is to modes what the known copy is to text.
-- `.avcs/hook.log`: one line per hook call.
-- `.avcs/news.log`: the news the agent was given, one dated line each.
-- `.avcs/run.log`: when `abso run` reconnected to a run, or started it again because the connection failed before the server answered (up to 3 more tries, 0.5 to 3 seconds apart; never once the server has answered), and why.
+- `.abso/hook.log`: one line per hook call.
+- `.abso/news.log`: the news the agent was given, one dated line each.
+- `.abso/run.log`: when `abso run` reconnected to a run, or started it again because the connection failed before the server answered (up to 3 more tries, 0.5 to 3 seconds apart; never once the server has answered), and why.
 
 ## Empty files, the executable bit and links
 
@@ -302,12 +306,12 @@ The client sends only the changes, after the files' text:
 
 ## What is left out
 
-Always: `.git`, `.avcs`, `.claude` and `node_modules`, in any case. Beyond
-those, abso follows git's ignore rules, for `.gitignore` and `.avcsignore`
+Always: `.git`, `.abso`, `.claude` and `node_modules`, in any case. Beyond
+those, abso follows git's ignore rules, for `.gitignore` and `.absoignore`
 alike, except for case:
 
 - Any folder may have either file. Its patterns are relative to its folder,
-  and a deeper file beats a shallower one. In one folder, `.avcsignore` beats
+  and a deeper file beats a shallower one. In one folder, `.absoignore` beats
   `.gitignore`, so it can bring back what `.gitignore` leaves out (`!dist/`).
 - Below those come `.git/info/exclude`, then git's global excludes file
   (`core.excludesFile`, or `~/.config/git/ignore`).
@@ -315,7 +319,7 @@ alike, except for case:
   only), `\` escapes and trailing spaces all work as in git. The last matching
   line wins.
 - Nothing inside an ignored folder can be brought back with `!`, as in git.
-- Case: every pattern, from `.avcsignore`, `.gitignore` or git's own exclude
+- Case: every pattern, from `.absoignore`, `.gitignore` or git's own exclude
   files, matches by the same rule as abso's paths, on every platform:
   any case, and either Unicode form of an accented letter. So `.env` also
   leaves out `.ENV`. This ignores case and Unicode form even where
@@ -324,14 +328,14 @@ alike, except for case:
 
 Binary files (a NUL byte or invalid UTF-8), and text over 2 MB, go up as
 blobs: the client uploads the bytes under their SHA-256, records the
-hash, and keeps the hashes it knows in `.avcs/blobs.json`. Sync, switch and
+hash, and keeps the hashes it knows in `.abso/blobs.json`. Sync, switch and
 restore fetch the bytes, and never overwrite a binary file the agent changed
 and hasn't recorded. `diff` says `Binary file x changed: <hash> -> <hash>`.
 Files over the server's 20 MB limit are left out; `init`, `record` and
 `status` name them (`leftOut` in `--json`), and what the server has of them
 stays. `abso run` still sends every file to the box.
 
-`abso init` writes a starting `.avcsignore` (Claude Code state and operating
+`abso init` writes a starting `.absoignore` (Claude Code state and operating
 system files) when the folder has none. `abso check-ignore <path...>` says
 whether each path is left out and which line of which file decided.
 `client/test/ignore.test.ts` checks the rules against `git check-ignore`.
@@ -360,4 +364,4 @@ node --test client/test/client.test.ts
 ```
 
 To point a real folder at it, run `node client/test/fake-server.ts 47811`.
-It takes the token from `AVCS_TOKEN` (default `fake-token`).
+It takes the token from `ABSO_TOKEN` (default `fake-token`).

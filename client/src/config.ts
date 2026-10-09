@@ -1,7 +1,7 @@
 // The folder's settings (.avcs/config.json), finding the folder that holds
 // them, and the token.
 //
-// The token is never in the folder: it comes from the AVCS_TOKEN environment
+// The token is never in the folder: it comes from the ABSO_TOKEN environment
 // variable, or else from ~/.avcs/token, outside every repo.
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { UsageError } from "./args.ts";
 import { type MachineServers, machineServers, TOKEN_SERVERS, tokenGoesTo, trustedList } from "./core.ts";
+import { fromEnv } from "./env-names.ts";
 import { homeFile, stateDir } from "./state-dir.ts";
 
 /** What .avcs/config.json holds. */
@@ -166,15 +167,15 @@ export function tokenFor(
 	const trusted = trustedServers(env);
 	if (token === undefined || tokenGoesTo(server, trusted)) return token;
 	throw new UsageError(
-		`this folder's server is ${server}, and abso sends your token only to ${[...TOKEN_SERVERS, "this machine"].join(", ")}, and the servers ~/.abso/servers.json or AVCS_TRUSTED_SERVERS name. ` +
-			`If ${server} is yours, name it in ~/.abso/servers.json or AVCS_TRUSTED_SERVERS (comma-separated); if you didn't set it, someone else wrote .abso/config.json.`,
+		`this folder's server is ${server}, and abso sends your token only to ${[...TOKEN_SERVERS, "this machine"].join(", ")}, and the servers ~/.abso/servers.json or ABSO_TRUSTED_SERVERS name. ` +
+			`If ${server} is yours, name it in ~/.abso/servers.json or ABSO_TRUSTED_SERVERS (comma-separated); if you didn't set it, someone else wrote .abso/config.json.`,
 	);
 }
 
 let machine: MachineServers | undefined;
-/** This machine's servers (core.ts machineServers), from ~/.abso/servers.json (or ~/.abso/servers.json), read once. AVCS_SERVERS_FILE names another file (tests). */
+/** This machine's servers (core.ts machineServers), from ~/.abso/servers.json (or the older ~/.avcs/servers.json), read once. ABSO_SERVERS_FILE names another file (tests). */
 export function readMachineServers(env: Readonly<Record<string, string | undefined>> = process.env): MachineServers {
-	if (env.AVCS_SERVERS_FILE !== undefined) return machineServers(readOr(env.AVCS_SERVERS_FILE));
+	if (fromEnv(env, "SERVERS_FILE") !== undefined) return machineServers(readOr(fromEnv(env, "SERVERS_FILE") as string));
 	machine ??= machineServers(readOr(homeFile(homedir(), "servers.json")));
 	return machine;
 }
@@ -186,14 +187,15 @@ const readOr = (path: string): string | undefined => {
 	}
 };
 
-/** The servers the token may go to beyond abso's own: AVCS_TRUSTED_SERVERS, then this machine's servers.json. */
+/** The servers the token may go to beyond abso's own: ABSO_TRUSTED_SERVERS, then this machine's servers.json. */
 export function trustedServers(env: Readonly<Record<string, string | undefined>> = process.env): string {
-	return trustedList(env.AVCS_TRUSTED_SERVERS, readMachineServers(env));
+	return trustedList(fromEnv(env, "TRUSTED_SERVERS"), readMachineServers(env));
 }
 
-/** AVCS_TOKEN if set, else ~/.abso/token, else ~/.avcs/token, else none. */
+/** ABSO_TOKEN if set, else ~/.abso/token, else ~/.avcs/token, else none. */
 export function readToken(env: Readonly<Record<string, string | undefined>> = process.env): string | undefined {
-	if (env.AVCS_TOKEN) return env.AVCS_TOKEN.trim();
+	const fromVar = fromEnv(env, "TOKEN");
+	if (fromVar) return fromVar.trim();
 	try {
 		return readFileSync(homeFile(homedir(), "token"), "utf8").trim() || undefined;
 	} catch {

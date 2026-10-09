@@ -87,19 +87,19 @@ explains each one.
 
 ## Servers and tokens
 
-The client reads its token from `AVCS_TOKEN`, or else from `~/.avcs/token`.
+The client reads its token from `ABSO_TOKEN`, or else from `~/.abso/token`.
 It never writes the token into a project folder.
 
 It sends the token only to abso's own servers (`https://api.abso.dev` and
 `https://issues.abso.dev`) and to this machine. A folder that names any other
 server is refused before any call. To trust another server, name it in
-`~/.avcs/servers.json`, with its Issues server if it has one:
+`~/.abso/servers.json`, with its Issues server if it has one:
 
 ```json
 { "servers": { "https://abso.example.com": { "issues": "https://issues.example.com" } } }
 ```
 
-`AVCS_TRUSTED_SERVERS` (comma-separated) does the same for one shell. Off
+`ABSO_TRUSTED_SERVERS` (comma-separated) does the same for one shell. Off
 this machine, only `https://` servers count. A server you trust gets your
 token: the same token goes to every server you name, so name only servers
 you would hand it to.
