@@ -517,6 +517,11 @@ export class Api {
 		return this.#issues("POST", this.agentPath(`answer/${id}`), body);
 	}
 
+	/** Takes back an ask this agent made, with a note on why; the one asked hears it. */
+	withdraw(id: number, body: { note?: string }): Promise<{ ask: Ask; news?: IssueNews }> {
+		return this.#issues("POST", this.agentPath(`withdraw/${id}`), body);
+	}
+
 	/** Notes on lines (#44), by file or change; open ones only with `open`. */
 	notes(q: { file?: string; change?: number; open?: boolean } = {}): Promise<{ notes: readonly NoteAnswer[] }> {
 		return this.json("GET", `/notes?${query({ file: q.file, change: q.change, open: q.open ? 1 : undefined })}`);

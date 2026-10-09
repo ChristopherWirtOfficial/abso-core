@@ -374,11 +374,20 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		run: runIssue,
 	},
 	ask: {
-		flags: { issue: "string", review: "boolean", task: "boolean", due: "string", blocks: "string", options: "string" },
+		flags: {
+			issue: "string",
+			review: "boolean",
+			task: "boolean",
+			due: "string",
+			blocks: "string",
+			options: "string",
+			withdraw: "string",
+			note: "string",
+		},
 		usage:
-			'avcs ask <who> "<question>" [--issue <N>] [--review | --task] [--due <YYYY-MM-DD>] [--blocks <N,N>] [--options "A|B|C"]',
+			'avcs ask <who> "<question>" [--issue <N>] [--review | --task] [--due <YYYY-MM-DD>] [--blocks <N,N>] [--options "A|B|C"] | avcs ask --withdraw <ask> [--note "why"]',
 		about:
-			"Ask an agent, or a person (person:<id>), something; they hear it. On an issue, it holds the issue at Blocked (In review for --review) until answered. --task asks for something done instead of an answer; --options gives the choices; --blocks names the issues waiting on it.",
+			"Ask an agent, or a person (person:<id>), something; they hear it. On an issue, it holds the issue at Blocked (In review for --review) until answered. --task asks for something done instead of an answer; --options gives the choices; --blocks names the issues waiting on it. --withdraw takes back an ask you made that no longer needs an answer: it leaves their waiting list, stops holding the issue, keeps your --note as why, and they hear it.",
 		run: runAsk,
 	},
 	waiting: {

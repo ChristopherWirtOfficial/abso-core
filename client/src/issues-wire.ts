@@ -73,9 +73,12 @@ export interface Ask {
 	/** Issues it holds up, besides its own. */
 	blocks: number[];
 	at: number;
+	/** Its answer; for a withdrawn ask, the asker's note on why, with the asker as `by`. */
 	answer: { by: string; words: string; at: number } | null;
 	/** When waiting first listed it to the one it's asked of; null until then (abso issue 124). */
 	seen: number | null;
+	/** "withdrawn" when the asker took it back; absent for an open or answered ask, and from older servers. */
+	outcome?: "withdrawn";
 }
 
 export interface Claim {

@@ -128,10 +128,24 @@ describe("issues commands, the client's part (#54)", () => {
 			["answer", "3"],
 			["issue", "1", "--comment", "a", "--drop"],
 			["issues", "extra"],
+			["ask", "--withdraw", "x"],
+			["ask", "--withdraw", "3", "alice", "q"],
+			["ask", "--withdraw", "3", "--issue", "2"],
+			["ask", "--withdraw", "3", "--task"],
+			["ask", "alice", "q", "--note", "a note without --withdraw"],
 		]) {
 			const r = await avcs(erin, argv);
 			assert.equal(r.exit, 1, `${argv.join(" ")}: ${r.out}`);
 		}
 		assert.equal(seen.length, before);
+	});
+
+	it("withdraw is one POST to the asker's own withdraw/<ask> route", async () => {
+		const erin = await folder("erin");
+		const before = seen.length;
+		await avcs(erin, ["ask", "--withdraw", "#3", "--note", "overtaken by later decisions"]);
+		const posts = seen.slice(before).filter((s) => s.startsWith("POST"));
+		assert.equal(posts.length, 1, posts.join("\n"));
+		assert.match(posts[0]!, /^POST \/p\/issues\d+\/a\/erin\/withdraw\/3$/);
 	});
 });

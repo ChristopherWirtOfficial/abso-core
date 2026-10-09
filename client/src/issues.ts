@@ -59,7 +59,9 @@ function askLine(a: Ask & { title?: string | null }): string {
 	const where = a.issue === null ? "" : ` on issue ${a.issue}${a.title ? ` (${q(a.title)})` : ""}`;
 	const extra = [
 		// Who answered, and when, on the ask's own line, so a handled ask can't pass for an open one.
-		a.answer ? `answered by ${a.answer.by}, ${shortWhen(a.answer.at)}` : "",
+		a.answer
+			? `${a.outcome === "withdrawn" ? "withdrawn" : "answered"} by ${a.answer.by}, ${shortWhen(a.answer.at)}`
+			: "",
 		!a.answer && a.seen !== undefined ? seenText(a.seen) : "",
 		a.due ? `due ${a.due}` : "",
 		a.blocks.length > 0 ? `blocks ${a.blocks.join(", ")}` : "",
@@ -68,7 +70,9 @@ function askLine(a: Ask & { title?: string | null }): string {
 	const lines = [head];
 	if (a.options.length > 0) lines.push(`    options: ${a.options.map((o, i) => `${i + 1}. ${q(o)}`).join(", ")}`);
 	if (a.recommendation) lines.push(`    ${a.recommendation.by} recommends: ${q(a.recommendation.text)}`);
-	if (a.answer) lines.push(`    answer: ${q(a.answer.words)}`);
+	if (a.answer && a.outcome === "withdrawn") {
+		if (a.answer.words !== "") lines.push(`    why: ${q(a.answer.words)}`);
+	} else if (a.answer) lines.push(`    answer: ${q(a.answer.words)}`);
 	return lines.join("\n");
 }
 
@@ -429,6 +433,10 @@ export async function runIssue(args: Parsed, env: Env): Promise<Output> {
 }
 
 export async function runAsk(args: Parsed, env: Env): Promise<Output> {
+	const withdraw = str(args, "withdraw");
+	if (withdraw !== undefined) return withdrawAsk(args, env, withdraw);
+	if (str(args, "note") !== undefined)
+		throw new UsageError('--note goes with --withdraw: avcs ask --withdraw <ask> --note "why"');
 	const [of, ...words] = args.positionals;
 	if (of === undefined || words.length === 0)
 		throw new UsageError(
@@ -457,6 +465,18 @@ export async function runAsk(args: Parsed, env: Env): Promise<Output> {
 			: {}),
 	});
 	return { text: `Asked ${of} (ask ${r.id}). They hear it; avcs waiting shows what's open.`, json: { id: r.id } };
+}
+
+/** avcs ask --withdraw <ask> [--note "why"]: the asker takes an ask back. It closes like an answer, and the one asked hears it. */
+async function withdrawAsk(args: Parsed, env: Env, word: string): Promise<Output> {
+	const others = ["issue", "due", "blocks", "options"].filter((f) => str(args, f) !== undefined);
+	if (args.positionals.length > 0 || others.length > 0 || bool(args, "review") || bool(args, "task"))
+		throw new UsageError('avcs ask --withdraw <ask> [--note "why"] takes nothing else: it takes back an ask you made');
+	const id = issueNumber(word, "the ask number");
+	const { api } = openIssues(env);
+	const note = str(args, "note");
+	const r = await api.withdraw(id, note !== undefined ? { note } : {});
+	return { text: `Withdrew ask ${id}. ${r.ask.of} hears it, and it no longer waits on them.`, json: { ask: r.ask } };
 }
 
 export async function runWaiting(args: Parsed, env: Env): Promise<Output> {
