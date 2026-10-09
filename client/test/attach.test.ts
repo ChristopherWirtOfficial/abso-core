@@ -113,7 +113,7 @@ describe("--attach (abso issue 171)", () => {
 		assert.equal(seen.length - from, 2);
 		const alone = await avcs(dir, ["issue", "7", "--attach", "shot.png"]);
 		assert.equal(alone.exit, 1);
-		assert.match(alone.out, /--attach goes with avcs issue new or --comment/);
+		assert.match(alone.out, /--attach goes with abso issue new or --comment/);
 	});
 
 	it("says plainly when the server doesn't take attachments yet, and writes nothing", async () => {

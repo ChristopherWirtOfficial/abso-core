@@ -16,7 +16,7 @@ export async function runServe(args: Parsed, env: Env): Promise<Output> {
 	const { api } = open(env);
 	if (raw === undefined)
 		(env.writeErr ?? env.write)(
-			"avcs: building a preview of the newest version of shared (once per version; a minute the first time)…\n",
+			"abso: building a preview of the newest version of shared (once per version; a minute the first time)…\n",
 		);
 	const s = await api.serve(raw === undefined ? undefined : Number(raw), str(args, "build"), str(args, "out"));
 	if (!s.built || !s.url) {

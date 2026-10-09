@@ -143,9 +143,9 @@ export async function serveMcp(
 				return reply(id, {
 					protocolVersion: PROTOCOLS.includes(asked) ? asked : PROTOCOLS[0],
 					capabilities: { tools: {} },
-					serverInfo: { name: "avcs", version: clientVersion() },
+					serverInfo: { name: "abso", version: clientVersion() },
 					instructions:
-						"avcs, the agent-first version control client. Each tool is the abso command of the same name and answers with the command line's text. Box runs (abso run, shot, bisect) stay in the shell.",
+						"abso, the agent-first version control client. Each tool is the abso command of the same name and answers with the command line's text. Box runs (abso run, shot, bisect) stay in the shell.",
 				});
 			}
 			case "ping":

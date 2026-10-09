@@ -312,7 +312,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 	if (posix.undone.length > 0) {
 		args = { ...args, positionals: posix.words };
 		notice(
-			`avcs: Git Bash rewrote ${posix.undone.map((u) => `${u.to} as ${u.from}`).join(", ")}; sending ${posix.undone.map((u) => u.to).join(", ")} to the box. (MSYS_NO_PATHCONV=1 stops Git Bash rewriting.)\n`,
+			`abso: Git Bash rewrote ${posix.undone.map((u) => `${u.to} as ${u.from}`).join(", ")}; sending ${posix.undone.map((u) => u.to).join(", ")} to the box. (MSYS_NO_PATHCONV=1 stops Git Bash rewriting.)\n`,
 		);
 	}
 	const command = runCommand(args);
@@ -323,7 +323,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 		(/\\/.test(command) || (/'/.test(command) && /"/.test(command)))
 	) {
 		notice(
-			"avcs: the box's sh reads this command again; if a \\, $ or quote comes out wrong, use abso run -- <program> <args...>, which passes each word as typed.\n",
+			"abso: the box's sh reads this command again; if a \\, $ or quote comes out wrong, use abso run -- <program> <args...>, which passes each word as typed.\n",
 		);
 	}
 	// What the run log and --detach call it: the commands, not the script that runs them.
@@ -373,7 +373,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 		const named =
 			toLf.length <= LISTED ? toLf.join(", ") : `${toLf.slice(0, LISTED).join(", ")}, and ${toLf.length - LISTED} more`;
 		notice(
-			`avcs: sent ${plural(toLf.length, "file")} with LF line endings, as abso records them; your folder has CRLF: ${named}.\n`,
+			`abso: sent ${plural(toLf.length, "file")} with LF line endings, as abso records them; your folder has CRLF: ${named}.\n`,
 		);
 	}
 	if (at !== undefined) {
@@ -384,7 +384,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 			entries = await snapshotEntries(api, snap);
 			stamp = { ...stamp, AVCS_VERSION: String(at), AVCS_DRAFT: "0", AVCS_DRAFT_HASH: "", AVCS_AT: String(at) };
 			notice(
-				`avcs: running version ${at} of ${space} in the box (${plural(entries.length, "file")}); your folder is untouched.\n`,
+				`abso: running version ${at} of ${space} in the box (${plural(entries.length, "file")}); your folder is untouched.\n`,
 			);
 		} else {
 			const pick = globTest(filesGlob);
@@ -396,7 +396,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 				old.length === 0 && gone.length === 0
 					? `no file matches ${filesGlob} in your folder or at version ${at}`
 					: `${plural(old.length, "file")} as at version ${at}: ${old.map((e) => e.path).join(", ")}${gone.length > 0 ? `; left out, not there at version ${at}: ${gone.join(", ")}` : ""}`;
-			notice(`avcs: running your folder with ${said}. Your folder is untouched.\n`);
+			notice(`abso: running your folder with ${said}. Your folder is untouched.\n`);
 		}
 	}
 	const withSpec = str(args, "with");
@@ -412,13 +412,13 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 						.map((e) => e.path)
 						.join(", ")}, and ${extra.length - LISTED} more`;
 		notice(
-			`avcs: adding ${plural(extra.length, "file")} for this run only: ${named}. They are not in your folder and are not recorded.\n`,
+			`abso: adding ${plural(extra.length, "file")} for this run only: ${named}. They are not in your folder and are not recorded.\n`,
 		);
 	}
 	if (as === "prep") {
 		// The box keeps what the command leaves (node_modules, ~/.cache, /tmp) as what it starts from (#37).
 		notice(
-			"avcs: preparing the box from a fresh image: this takes as long as the command, then a few seconds to save.\n",
+			"abso: preparing the box from a fresh image: this takes as long as the command, then a few seconds to save.\n",
 		);
 		const p = await api.prep(command, tarGz(entries));
 		if (p.saved !== true) {
@@ -490,13 +490,13 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 			const say = notice;
 			if (cold && prep === "used")
 				say(
-					"avcs: fresh box, started from your prep (abso prep): node_modules, ~/.cache and /tmp are as the prep left them.\n",
+					"abso: fresh box, started from your prep (abso prep): node_modules, ~/.cache and /tmp are as the prep left them.\n",
 				);
 			else if (cold)
 				say(
-					"avcs: fresh box: it started for this run (first run, a deploy, a new image, or 30 idle minutes), so nothing earlier runs left outside the folder (/tmp, ~/.cache, node_modules) is in it. abso prep keeps them for every fresh box.\n",
+					"abso: fresh box: it started for this run (first run, a deploy, a new image, or 30 idle minutes), so nothing earlier runs left outside the folder (/tmp, ~/.cache, node_modules) is in it. abso prep keeps them for every fresh box.\n",
 				);
-			if (prep !== undefined && prep !== "used") say(`avcs: prep ${prep}.\n`);
+			if (prep !== undefined && prep !== "used") say(`abso: prep ${prep}.\n`);
 		},
 	});
 	if (fetchGlobs.length > 0) {

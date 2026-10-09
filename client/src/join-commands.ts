@@ -156,6 +156,6 @@ function setupHint(root: string): string[] {
 
 function hookHint(env: Readonly<Record<string, string | undefined>>): string {
 	return modInstalled(env)
-		? "Edits made by Claude Code here are recorded by the avcs mod on this machine, signed in as this folder. Anything else: abso record."
-		: `Edits made by Claude Code reach the server through the avcs mod, which isn't on this machine yet: node ${join(CLIENT_DIR, "install-mod.ts")} installs it, and new chats load it. Anything else: abso record.`;
+		? "Edits made by Claude Code here are recorded by the abso mod on this machine, signed in as this folder. Anything else: abso record."
+		: `Edits made by Claude Code reach the server through the abso mod, which isn't on this machine yet: node ${join(CLIENT_DIR, "install-mod.ts")} installs it, and new chats load it. Anything else: abso record.`;
 }

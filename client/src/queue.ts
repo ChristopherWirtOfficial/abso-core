@@ -61,7 +61,7 @@ export async function waitForQueued(
 		const now = state.paused
 			? `the queue is paused: ${state.paused.reason}; next try ${state.paused.nextTry.slice(11, 16)} UTC`
 			: standing(state.items, id);
-		if (now !== said) say(`avcs: your publish is ${now}.\n`);
+		if (now !== said) say(`abso: your publish is ${now}.\n`);
 		said = now;
 	}
 	return { kind: "waiting", state };

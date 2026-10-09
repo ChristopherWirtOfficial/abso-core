@@ -1,7 +1,7 @@
-// Issues (#54): avcs issues, avcs issue, avcs ask, avcs waiting and avcs
+// Issues (#54): abso issues, abso issue, abso ask, abso waiting and avcs
 // answer. The Issues Worker keeps them (avcs-issues beside avcs, or
 // AVCS_ISSUES_SERVER), and takes the same token. Statuses come from the work: a start note naming
-// an issue (avcs start --issue N) puts it In progress, an open ask Blocked or
+// an issue (abso start --issue N) puts it In progress, an open ask Blocked or
 // In review, and publish --done closes it. Other agents' and people's words
 // are quoted as JSON, so none can print as another line (#30).
 
@@ -26,7 +26,7 @@ function openIssues(env: Env): { config: Config; api: Api } {
 		);
 	if (config.token !== undefined && !tokenGoesTo(server, trustedServers(env.env))) {
 		throw new UsageError(
-			`the Issues Worker is ${server}, and avcs sends your token only to its own servers and this machine. If ${server} is yours, name it in ~/.avcs/servers.json or AVCS_TRUSTED_SERVERS.`,
+			`the Issues Worker is ${server}, and abso sends your token only to its own servers and this machine. If ${server} is yours, name it in ~/.avcs/servers.json or AVCS_TRUSTED_SERVERS.`,
 		);
 	}
 	api.issuesServer = server;
@@ -190,14 +190,14 @@ export function issuePage(p: IssuePage, api?: Pick<Api, "attachmentUrl">): strin
 		...(p.children.length > 0 ? ["", "Sub-issues:", ...p.children.map(issueLine)] : []),
 		...((i.watchers ?? []).length > 0 ? ["", `Watchers: ${i.watchers.join(", ")}.`] : []),
 		"",
-		`avcs start "..." --issue ${i.id} starts on it; avcs issue ${i.id} --comment "..." comments; avcs ask <who> "..." --issue ${i.id} asks.`,
+		`abso start "..." --issue ${i.id} starts on it; abso issue ${i.id} --comment "..." comments; abso ask <who> "..." --issue ${i.id} asks.`,
 	];
 }
 
 export async function runIssues(args: Parsed, env: Env): Promise<Output> {
 	if (args.positionals.length > 0)
 		throw new UsageError(
-			"issues takes no words: avcs issues [--open] [--status <s>] [--agent <a>] [--parent <N>] [--label <l,l>] | avcs issues --labels; avcs issue <N> shows one",
+			"issues takes no words: abso issues [--open] [--status <s>] [--agent <a>] [--parent <N>] [--label <l,l>] | abso issues --labels; abso issue <N> shows one",
 		);
 	const { api } = openIssues(env);
 	if (bool(args, "drafts")) {
@@ -205,11 +205,11 @@ export async function runIssues(args: Parsed, env: Env): Promise<Output> {
 		return {
 			text:
 				drafts.length === 0
-					? 'No drafts. avcs issue draft "<title>" saves one: only you see it, and nobody hears of it.'
+					? 'No drafts. abso issue draft "<title>" saves one: only you see it, and nobody hears of it.'
 					: [
 							`${plural(drafts.length, "draft")}, newest first (only you see them):`,
 							...drafts.map(draftLine),
-							"avcs issue draft <D> --open opens one as an issue; --delete deletes it.",
+							"abso issue draft <D> --open opens one as an issue; --delete deletes it.",
 						].join("\n"),
 			json: { drafts },
 		};
@@ -219,11 +219,11 @@ export async function runIssues(args: Parsed, env: Env): Promise<Output> {
 		return {
 			text:
 				labels.length === 0
-					? 'No labels yet. avcs issue new "<title>" --label friction labels a new issue; avcs issue <N> --label <l> labels one.'
+					? 'No labels yet. abso issue new "<title>" --label friction labels a new issue; abso issue <N> --label <l> labels one.'
 					: [
 							`${plural(labels.length, "label")} in use:`,
 							...labels.map((l) => `  ${l.label}: ${l.open} open of ${l.total}`),
-							"avcs issues --label <label> lists a label's issues.",
+							"abso issues --label <label> lists a label's issues.",
 						].join("\n"),
 			json: { labels },
 		};
@@ -245,11 +245,11 @@ export async function runIssues(args: Parsed, env: Env): Promise<Output> {
 	return {
 		text:
 			issues.length === 0
-				? `No ${scope}issues${filter.agent ? ` for ${filter.agent}` : ""}${parent !== undefined ? ` under ${parent}` : ""}. avcs issue new "<title>" opens one.`
+				? `No ${scope}issues${filter.agent ? ` for ${filter.agent}` : ""}${parent !== undefined ? ` under ${parent}` : ""}. abso issue new "<title>" opens one.`
 				: [
 						`${plural(issues.length, `${scope}issue`)}, most recently updated first:`,
 						...issues.map(issueLine),
-						"avcs issue <N> shows one.",
+						"abso issue <N> shows one.",
 					].join("\n"),
 		json: { issues },
 	};
@@ -306,21 +306,21 @@ async function runDraft(api: Api, args: Parsed, words: string[]): Promise<Output
 		if (bool(args, "open")) {
 			const r = await api.openDraft(id, openFields(args, ""));
 			return {
-				text: `Opened draft ${id} as issue ${r.id}. avcs start "..." --issue ${r.id} starts on it.`,
+				text: `Opened draft ${id} as issue ${r.id}. abso start "..." --issue ${r.id} starts on it.`,
 				json: { draft: id, id: r.id },
 			};
 		}
 		// Saving replaces the draft's body, so the fields given go over what it holds.
 		const found = (await api.drafts()).drafts.find((x) => x.id === id);
-		if (!found) throw new UsageError(`you have no draft ${id}; avcs issues --drafts lists yours`);
+		if (!found) throw new UsageError(`you have no draft ${id}; abso issues --drafts lists yours`);
 		await api.saveDraft({ ...found.body, ...openFields(args, ""), id });
 		return { text: `Saved draft ${id}.`, json: { draft: id } };
 	}
 	if (bool(args, "open") || bool(args, "delete"))
-		throw new UsageError("--open and --delete take a draft's number: avcs issue draft <D> --open");
+		throw new UsageError("--open and --delete take a draft's number: abso issue draft <D> --open");
 	const r = await api.saveDraft(openFields(args, words.join(" ")));
 	return {
-		text: `Saved draft ${r.id}. Only you see it, and nobody hears of it. avcs issue draft ${r.id} --open opens it as an issue.`,
+		text: `Saved draft ${r.id}. Only you see it, and nobody hears of it. abso issue draft ${r.id} --open opens it as an issue.`,
 		json: { draft: r.id },
 	};
 }
@@ -332,19 +332,19 @@ export async function runIssue(args: Parsed, env: Env): Promise<Output> {
 	if (first === "new") {
 		if (rest.length === 0)
 			throw new UsageError(
-				'avcs issue new "<title>" [--description "..."] [--parent <N>] [--lines <file>:<from>-<to>@<version>] [--agent <agent>] [--blocked-by <N,N>] [--notify <who,who>] [--label <l,l>]',
+				'abso issue new "<title>" [--description "..."] [--parent <N>] [--lines <file>:<from>-<to>@<version>] [--agent <agent>] [--blocked-by <N,N>] [--notify <who,who>] [--label <l,l>]',
 			);
 		const fields = { ...openFields(args, rest.join(" ")), title: rest.join(" ") };
 		const attachments = await uploadAttachments(api, env.cwd, str(args, "attach"));
 		const r = await api.issueOpen({ ...fields, ...(attachments.length > 0 ? { attachments } : {}) });
 		return {
-			text: `Opened issue ${r.id}${attachments.length > 0 ? ` with ${plural(attachments.length, "attachment")} (${attachments.join(", ")})` : ""}. avcs start "..." --issue ${r.id} starts on it.`,
+			text: `Opened issue ${r.id}${attachments.length > 0 ? ` with ${plural(attachments.length, "attachment")} (${attachments.join(", ")})` : ""}. abso start "..." --issue ${r.id} starts on it.`,
 			json: { id: r.id, ...(attachments.length > 0 ? { attachments } : {}) },
 		};
 	}
 	if (first === undefined || rest.length > 0)
 		throw new UsageError(
-			'avcs issue <N> [--comment "..." | --object "..." | --drop | --reopen | --done [--done-by <version>] | an edit], or avcs issue new "<title>"',
+			'abso issue <N> [--comment "..." | --object "..." | --drop | --reopen | --done [--done-by <version>] | an edit], or abso issue new "<title>"',
 		);
 	const id = issueNumber(first);
 	const comment = str(args, "comment");
@@ -394,7 +394,7 @@ export async function runIssue(args: Parsed, env: Env): Promise<Output> {
 			"--quiet and --notify go with an edit (--title, --description, --parent, --agent, --blocked-by, --label or --unlabel)",
 		);
 	if (str(args, "attach") !== undefined && comment === undefined && object === undefined)
-		throw new UsageError("--attach goes with avcs issue new or --comment (or --object)");
+		throw new UsageError("--attach goes with abso issue new or --comment (or --object)");
 	if (comment !== undefined || object !== undefined) {
 		const attachments = await uploadAttachments(api, env.cwd, str(args, "attach"));
 		const r = await api.issueComment(id, (comment ?? object)!, object !== undefined, attachments);
@@ -436,11 +436,11 @@ export async function runAsk(args: Parsed, env: Env): Promise<Output> {
 	const withdraw = str(args, "withdraw");
 	if (withdraw !== undefined) return withdrawAsk(args, env, withdraw);
 	if (str(args, "note") !== undefined)
-		throw new UsageError('--note goes with --withdraw: avcs ask --withdraw <ask> --note "why"');
+		throw new UsageError('--note goes with --withdraw: abso ask --withdraw <ask> --note "why"');
 	const [of, ...words] = args.positionals;
 	if (of === undefined || words.length === 0)
 		throw new UsageError(
-			'avcs ask <who> "<question>" [--issue <N>] [--review | --task] [--due <YYYY-MM-DD>] [--blocks <N,N>] [--options "A|B|C"]; who is an agent, or person:<id>',
+			'abso ask <who> "<question>" [--issue <N>] [--review | --task] [--due <YYYY-MM-DD>] [--blocks <N,N>] [--options "A|B|C"]; who is an agent, or person:<id>',
 		);
 	const { api } = openIssues(env);
 	if (bool(args, "review") && bool(args, "task")) throw new UsageError("an ask is a review or a task, not both");
@@ -464,14 +464,14 @@ export async function runAsk(args: Parsed, env: Env): Promise<Output> {
 				}
 			: {}),
 	});
-	return { text: `Asked ${of} (ask ${r.id}). They hear it; avcs waiting shows what's open.`, json: { id: r.id } };
+	return { text: `Asked ${of} (ask ${r.id}). They hear it; abso waiting shows what's open.`, json: { id: r.id } };
 }
 
-/** avcs ask --withdraw <ask> [--note "why"]: the asker takes an ask back. It closes like an answer, and the one asked hears it. */
+/** abso ask --withdraw <ask> [--note "why"]: the asker takes an ask back. It closes like an answer, and the one asked hears it. */
 async function withdrawAsk(args: Parsed, env: Env, word: string): Promise<Output> {
 	const others = ["issue", "due", "blocks", "options"].filter((f) => str(args, f) !== undefined);
 	if (args.positionals.length > 0 || others.length > 0 || bool(args, "review") || bool(args, "task"))
-		throw new UsageError('avcs ask --withdraw <ask> [--note "why"] takes nothing else: it takes back an ask you made');
+		throw new UsageError('abso ask --withdraw <ask> [--note "why"] takes nothing else: it takes back an ask you made');
 	const id = issueNumber(word, "the ask number");
 	const { api } = openIssues(env);
 	const note = str(args, "note");
@@ -481,7 +481,7 @@ async function withdrawAsk(args: Parsed, env: Env, word: string): Promise<Output
 
 export async function runWaiting(args: Parsed, env: Env): Promise<Output> {
 	if (args.positionals.length > 0)
-		throw new UsageError("waiting takes no words: avcs waiting [--of <agent or person:id>] [--mine]");
+		throw new UsageError("waiting takes no words: abso waiting [--of <agent or person:id>] [--mine]");
 	const { api, config } = openIssues(env);
 	const mine = bool(args, "mine") || str(args, "of") === config.agent;
 	const of = mine ? config.agent : str(args, "of");
@@ -493,7 +493,7 @@ export async function runWaiting(args: Parsed, env: Env): Promise<Output> {
 				: [
 						`${plural(asks.length, "open ask")}${of ? ` of ${of}` : ""}, soonest due first:`,
 						...asks.map(askLine),
-						'avcs answer <ask> "..." answers one asked of you.',
+						'abso answer <ask> "..." answers one asked of you.',
 					].join("\n"),
 		json: { asks },
 	};
@@ -505,7 +505,7 @@ export async function runAnswer(args: Parsed, env: Env): Promise<Output> {
 	const option = str(args, "option");
 	const done = bool(args, "done");
 	if (words.length === 0 && option === undefined && !done)
-		throw new UsageError('avcs answer <ask> "<words>" | --option <N> [--note "..."] | --done [--note "..."]');
+		throw new UsageError('abso answer <ask> "<words>" | --option <N> [--note "..."] | --done [--note "..."]');
 	const { api } = openIssues(env);
 	const note = str(args, "note");
 	const r = await api.answer(id, {

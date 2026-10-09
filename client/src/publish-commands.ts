@@ -126,9 +126,9 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 		// Paths the sync wouldn't write (safety.ts) don't block: the check just ran without them (Cloud).
 		if ((sj.refused?.length ?? 0) > 0)
 			say(
-				`avcs: the sync didn't write these: ${sj.refused!.map((r) => r.path).join(", ")}; the check runs without them.\n`,
+				`abso: the sync didn't write these: ${sj.refused!.map((r) => r.path).join(", ")}; the check runs without them.\n`,
 			);
-		say(`avcs: checking your draft on newest shared in the box: ${check}\n`);
+		say(`abso: checking your draft on newest shared in the box: ${check}\n`);
 		const flags = new Map<string, string | boolean>();
 		const box = str(args, "box");
 		if (box !== undefined) flags.set("box", box);
@@ -150,7 +150,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 			let verdict: string[] = [];
 			let sharedExit: number | undefined;
 			if (newest !== undefined) {
-				say(`avcs: the check failed; running it on shared alone (version ${newest}) to see whose it is.\n`);
+				say(`abso: the check failed; running it on shared alone (version ${newest}) to see whose it is.\n`);
 				const atFlags = new Map(flags);
 				atFlags.set("at", String(newest));
 				sharedExit =
@@ -184,7 +184,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 				},
 			};
 		}
-		say("avcs: the check passed; publishing.\n");
+		say("abso: the check passed; publishing.\n");
 	}
 	const checked = check !== undefined;
 	const leftOut: LeftOut[] = [];
@@ -345,7 +345,7 @@ async function publishSteps(
 				text: [...notes, head, `Not waiting (--no-wait). ${later}`].join("\n"),
 				json: { ...json, outcome: "queued" },
 			};
-		say(`avcs: ${head} Waiting up to ${waitSeconds} s for it (--no-wait returns at once).\n`);
+		say(`abso: ${head} Waiting up to ${waitSeconds} s for it (--no-wait returns at once).\n`);
 		const out = await waitForQueued(
 			api,
 			answer.queued,

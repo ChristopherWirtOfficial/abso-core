@@ -280,7 +280,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		usage:
 			'abso run [--detach] [--replace] [--fresh] [--box <name>] [--at <version> [--files <glob>]] <command...> | abso run ... -- <program> <arg...> | abso run --parallel "<command>" "<command>"...',
 		about:
-			"Send the folder to this agent's box, run the command there, and stream its output back. Exits with the command's code. After --, each word goes to the program exactly as typed (quotes, backslashes, regex text); without --, the words are one shell command. The box's stderr comes out on stderr. --detach starts it and prints its id without waiting. While a run is still going in the box, a new one is refused (409, naming it), since it would replace the files under it; --replace stops the old one first. --parallel runs each quoted command at once in the box (one upload), labels each line [1], [2], ..., ends with each one's exit code, and exits with the worst. --at <version> runs that version of the folder's space instead of the folder (for bisecting); with --files <glob>, only the matching files are taken from that version. The folder is never touched. --fetch <glob>[,<glob>...] brings matching files from the box's /w back after the run (see abso fetch); several globs go in one argument, comma-separated (--fetch 'shots/*.png,out/*.json'), as for --files and --with. The box's /w is replaced by your folder on every run; the rest of the box (/tmp, ~/.cache, /w/node_modules) lasts between runs until the box stops (idle 30 minutes, or restarted). avcs's own notices go to stderr, apart from the command's output; --quiet drops them (the command's own stderr still comes through). --with <box path>=<local path>[,...] adds files (or a folder's files) for this run only: they go to the box and are never written to your folder or recorded, for an A/B run that leaves the project alone. --box <name> (or AVCS_BOX=<name>) runs in another box of yours, with its own /w and state, so a subagent's runs and yours don't wait on each other; logs and fetch take --box too. After abso prep, a fresh box starts from the prep; --fresh starts this run from the plain image instead.",
+			"Send the folder to this agent's box, run the command there, and stream its output back. Exits with the command's code. After --, each word goes to the program exactly as typed (quotes, backslashes, regex text); without --, the words are one shell command. The box's stderr comes out on stderr. --detach starts it and prints its id without waiting. While a run is still going in the box, a new one is refused (409, naming it), since it would replace the files under it; --replace stops the old one first. --parallel runs each quoted command at once in the box (one upload), labels each line [1], [2], ..., ends with each one's exit code, and exits with the worst. --at <version> runs that version of the folder's space instead of the folder (for bisecting); with --files <glob>, only the matching files are taken from that version. The folder is never touched. --fetch <glob>[,<glob>...] brings matching files from the box's /w back after the run (see abso fetch); several globs go in one argument, comma-separated (--fetch 'shots/*.png,out/*.json'), as for --files and --with. The box's /w is replaced by your folder on every run; the rest of the box (/tmp, ~/.cache, /w/node_modules) lasts between runs until the box stops (idle 30 minutes, or restarted). abso's own notices go to stderr, apart from the command's output; --quiet drops them (the command's own stderr still comes through). --with <box path>=<local path>[,...] adds files (or a folder's files) for this run only: they go to the box and are never written to your folder or recorded, for an A/B run that leaves the project alone. --box <name> (or AVCS_BOX=<name>) runs in another box of yours, with its own /w and state, so a subagent's runs and yours don't wait on each other; logs and fetch take --box too. After abso prep, a fresh box starts from the prep; --fresh starts this run from the plain image instead.",
 		rest: true,
 		run: runRun,
 	},
@@ -295,7 +295,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: {},
 		usage: "abso mv <from> <to>",
 		about:
-			"Move a file in your draft, its lines keeping their history (as git mv), recorded as a move rather than guessed from the folder. The way to change a file's case: README.md and readme.md are one file in avcs, and a write under another spelling goes to the existing one, with a warning that names abso mv. It reaches shared with your next publish.",
+			"Move a file in your draft, its lines keeping their history (as git mv), recorded as a move rather than guessed from the folder. The way to change a file's case: README.md and readme.md are one file in abso, and a write under another spelling goes to the existing one, with a warning that names abso mv. It reaches shared with your next publish.",
 		run: runMv,
 	},
 	review: {
@@ -340,9 +340,9 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 			drafts: "boolean",
 		},
 		usage:
-			"avcs issues [--open] [--status <status>] [--agent <agent>] [--parent <N>] [--label <l,l>] | avcs issues --labels",
+			"abso issues [--open] [--status <status>] [--agent <agent>] [--parent <N>] [--label <l,l>] | abso issues --labels",
 		about:
-			"The project's issues (#54), most recently updated first, each with its status, agents, labels, versions and who it waits on. --label keeps the issues with every label named (friction, say); --labels lists the labels in use, with how many issues are open under each; --drafts lists your drafts. A status comes from the work: avcs start --issue N puts an issue In progress, an open ask makes it Blocked (or In review, for a review), and publish --done closes it.",
+			"The project's issues (#54), most recently updated first, each with its status, agents, labels, versions and who it waits on. --label keeps the issues with every label named (friction, say); --labels lists the labels in use, with how many issues are open under each; --drafts lists your drafts. A status comes from the work: abso start --issue N puts an issue In progress, an open ask makes it Blocked (or In review, for a review), and publish --done closes it.",
 		run: runIssues,
 	},
 	issue: {
@@ -368,9 +368,9 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 			attach: "string",
 		},
 		usage:
-			'avcs issue <N> [--comment "..." [--attach <file,file>] | --object "..." | --drop | --reopen | --done [--done-by <version>]] | avcs issue <N> [--title "..."] [--description "..."] [--parent <N|none>] [--agent <agent|none>] [--blocked-by <N,N|none>] [--label <l,l>] [--unlabel <l,l>] [--notify <who,who> | --quiet] | avcs issue new "<title>" [--description "..."] [--parent <N>] [--lines <file>:<from>-<to>@<version>] [--agent <agent>] [--blocked-by <N,N>] [--notify <who,who>] [--label <l,l>] [--attach <file,file>]',
+			'abso issue <N> [--comment "..." [--attach <file,file>] | --object "..." | --drop | --reopen | --done [--done-by <version>]] | abso issue <N> [--title "..."] [--description "..."] [--parent <N|none>] [--agent <agent|none>] [--blocked-by <N,N|none>] [--label <l,l>] [--unlabel <l,l>] [--notify <who,who> | --quiet] | abso issue new "<title>" [--description "..."] [--parent <N>] [--lines <file>:<from>-<to>@<version>] [--agent <agent>] [--blocked-by <N,N>] [--notify <who,who>] [--label <l,l>] [--attach <file,file>]',
 		about:
-			"One issue: its description, Agent, Blocked by, labels, asks, comments, edits, sub-issues and watchers. --comment comments on it and --object objects; its agents hear either. --drop drops it. --reopen opens a dropped issue again. --done marks it done by hand, and --done-by <version> names the published version that did it. publish --done still marks it done too. --title, --description, --parent, --agent and --blocked-by edit it, and the edit tells its watchers (who opened it, its Agent and agents, its Reviewer, whoever was named in Notify, and whoever commented); --notify tells more people, --quiet tells nobody. --label adds labels and --unlabel takes them off (friction, area:client: lower-case letters, digits and - _ . :); a label-only edit tells nobody unless --notify names people. An issue is Blocked until each issue it's blocked by is Done. avcs issue new opens one; --lines ties it to lines at a version of shared, --agent says who it's for, --notify tells people now, and --label labels it. --attach shot.png,after.png puts images on a new issue or a comment (png, jpeg, gif or webp, 10 MB each; the server checks the type by the bytes and takes out metadata such as where a photo was taken), and prints each one's id for the text to point at; the issue's page lists them with a link. avcs issue draft \"<title>\" [the same fields] saves a draft instead: yours alone, with no number and no news; avcs issue draft <D> [fields] changes it, --open opens it as an issue, --delete deletes it.",
+			"One issue: its description, Agent, Blocked by, labels, asks, comments, edits, sub-issues and watchers. --comment comments on it and --object objects; its agents hear either. --drop drops it. --reopen opens a dropped issue again. --done marks it done by hand, and --done-by <version> names the published version that did it. publish --done still marks it done too. --title, --description, --parent, --agent and --blocked-by edit it, and the edit tells its watchers (who opened it, its Agent and agents, its Reviewer, whoever was named in Notify, and whoever commented); --notify tells more people, --quiet tells nobody. --label adds labels and --unlabel takes them off (friction, area:client: lower-case letters, digits and - _ . :); a label-only edit tells nobody unless --notify names people. An issue is Blocked until each issue it's blocked by is Done. abso issue new opens one; --lines ties it to lines at a version of shared, --agent says who it's for, --notify tells people now, and --label labels it. --attach shot.png,after.png puts images on a new issue or a comment (png, jpeg, gif or webp, 10 MB each; the server checks the type by the bytes and takes out metadata such as where a photo was taken), and prints each one's id for the text to point at; the issue's page lists them with a link. abso issue draft \"<title>\" [the same fields] saves a draft instead: yours alone, with no number and no news; abso issue draft <D> [fields] changes it, --open opens it as an issue, --delete deletes it.",
 		run: runIssue,
 	},
 	ask: {
@@ -385,21 +385,21 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 			note: "string",
 		},
 		usage:
-			'avcs ask <who> "<question>" [--issue <N>] [--review | --task] [--due <YYYY-MM-DD>] [--blocks <N,N>] [--options "A|B|C"] | avcs ask --withdraw <ask> [--note "why"]',
+			'abso ask <who> "<question>" [--issue <N>] [--review | --task] [--due <YYYY-MM-DD>] [--blocks <N,N>] [--options "A|B|C"] | abso ask --withdraw <ask> [--note "why"]',
 		about:
 			"Ask an agent, or a person (person:<id>), something; they hear it. On an issue, it holds the issue at Blocked (In review for --review) until answered. --task asks for something done instead of an answer; --options gives the choices; --blocks names the issues waiting on it. --withdraw takes back an ask you made that no longer needs an answer: it leaves their waiting list, stops holding the issue, keeps your --note as why, and they hear it.",
 		run: runAsk,
 	},
 	waiting: {
 		flags: { of: "string", mine: "boolean" },
-		usage: "avcs waiting [--of <agent or person:id>] [--mine]",
+		usage: "abso waiting [--of <agent or person:id>] [--mine]",
 		about: "The open asks, soonest due first: every one, those of someone (--of), or those of you (--mine).",
 		run: runWaiting,
 	},
 	answer: {
 		flags: { option: "string", note: "string", done: "boolean" },
 		usage:
-			'avcs answer <ask> "<words>" | avcs answer <ask> --option <N> [--note "..."] | avcs answer <ask> --done [--note "..."]',
+			'abso answer <ask> "<words>" | abso answer <ask> --option <N> [--note "..."] | abso answer <ask> --done [--note "..."]',
 		about:
 			"Answer an ask of you, in your own words, by picking an option (by number or text), or, for a task, with --done. The asker hears it.",
 		run: runAnswer,
@@ -690,8 +690,8 @@ function help(): string {
 		"  abso hook",
 		"      The Claude Code PostToolUse hook. Reads the hook JSON on stdin; never fails.",
 		"  abso mcp",
-		"      An MCP server on stdin and stdout: the reading commands and the everyday writing ones as tools, answering with the same text as here. Add it with claude mcp add avcs -- node <repo>/client/avcs.ts mcp.",
-		"  avcs --version",
+		"      An MCP server on stdin and stdout: the reading commands and the everyday writing ones as tools, answering with the same text as here. Add it with claude mcp add abso -- node <repo>/client/abso.ts mcp.",
+		"  abso --version",
 		"      This client's version and commit, and the abso mods installed on this machine.",
 		"",
 		"Every command takes --json. Settings live in .avcs/config.json. The token comes from AVCS_TOKEN, or else ~/.avcs/token.",

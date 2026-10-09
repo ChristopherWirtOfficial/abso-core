@@ -173,7 +173,7 @@ async function refresh($: Engine): Promise<void> {
 	} catch (err) {
 		const message = (err as Error).message;
 		await update($, view, (old) => (old === null ? null : { ...old, error: message }));
-		$.ui.status(`avcs: can't reach the server (${message})`);
+		$.ui.status(`abso: can't reach the server (${message})`);
 	} finally {
 		refreshing = false;
 	}
@@ -188,7 +188,7 @@ function unread(v: AvcsView, seen: string): number {
 }
 
 function statusLine(v: AvcsView, seen: string): string {
-	const parts = [`avcs: ${v.space === "shared" ? "shared" : `draft ${v.space}`}`];
+	const parts = [`abso: ${v.space === "shared" ? "shared" : `draft ${v.space}`}`];
 	parts.push(v.files.length === 0 ? "nothing unpublished" : `${plural(v.files.length, "file")} unpublished`);
 	if (v.base !== null && v.base < v.version)
 		parts.push(`${v.space === "shared" ? "shared" : "the draft"} is ${v.version - v.base} ahead (abso sync)`);
@@ -226,7 +226,7 @@ export const register: Register = (on) => {
 		if (folder === undefined)
 			return { text: "This chat is not in an abso folder (no .avcs/config.json at or above its folder)." };
 		await refresh($);
-		await $.ui.open({ id: PANE, title: `avcs: ${folder.project} as ${folder.agent}` });
+		await $.ui.open({ id: PANE, title: `abso: ${folder.project} as ${folder.agent}` });
 		// Opening the view reads the news: the status line stops counting it.
 		const v = await read($, view);
 		const newest = v?.news.at(-1)?.[0];

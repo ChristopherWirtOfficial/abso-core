@@ -215,7 +215,7 @@ function existsHere(root: string, p: string): boolean {
 /** The line for a path that matched no changed file. */
 function nothingAt(root: string, p: string): string {
 	if (!existsHere(root, p))
-		return `  ${p}: no such file or folder here now (paths are relative to where you run avcs).`;
+		return `  ${p}: no such file or folder here now (paths are relative to where you run abso).`;
 	return `  ${p === "" ? "the whole folder" : `${p}${isFolder(root, p) ? "/" : ""}`}: no changes there.`;
 }
 
