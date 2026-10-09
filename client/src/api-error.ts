@@ -36,7 +36,10 @@ export function neverSent(err: unknown): boolean {
 	);
 }
 
-/** The server's `{error: "sentence"}` answer, or the start of whatever it sent. */
+/**
+ * The server's `{error: "sentence"}` answer, or the start of whatever it sent. An HTML page (the host's error
+ * page, when the server itself failed) is said by its title and Ray ID, which its first lines never reach.
+ */
 export function errorSentence(body: string): string {
 	try {
 		const parsed = JSON.parse(body) as { error?: unknown; reason?: unknown };
@@ -44,6 +47,16 @@ export function errorSentence(body: string): string {
 		if (typeof parsed.reason === "string") return parsed.reason;
 	} catch {
 		// Not JSON.
+	}
+	if (/^\s*<(!doctype html|html)/i.test(body)) {
+		const plain = (s: string) =>
+			s
+				.replace(/<[^>]*>/g, " ")
+				.replace(/\s+/g, " ")
+				.trim();
+		const title = plain(/<title>([\s\S]*?)<\/title>/i.exec(body)?.[1] ?? "");
+		const ray = /Ray ID:\s*(?:<[^>]*>\s*)*([0-9a-f]+)/i.exec(body)?.[1];
+		return `an HTML error page${title !== "" ? ` titled ${JSON.stringify(title)}` : ""}${ray ? ` (Ray ID ${ray})` : ""}, not the server's own answer: the server failed before it could say why`;
 	}
 	return body.slice(0, 300);
 }
