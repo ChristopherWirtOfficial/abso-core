@@ -318,6 +318,17 @@ describe("--attach (abso issue 171)", () => {
 			/attached a0123456789ab: "shot.png", 2 KB, https:\/\/issues.example\/p\/x\/attachments\/a0123456789ab/,
 		);
 		assert.match(text, /\n {4}attached a00000000000f: "mine.png", 3.0 MB/);
+		// The way in comes before the first link, since an agent's fetch of a link is refused.
+		assert.match(
+			text,
+			/^Issue [^\n]*\n[^\n]*\n3 files are attached below\. To read them: abso issue \d+ --save-attachments <folder> saves every one there, then open the files\. The links are for people signed in on the website\.\n/,
+		);
+		assert.doesNotMatch(
+			issuePage({ ...page, issue: { ...page.issue, attachments: [] }, comments: [] } as unknown as IssuePage).join(
+				"\n",
+			),
+			/--save-attachments/,
+		);
 		// An SVG is listed as its PNG, with its own file as a download beside it.
 		assert.match(
 			text,
@@ -348,6 +359,7 @@ describe("--attach (abso issue 171)", () => {
 			],
 		} as unknown as IssuePage;
 		const asks = issuePage(asked, { attachmentUrl: (id: string) => `https://i.example/${id}` }).join("\n");
+		assert.match(asks, /\n5 files are attached below\./, "an ask's question and answer files count too");
 		assert.match(
 			asks,
 			/ask 4: .*"Which\?"\n {4}attached a00000000000d: "a.png", 1 KB, https:\/\/i.example\/a00000000000d\n {4}answer: "This"\n {6}attached a00000000000e: "b.png", 1 KB/,

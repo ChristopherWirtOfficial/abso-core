@@ -259,9 +259,20 @@ export function issuePage(p: IssuePage, api?: Pick<Api, "attachmentUrl">): strin
 			? `${i.closed.how === "done" ? "Done" : "Dropped"} by ${i.closed.by}${i.closed.version !== null ? ` in version ${i.closed.version}` : ""}, ${shortWhen(i.closed.at)}.`
 			: "",
 	].filter((f) => f !== "");
+	// The links below open for people signed in on the website; an agent's fetch of one is refused. Say the way in
+	// before the first link, so an agent reads the files instead of hunting for them.
+	const files =
+		(i.attachments ?? []).length +
+		p.comments.reduce((n, c) => n + (c.attachments ?? []).length, 0) +
+		p.asks.reduce((n, a) => n + (a.attachments ?? []).length + (a.answer?.attachments ?? []).length, 0);
 	return [
 		`Issue ${i.id}: ${q(i.title)} [${i.status}]`,
 		facts.join(" "),
+		...(files > 0
+			? [
+					`${files === 1 ? "1 file is" : `${files} files are`} attached below. To read ${files === 1 ? "it" : "them"}: abso issue ${i.id} --save-attachments <folder> saves ${files === 1 ? "it" : "every one"} there, then open the files. The links are for people signed in on the website.`,
+				]
+			: []),
 		...(i.lines ? [`From ${i.lines.file} lines ${i.lines.from}-${i.lines.to} at version ${i.lines.version}.`] : []),
 		...(i.description !== "" ? ["", ...i.description.split("\n").map((l) => `  ${l}`)] : []),
 		...attachmentLines(api, i.attachments, "  "),
