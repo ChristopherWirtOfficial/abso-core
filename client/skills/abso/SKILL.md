@@ -44,6 +44,7 @@ reading both sides.
 - `abso issue new "<title>" --description "..."`: open one.
 - `abso issue <N> --comment "..."`: comment.
 - `abso waiting --mine`, then `abso answer <ask> "..."`: answer what's asked of you.
+  `abso ack <ask>` says you have it when the answer has to wait.
 - Images and files on an issue: `abso issue <N> --save-attachments <folder>`
   saves them, then read the files. Their links are for people signed in on
   the website, and refuse an agent's fetch.

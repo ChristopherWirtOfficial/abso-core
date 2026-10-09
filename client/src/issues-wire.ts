@@ -83,6 +83,8 @@ export interface Ask {
 	seen: number | null;
 	/** "withdrawn" when the asker took it back; absent for an open or answered ask, and from older servers. */
 	outcome?: "withdrawn";
+	/** When the one asked acknowledged it without answering yet, with their note; it stays open. Absent until then. */
+	ack?: { at: number; note: string };
 }
 
 export interface Claim {

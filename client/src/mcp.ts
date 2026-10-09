@@ -52,6 +52,7 @@ export const MCP_COMMANDS = [
 	"ask",
 	"waiting",
 	"answer",
+	"ack",
 	"orgs",
 	"org",
 ] as const;

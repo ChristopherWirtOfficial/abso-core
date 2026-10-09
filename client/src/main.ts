@@ -41,7 +41,7 @@ import { newsBlockLines, newsShown, TOKEN_SERVERS } from "./core.ts";
 import { runDraftSync, runLand, runSwitch } from "./drafts.ts";
 import { runExport } from "./export.ts";
 import { runBlame, runWhere, runWho, runWhy } from "./history.ts";
-import { runAnswer, runAsk, runIssue, runIssues, runSearch, runWaiting } from "./issues.ts";
+import { runAck, runAnswer, runAsk, runIssue, runIssues, runSearch, runWaiting } from "./issues.ts";
 import { adminToken, issuedPublic, keyList, keyListText, keyNew, keyRevoke } from "./key-admin.ts";
 import { initInOrg, runOrg, runOrgs } from "./orgs.ts";
 import { runUnqueue } from "./queue.ts";
@@ -466,6 +466,13 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		about:
 			"Answer an ask of you, in your own words, by picking an option (by number or text), or, for a task, with --done. --attach sends files with the answer. The asker hears it.",
 		run: runAnswer,
+	},
+	ack: {
+		flags: {},
+		usage: 'abso ack <ask> ["<note>"]',
+		about:
+			"Acknowledge an ask of you without answering it yet: the asker hears it, with your note, and the ask stays open, shown as acknowledged. abso answer closes it later.",
+		run: runAck,
 	},
 	unqueue: {
 		flags: {},

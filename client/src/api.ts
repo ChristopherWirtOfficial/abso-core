@@ -625,6 +625,11 @@ export class Api {
 		return this.#issues("POST", this.agentPath(`answer/${id}`), body);
 	}
 
+	/** Acknowledges an ask of this agent without answering it: the asker hears it, and the ask stays open. */
+	ack(id: number, body: { note?: string }): Promise<{ ask: Ask; news?: IssueNews }> {
+		return this.#issues("POST", this.agentPath(`ack/${id}`), body);
+	}
+
 	/** Takes back an ask this agent made, with a note on why; the one asked hears it. */
 	withdraw(id: number, body: { note?: string }): Promise<{ ask: Ask; news?: IssueNews }> {
 		return this.#issues("POST", this.agentPath(`withdraw/${id}`), body);

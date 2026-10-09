@@ -14,7 +14,8 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { readConfig, readMachineServers } from "../src/config.ts";
 import { issuesServerFor, tokenGoesTo } from "../src/core.ts";
-import { searchLines } from "../src/issues.ts";
+import { issuePage, searchLines } from "../src/issues.ts";
+import type { IssuePage } from "../src/issues-wire.ts";
 import { main } from "../src/main.ts";
 import { argvFor, mcpTools } from "../src/mcp.ts";
 import { type Fake, startFake } from "./fake-server.ts";
@@ -64,6 +65,12 @@ before(async () => {
 			});
 			return;
 		}
+		// An ack answers with the ask, acknowledged and still open.
+		const ack = /\/a\/([^/]+)\/ack\/(\d+)$/.exec(req.url ?? "");
+		if (req.method === "POST" && ack)
+			return send(200, {
+				ask: { id: Number(ack[2]), by: "desk", of: ack[1], answer: null, ack: { at: Date.now(), note: "" } },
+			});
 		send(500, { error: "a stand-in" });
 	});
 	await new Promise<void>((ok) => issues.listen(0, "127.0.0.1", ok));
@@ -196,6 +203,71 @@ describe("issues commands, the client's part (#54)", () => {
 		const posts = seen.slice(before).filter((s) => s.startsWith("POST"));
 		assert.equal(posts.length, 1, posts.join("\n"));
 		assert.match(posts[0]!, /^POST \/p\/issues\d+\/a\/erin\/withdraw\/3$/);
+	});
+
+	it("ack is one POST to the one asked's ack/<ask> route, and says the ask stays open", async () => {
+		const fay = await folder("fay");
+		const before = seen.length;
+		const r = await main(["ack", "7", "on it after the deploy"], { cwd: fay, env: ENV(), write: () => {} });
+		assert.equal(r.exit, 0, r.stdout + r.stderr);
+		assert.equal(r.stdout, 'Acknowledged ask 7. desk hears it; the ask stays open until abso answer 7 "...".\n');
+		const posts = seen.slice(before).filter((s) => s.startsWith("POST"));
+		assert.deepEqual(posts.length, 1, posts.join("\n"));
+		assert.match(posts[0]!, /^POST \/p\/issues\d+\/a\/fay\/ack\/7$/);
+		assert.equal((await main(["ack"], { cwd: fay, env: ENV(), write: () => {} })).exit, 1);
+	});
+
+	it("an acknowledged ask reads as acknowledged, not answered, with the note under it", () => {
+		const ask = {
+			id: 7,
+			issue: 3,
+			by: "desk",
+			of: "fay",
+			kind: "question",
+			question: "Which way?",
+			review: false,
+			due: null,
+			recommendation: null,
+			options: [],
+			blocks: [],
+			at: 0,
+			answer: null,
+			seen: 0,
+			ack: { at: 0, note: "on it after the deploy" },
+		};
+		const page = {
+			issue: {
+				id: 3,
+				title: "t",
+				status: "blocked",
+				parent: null,
+				opened: { by: "desk", at: 0 },
+				agent: null,
+				agents: [],
+				blockedBy: [],
+				labels: [],
+				versions: [],
+				waitingOn: ["fay"],
+				closed: null,
+				description: "",
+				lines: null,
+				watchers: [],
+			},
+			comments: [],
+			edits: [],
+			asks: [ask],
+			claims: [],
+			children: [],
+		} as unknown as IssuePage;
+		const text = issuePage(page).join("\n");
+		assert.match(
+			text,
+			/\n {2}ask 7: desk, [^\n]*asks fay a question on issue 3 \(acknowledged [^;)]+, not answered yet\): "Which way\?"\n {4}fay acknowledged: "on it after the deploy"/,
+		);
+		assert.doesNotMatch(text, /answer:/);
+		const answered = { ...ask, answer: { by: "fay", words: "This way", at: 0 } };
+		const later = issuePage({ ...page, asks: [answered] } as unknown as IssuePage).join("\n");
+		assert.doesNotMatch(later, /acknowledged/, "an answer replaces the ack");
 	});
 });
 

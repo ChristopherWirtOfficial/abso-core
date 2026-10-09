@@ -78,7 +78,8 @@ function askLine(a: Ask & { title?: string | null }, api?: Pick<Api, "attachment
 		a.answer
 			? `${a.outcome === "withdrawn" ? "withdrawn" : "answered"} by ${a.answer.by}, ${shortWhen(a.answer.at)}`
 			: "",
-		!a.answer && a.seen !== undefined ? seenText(a.seen) : "",
+		!a.answer && a.ack ? `acknowledged ${shortWhen(a.ack.at)}, not answered yet` : "",
+		!a.answer && !a.ack && a.seen !== undefined ? seenText(a.seen) : "",
 		a.due ? `due ${a.due}` : "",
 		a.blocks.length > 0 ? `blocks ${a.blocks.join(", ")}` : "",
 	].filter((x) => x !== "");
@@ -86,6 +87,7 @@ function askLine(a: Ask & { title?: string | null }, api?: Pick<Api, "attachment
 	const lines = [head, ...attachmentLines(api, a.attachments, "    ")];
 	if (a.options.length > 0) lines.push(`    options: ${a.options.map((o, i) => `${i + 1}. ${q(o)}`).join(", ")}`);
 	if (a.recommendation) lines.push(`    ${a.recommendation.by} recommends: ${q(a.recommendation.text)}`);
+	if (!a.answer && a.ack && a.ack.note !== "") lines.push(`    ${a.of} acknowledged: ${q(a.ack.note)}`);
 	if (a.answer && a.outcome === "withdrawn") {
 		if (a.answer.words !== "") lines.push(`    why: ${q(a.answer.words)}`);
 	} else if (a.answer)
@@ -735,6 +737,19 @@ export async function runWaiting(args: Parsed, env: Env): Promise<Output> {
 				? { queued: yours.map((q) => ({ id: q.id, message: q.message, standing: standing(queue!.items, q.id) })) }
 				: {}),
 		},
+	};
+}
+
+/** abso ack <ask> ["note"]: tell the asker you have it, and answer later. The ask stays open until abso answer. */
+export async function runAck(args: Parsed, env: Env): Promise<Output> {
+	const [first, ...words] = args.positionals;
+	const id = issueNumber(first, "the ask number");
+	const { api } = openIssues(env);
+	const note = words.join(" ");
+	const r = await api.ack(id, note !== "" ? { note } : {});
+	return {
+		text: `Acknowledged ask ${id}. ${r.ask.by} hears it; the ask stays open until abso answer ${id} "...".`,
+		json: { ask: r.ask },
 	};
 }
 
