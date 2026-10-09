@@ -127,7 +127,7 @@ async function token($: Engine, server: string): Promise<string | undefined> {
 async function get($: Engine, f: Folder, path: string): Promise<any> {
 	const bearer = await token($, f.server);
 	const r = await $.http.fetch(`${f.server.replace(/\/+$/, "")}/p/${encodeURIComponent(f.project)}${path}`, {
-		headers: { "x-avcs-client": CLIENT, ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) },
+		headers: { "x-abso-client": CLIENT, ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) },
 	});
 	if (!r.ok) throw new Error(`${path} answered ${r.status}`);
 	return JSON.parse(r.text);

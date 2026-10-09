@@ -133,7 +133,7 @@ describe("--attach (abso issue 171)", () => {
 			calls.map((c) => `${c.method} ${c.url.replace(/^\/p\/[^/]+/, "")}`),
 			["POST /a/ann/attachments", "POST /a/ann/attachments", "POST /a/ann/issue"],
 		);
-		assert.equal(calls[0]!.headers["x-avcs-name"], "shot.png");
+		assert.equal(calls[0]!.headers["x-abso-name"], "shot.png");
 		assert.equal(calls[0]!.headers["content-type"], "application/octet-stream");
 		assert.deepEqual([...calls[0]!.body], [0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
 		const opened = JSON.parse(calls[2]!.body.toString()) as { title: string; attachments: string[] };

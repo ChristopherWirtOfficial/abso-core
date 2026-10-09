@@ -487,7 +487,7 @@ describe("which client this is", () => {
 			agent: "a",
 			token: "t",
 		} as ConstructorParameters<typeof Api>[0]).headers("application/json");
-		assert.equal(headers["x-avcs-client"], `abso-cli/${clientVersion()}`);
+		assert.equal(headers["x-abso-client"], `abso-cli/${clientVersion()}`);
 		assert.match(clientVersion(), /^\d+\.\d+\.\d+(\+[0-9a-f]{7})?$/);
 	});
 });

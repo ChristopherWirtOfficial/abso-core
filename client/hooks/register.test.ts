@@ -32,7 +32,7 @@ function world(on: On, inFolder: boolean, news: string[][]) {
 	on("http.fetch", (_$, e) => {
 		asked.push(e.url);
 		auth.push((e.init?.headers as Record<string, string> | undefined)?.authorization ?? "none");
-		clients.push(String((e.init?.headers as Record<string, string> | undefined)?.["x-avcs-client"]));
+		clients.push(String((e.init?.headers as Record<string, string> | undefined)?.["x-abso-client"]));
 		return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ news: news.shift() ?? [] }) } };
 	});
 	on("session.append", (_$, e) => {

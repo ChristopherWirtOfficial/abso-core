@@ -229,7 +229,7 @@ async function pollNews($: Engine, root: string): Promise<void> {
 				method: "POST",
 				headers: {
 					"content-type": "application/json",
-					"x-avcs-client": CLIENT,
+					"x-abso-client": CLIENT,
 					...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
 				},
 				body: "{}",
@@ -364,7 +364,7 @@ async function send($: Engine, job: Job, who: Who): Promise<{ outcome: string; n
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
-				"x-avcs-client": CLIENT,
+				"x-abso-client": CLIENT,
 				...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
 			},
 			body: JSON.stringify(payload),

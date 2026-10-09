@@ -7,7 +7,7 @@
 //     last commit that changed the mod's own files (0.1.0+702c616, or
 //     0.1.0+702c616.dirty when they differ from it), and hooks/stamp.ts says
 //     the same, so the mod sends it with each call to the server
-//     (X-Avcs-Client). A commit that changes none of them changes nothing to
+//     (X-Abso-Client). A commit that changes none of them changes nothing to
 //     install, and nothing to restart for.
 //  2. Checks the staged copy: `claude plugin validate`, then the mod's own
 //     tests in Claude Code's plugin test kit. If either fails, nothing in the

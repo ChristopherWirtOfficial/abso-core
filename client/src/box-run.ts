@@ -41,7 +41,7 @@ export interface RunIO {
 	readonly onRetry?: (why: string, attempt: number) => void;
 	/** Stop the runs still going in the box first, instead of a 409 (abso run --replace). */
 	readonly replace?: boolean;
-	/** Called when the run starts: whether the box is fresh, and what X-Avcs-Prep says about its prep. */
+	/** Called when the run starts: whether the box is fresh, and what X-Abso-Prep says about its prep. */
 	readonly onBox?: (cold: boolean, prep: string | undefined) => void;
 	/** Start from the plain image this once, not the prep (abso run --fresh). */
 	readonly fresh?: boolean;
@@ -154,11 +154,11 @@ export async function postRun(
 				`${api.url(api.agentPath("run"))}?cmd=${encodeURIComponent(command)}&stderr=split${replace ? "&replace=1" : ""}${fresh ? "&fresh=1" : ""}${boxQuery(api.box)}`,
 				{
 					method: "POST",
-					headers: { ...api.headers("application/gzip"), "x-avcs-run-key": key, "x-avcs-kind": api.runKind },
+					headers: { ...api.headers("application/gzip"), "x-abso-run-key": key, "x-abso-kind": api.runKind },
 					body: tarGz,
 				},
 			);
-			if (answer.status < 500 || answer.headers.get("x-avcs-run") !== null) {
+			if (answer.status < 500 || answer.headers.get("x-abso-run") !== null) {
 				res = answer;
 				break;
 			}

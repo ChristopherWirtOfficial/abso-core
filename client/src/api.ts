@@ -156,7 +156,7 @@ export class Api {
 		this.startRetryDelaysMs = startRetryDelaysMs;
 	}
 
-	/** What a box run is for, for the server's box-run records (#39): X-Avcs-Kind on POST /run. */
+	/** What a box run is for, for the server's box-run records (#39): X-Abso-Kind on POST /run. */
 	runKind: RunKind = "run";
 
 	/** The Issues Worker (#54) this folder's issues calls go to; set by the issues commands (issues.ts). */
@@ -173,7 +173,7 @@ export class Api {
 	headers(contentType?: string): Record<string, string> {
 		return {
 			// Which client made the call (#29); the mods send theirs too.
-			"x-avcs-client": `abso-cli/${clientVersion()}`,
+			"x-abso-client": `abso-cli/${clientVersion()}`,
 			...(this.config.token ? { authorization: `Bearer ${this.config.token}` } : {}),
 			...(contentType ? { "content-type": contentType } : {}),
 		};
@@ -479,7 +479,7 @@ export class Api {
 		try {
 			res = await fetch(this.url(path, this.issuesServer), {
 				method: "POST",
-				headers: { ...this.headers("application/octet-stream"), "x-avcs-name": encodeURIComponent(name) },
+				headers: { ...this.headers("application/octet-stream"), "x-abso-name": encodeURIComponent(name) },
 				body: bytes as Uint8Array<ArrayBuffer>,
 				signal: AbortSignal.timeout(Math.max(this.timeoutMs, 120_000)),
 			});
@@ -882,9 +882,9 @@ export class Api {
 	 */
 	async run(command: string, tarGz: Uint8Array<ArrayBuffer>, io: RunIO): Promise<number> {
 		const res = await postRun(this, command, tarGz, io.onRetry, io.replace, io.fresh);
-		// X-Avcs-Box: cold means the box started for this run; X-Avcs-Prep says whether it started from the prep (#37).
-		io.onBox?.(res.headers.get("x-avcs-box") === "cold", res.headers.get("x-avcs-prep") ?? undefined);
-		return follow(this, res, res.headers.get("x-avcs-run"), { at: 0, errAt: 0 }, io);
+		// X-Abso-Box: cold means the box started for this run; X-Abso-Prep says whether it started from the prep (#37).
+		io.onBox?.(res.headers.get("x-abso-box") === "cold", res.headers.get("x-abso-prep") ?? undefined);
+		return follow(this, res, res.headers.get("x-abso-run"), { at: 0, errAt: 0 }, io);
 	}
 
 	/**
@@ -898,7 +898,7 @@ export class Api {
 		replace = false,
 	): Promise<string> {
 		const res = await postRun(this, command, tarGz, onRetry, replace);
-		const id = res.headers.get("x-avcs-run");
+		const id = res.headers.get("x-abso-run");
 		if (id === null) {
 			// No id: the box failed before the job started ({"error"} in the body), or the server can't detach.
 			await consumeRun(res, { out: () => {} }, { at: 0, errAt: 0 });

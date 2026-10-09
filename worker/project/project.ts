@@ -268,7 +268,7 @@ export class Project {
 	readonly #versionChange = new Map<string, number>();
 	/** Every note (#44), by id. */
 	readonly #notes = new Map<number, NoteRecord>();
-	/** Mod versions (X-Avcs-Client) in the order they first sent an edit (#41): the last is taken as the installed one. */
+	/** Mod versions (X-Abso-Client) in the order they first sent an edit (#41): the last is taken as the installed one. */
 	#mods: string[] = [];
 	/** The merge queue (#39), in order: publishes to shared waiting for their batch's check. */
 	#queue: QueuedPublish[] = [];
@@ -483,7 +483,7 @@ export class Project {
 	}
 
 	/**
-	 * How the agent's newest edit arrived (#41). The mod sends X-Avcs-Client
+	 * How the agent's newest edit arrived (#41). The mod sends X-Abso-Client
 	 * avcs-mod/<stamp>; the hook sends abso-cli/<version> (avcs-cli/ before #59) with the chat's
 	 * session; abso record and git pushes send no session. Edits stored before
 	 * the client was recorded have only the session: those count as the mod

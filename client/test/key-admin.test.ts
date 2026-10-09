@@ -71,7 +71,7 @@ test("key new sends the admin token as a header and returns the key once", async
 	try {
 		const issued = await keyNew(config, ADMIN, "tester-1");
 		assert.deepEqual(issued, { id: "k_ab12cd34", key: KEY, agent: "tester-1" });
-		assert.equal(seen[0]!.headers!.get("x-avcs-admin"), ADMIN);
+		assert.equal(seen[0]!.headers!.get("x-abso-admin"), ADMIN);
 		assert.equal(seen[0]!.url!.includes(ADMIN), false);
 		assert.equal(seen[0]!.url!.includes(KEY), false);
 	} finally {

@@ -263,7 +263,7 @@ leaves them half-written. `install-mod.ts` and `install-view.ts`:
 - stamp the mod with the last commit that changed its files: plugin.json's
   version becomes `0.1.0+702c616` (`.dirty` when the files differ from that
   commit), and the mod sends it with each call to the server as
-  `X-Avcs-Client`. A commit that changes none of them leaves nothing to
+  `X-Abso-Client`. A commit that changes none of them leaves nothing to
   install, and nothing to restart for;
 - check a staged copy first, with `claude plugin validate` and the mod's own
   tests in the plugin test kit, and change nothing if either fails
@@ -276,7 +276,7 @@ it again to undo that); the same goes for `install-view.ts`. Both take a
 folder in place of the skills folder. `abso --version` prints this client's
 version and the mods installed on this machine, and says when this client
 has a newer mod to install. The command-line client sends its own version
-with each call too (`X-Avcs-Client: avcs-cli/0.1.0+<commit checked out>`).
+with each call too (`X-Abso-Client: avcs-cli/0.1.0+<commit checked out>`).
 
 ## The view (avcs-view)
 

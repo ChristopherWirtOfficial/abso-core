@@ -20,7 +20,7 @@ export type Entry =
 			readonly atom: Atom;
 			readonly session?: string;
 			readonly subagent?: string;
-			/** The client that sent it (#41, the edits mark): its X-Avcs-Client, such as avcs-mod/0.1.0+702c616. */
+			/** The client that sent it (#41, the edits mark): its X-Abso-Client, such as avcs-mod/0.1.0+702c616. */
 			readonly client?: string;
 	  }
 	| {

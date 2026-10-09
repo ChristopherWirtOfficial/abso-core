@@ -91,7 +91,7 @@ export interface Fake {
 	failPublish: "after" | "before" | undefined;
 	/** Run the merge queue's rounds now (after queueHold is let go). */
 	kickQueue(name: string): Promise<void>;
-	/** Each run POST's X-Avcs-Run-Key, and whether a run started for it. */
+	/** Each run POST's X-Abso-Run-Key, and whether a run started for it. */
 	runStarts: { key: string | undefined; started: boolean; cmd: string; kind?: string }[];
 	close(): Promise<void>;
 }
@@ -250,7 +250,7 @@ export async function startFake(port = 0, token = "fake-token"): Promise<Fake> {
 				...files.map((rel) => ({ path: rel, data: readFileSync(join(box!, ...rel.split("/"))) })),
 				...extra,
 			]);
-			res.writeHead(200, { "content-type": "application/gzip", "x-avcs-files": String(files.length) });
+			res.writeHead(200, { "content-type": "application/gzip", "x-abso-files": String(files.length) });
 			res.end(Buffer.from(gz));
 			return;
 		}
@@ -482,13 +482,13 @@ export async function startFake(port = 0, token = "fake-token"): Promise<Fake> {
 		if (agent === undefined || !NAME.test(agent))
 			return send(res, 400, { error: "agent names use letters, digits, '.', '_' and '-'" });
 		if (op === "run") {
-			const key = req.headers["x-avcs-run-key"];
+			const key = req.headers["x-abso-run-key"];
 			const dropped = fake.dropRunStarts > 0;
 			fake.runStarts.push({
 				key: typeof key === "string" ? key : undefined,
 				started: !dropped,
 				cmd: url.searchParams.get("cmd") ?? "",
-				kind: String(req.headers["x-avcs-kind"] ?? ""),
+				kind: String(req.headers["x-abso-kind"] ?? ""),
 			});
 			if (dropped) {
 				fake.dropRunStarts--;
@@ -656,7 +656,7 @@ export async function startFake(port = 0, token = "fake-token"): Promise<Fake> {
 		const run: Run = { out: Buffer.alloc(0), err: Buffer.alloc(0), split, end: undefined, listeners: new Set() };
 		hosted.runs.clear();
 		hosted.runs.set(id, run);
-		res.writeHead(200, { "content-type": "application/x-ndjson", "x-avcs-box": "warm", "x-avcs-run": id });
+		res.writeHead(200, { "content-type": "application/x-ndjson", "x-abso-box": "warm", "x-abso-run": id });
 		res.write(`${JSON.stringify({ run: id, ...(split ? { stderr: "split" } : {}) })}\n`);
 		streamRun(res, run);
 		const emit = (line: string): void => {

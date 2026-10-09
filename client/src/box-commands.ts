@@ -308,7 +308,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 	}
 	// avcs's own lines (on stderr); --quiet drops them, and the box's stdout and stderr stay as they are (#37).
 	const notice = bool(args, "quiet") ? (_text: string): void => {} : (env.writeErr ?? env.write);
-	// What the box said about its prep (X-Avcs-Prep): null when it has none.
+	// What the box said about its prep (X-Abso-Prep): null when it has none.
 	let prepState: string | null | undefined;
 	const posix = undoGitBashPaths(args.positionals, env.env);
 	if (posix.undone.length > 0) {
@@ -517,7 +517,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
  * (ABSO_BOX=2 in its environment), so their runs don't wait on each other.
  */
 /**
- * What this folder last heard about a box's prep: a run's X-Avcs-Prep, or
+ * What this folder last heard about a box's prep: a run's X-Abso-Prep, or
  * abso prep and prep --forget. null means no prep; undefined, never heard. So
  * publish --check can refuse before running a check that can't be trusted
  * (#37: a 40 s suite ran, then was refused).

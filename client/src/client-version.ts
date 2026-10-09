@@ -1,4 +1,4 @@
-// Which client this is (#29), for `avcs --version` and for the X-Avcs-Client
+// Which client this is (#29), for `avcs --version` and for the X-Abso-Client
 // header the command-line client sends with each call: plugin.json's version
 // plus the commit checked out where the client runs (0.1.0+ed45dad). The
 // commit is read from .git without running git, since every command pays for

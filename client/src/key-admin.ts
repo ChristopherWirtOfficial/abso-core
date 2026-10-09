@@ -57,7 +57,7 @@ async function call(config: Config, admin: string, method: "GET" | "POST", path:
 			method,
 			headers: {
 				...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
-				"x-avcs-admin": admin,
+				"x-abso-admin": admin,
 			},
 			signal: AbortSignal.timeout(30_000),
 		});
