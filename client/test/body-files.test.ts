@@ -11,8 +11,9 @@ import { bodyFilesHelp, readBodyFiles, withBodyFiles } from "../src/body-files.t
 
 const dir = mkdtempSync(join(tmpdir(), "abso-body-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
-const BODY = "First line:\n\n- one\n- two\r\n\nLast line.";
-writeFileSync(join(dir, "body.md"), `${BODY}\n`);
+const BODY = "First line:\n\n- one\n- two\n\nLast line.";
+// Written with one Windows line ending inside, which arrives as LF.
+writeFileSync(join(dir, "body.md"), `${BODY.replace("- two\n", "- two\r\n")}\r\n`);
 writeFileSync(join(dir, "empty.md"), "\n  \n");
 
 const ISSUE = { comment: "string", description: "string", title: "string", drop: "boolean" } as const;

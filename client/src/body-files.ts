@@ -55,7 +55,9 @@ export function readBodyFiles(
 				throw new UsageError(`--${flag} ${path}: no such file to read`);
 			}
 		}
-		text = text.replace(/\r?\n$/, "");
+		// A file saved on Windows has CRLF line endings; the text goes up with LF only, as typed text does
+		// (the Issues Worker refuses a carriage return as a character a reader can't see).
+		text = text.replace(/\r\n?/g, "\n").replace(/\n$/, "");
 		if (text.trim() === "") throw new UsageError(`--${flag} ${path}: the text is empty`);
 		return text;
 	};
