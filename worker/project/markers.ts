@@ -287,9 +287,12 @@ export function blockCollision(file: string, b: Block): Collision {
 
 /** The blocks of markers still in the agent's files, as collisions (#11): listed by sync and status. */
 export function markedCollisions(host: MarkerHost, agent: AgentState): Collision[] {
+	const files = markedFiles(agent);
+	// No marked files, no view to build (abso-core issue 6): most agents have none.
+	if (files.length === 0) return [];
 	const view = host.agentView(agent);
 	const out: Collision[] = [];
-	for (const file of markedFiles(agent)) {
+	for (const file of files) {
 		if (!view.hasFile(file)) continue;
 		for (const b of blocksIn(view.lines(file).map((l) => l.text))) out.push(blockCollision(file, b));
 	}

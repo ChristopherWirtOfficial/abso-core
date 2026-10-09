@@ -225,6 +225,8 @@ export class Project {
 	readonly #graph: Graph;
 	/** Views laid out from atom sets, cached under a byte budget (views.ts). */
 	readonly #views: ViewCache;
+	/** Each agent's draft files, under the key they were worked out for (#draftFiles). */
+	readonly #draftFilesKept = new Map<string, { key: string; files: Set<string> }>();
 	/** Each version's files and each path's history (pathindex.ts). */
 	readonly #paths: PathIndex;
 	/** For each atom (by seq) that wrote lines, the log position of the entry that recorded it (#46). */
@@ -992,9 +994,20 @@ export class Project {
 		}
 	}
 
-	/** The files the agent's unpublished changes touch, in its own view. */
-	#draftFiles(...args: Tail<Parameters<typeof hostedDraftFiles>>): ReturnType<typeof hostedDraftFiles> {
-		return hostedDraftFiles(this.#overlapHost, ...args);
+	/**
+	 * The files the agent's unpublished changes touch, in its own view. Kept per agent under what they're
+	 * made of (abso-core issue 6): its view's key and its draft. Most agents haven't moved since the last
+	 * status, and the view cache holds fewer views than a big project has agents, so working them out again
+	 * on every call cost about 0.5 s on abso. A copy goes out, so no caller can change what's kept.
+	 */
+	#draftFiles(agent: AgentState): Set<string> {
+		const key = `${this.#agentViewKey(agent)}|${this.#draft(agent).join(",")}`;
+		let kept = this.#draftFilesKept.get(agent.name);
+		if (kept?.key !== key) {
+			kept = { key, files: hostedDraftFiles(this.#overlapHost, agent) };
+			this.#draftFilesKept.set(agent.name, kept);
+		}
+		return new Set(kept.files);
 	}
 
 	/** Other agents in the agent's space whose unpublished changes or starting note meet `patterns`. */
@@ -2028,6 +2041,7 @@ export class Project {
 			agents: this.#agents,
 			agentView: (agent) => this.#agentView(agent),
 			draft: (agent) => this.#draft(agent),
+			draftFiles: (agent) => this.#draftFiles(agent),
 			liveNote: (agent) => this.#liveNote(agent),
 			queueNews: (agent, items, entries) => this.#queueNews(agent, items, entries),
 		};
@@ -2217,8 +2231,12 @@ export class Project {
 	}
 
 	#agentView(agent: AgentState): View {
-		// Keyed by what the set is made of, not by sorting every atom in it (#46): that cost more than the work.
-		return this.#viewKeyed(`a ${agent.space}@${agent.base}+${agent.mine.join(",")}`, () => this.#agentSet(agent));
+		return this.#viewKeyed(this.#agentViewKey(agent), () => this.#agentSet(agent));
+	}
+
+	/** An agent's view, keyed by what the set is made of, not by sorting every atom in it (#46): that cost more than the work. */
+	#agentViewKey(agent: AgentState): string {
+		return `a ${agent.space}@${agent.base}+${agent.mine.join(",")}`;
 	}
 
 	/** A space at a version: published versions never change, so the key is just their names (#46). */

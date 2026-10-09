@@ -24,6 +24,8 @@ export interface OverlapHost {
 	readonly agents: ReadonlyMap<string, AgentState>;
 	agentView(agent: AgentState): View;
 	draft(agent: AgentState): readonly AtomId[];
+	/** draftFiles below, kept per agent by the host. */
+	draftFiles(agent: AgentState): Set<string>;
 	liveNote(agent: AgentState): Starting | undefined;
 	queueNews(agent: AgentState, items: readonly NewsItem[], entries: Entry[]): void;
 }
@@ -64,8 +66,11 @@ export function overlapsOf(peers: readonly OverlapPeer[], patterns: readonly str
 /** The files the agent's unpublished changes touch, in its own view. */
 export function draftFiles(host: OverlapHost, agent: AgentState): Set<string> {
 	const files = new Set<string>();
+	const draft = host.draft(agent);
+	// No draft, no view to build: most agents in a big project have nothing unpublished.
+	if (draft.length === 0) return files;
 	const view = host.agentView(agent);
-	for (const id of host.draft(agent)) {
+	for (const id of draft) {
 		const atom = host.graph.atom(id);
 		for (const run of atom.inserts) files.add(isStartNode(run.parent) ? run.file : view.fileOf(run.parent));
 		for (const line of atom.deletes) files.add(view.fileOf(line));
@@ -81,7 +86,7 @@ export function overlaps(host: OverlapHost, agent: AgentState, patterns: readonl
 		.filter((other) => other !== agent && other.space === agent.space)
 		.map((other) => ({
 			name: other.name,
-			files: draftFiles(host, other),
+			files: host.draftFiles(other),
 			changesIn: (file: string) => host.draft(other).filter((id) => host.graph.filesOf(id).includes(file)).length,
 			note: host.liveNote(other),
 		}));
@@ -94,7 +99,7 @@ export function overlaps(host: OverlapHost, agent: AgentState, patterns: readonl
  * the edit.
  */
 export function overlapNews(host: OverlapHost, agent: AgentState, before: ReadonlySet<string>, entries: Entry[]): void {
-	const now = draftFiles(host, agent);
+	const now = host.draftFiles(agent);
 	const fresh = [...now].filter((f) => !before.has(f)).toSorted();
 	if (fresh.length === 0) return;
 	host.queueNews(agent, overlapItems(host.draft(agent)[0] ?? "", overlaps(host, agent, fresh)), entries);
