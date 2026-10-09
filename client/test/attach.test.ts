@@ -31,6 +31,9 @@ before(async () => {
 			const body = Buffer.concat(parts);
 			seen.push({ method: req.method!, url: req.url!, headers: req.headers, body });
 			const json = (o: unknown) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(o));
+			// A server from before attachments: it reads every POST body as JSON.
+			if (req.url!.includes("/p/old") && req.url!.endsWith("/attachments"))
+				return res.writeHead(400, { "content-type": "application/json" }).end('{"error":"the body is JSON"}');
 			if (req.url!.endsWith("/attachments"))
 				return json({
 					id: `a${String(seen.length).padStart(12, "0")}`,
@@ -111,6 +114,23 @@ describe("--attach (abso issue 171)", () => {
 		const alone = await avcs(dir, ["issue", "7", "--attach", "shot.png"]);
 		assert.equal(alone.exit, 1);
 		assert.match(alone.out, /--attach goes with avcs issue new or --comment/);
+	});
+
+	it("says plainly when the server doesn't take attachments yet, and writes nothing", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "abso-attach-"));
+		dirs.push(dir);
+		const init = await avcs(dir, ["init", "--server", fake.url, "--project", "old", "--agent", "ann"]);
+		assert.equal(init.exit, 0, init.out);
+		writeFileSync(join(dir, "shot.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 1]));
+		const from = seen.length;
+		const r = await avcs(dir, ["issue", "new", "T", "--attach", "shot.png"]);
+		assert.equal(r.exit, 1);
+		assert.match(r.out, /doesn't take attachments yet, so shot.png wasn't sent and nothing was written/);
+		assert.deepEqual(
+			seen.slice(from).map((c) => c.url.replace(/^\/p\/[^/]+/, "")),
+			["/a/ann/attachments"],
+			"no issue was opened",
+		);
 	});
 
 	it("sends nothing when a file is missing", async () => {

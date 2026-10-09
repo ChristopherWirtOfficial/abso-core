@@ -424,6 +424,13 @@ export class Api {
 			);
 		}
 		const text = await res.text();
+		// A server from before attachments has no upload route: it answers 404, or 400 because the body isn't JSON;
+		// one with the route but nowhere to keep files answers 501. Say so plainly, and that nothing was sent.
+		if (res.status === 404 || res.status === 501 || (res.status === 400 && /the body is JSON/.test(text)))
+			throw new ApiError(
+				`${this.issuesServer} doesn't take attachments yet, so ${name} wasn't sent and nothing was written. Leave --attach off, or link the image instead.`,
+				res.status,
+			);
 		if (!res.ok) throw new ApiError(`uploading ${name} answered ${res.status}: ${errorSentence(text)}`, res.status);
 		return JSON.parse(text) as Attachment;
 	}
