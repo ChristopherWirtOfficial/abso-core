@@ -1,9 +1,9 @@
-// avcs-view: what abso knows about this chat's folder, at a glance (#12).
+// abso-view: what abso knows about this chat's folder, at a glance (#12).
 //
 // A status line entry, kept current: the space the folder is in, how many
 // files the draft changes, how far shared has moved on, who else has
 // unpublished changes in the same files, and news not yet looked at.
-// `/avcs-view` opens a pane with the whole picture.
+// `/abso-view` opens a pane with the whole picture.
 //
 // Outside an abso folder it costs one folder lookup at session start and
 // nothing after. Inside one, it asks the server for /status and /where at
@@ -15,18 +15,18 @@ import { atom, read, update } from "claude-code";
 import type { AvcsView } from "../types";
 import { STAMP } from "./stamp.ts";
 
-const PANE = "avcs-view";
-const COMMAND = "avcs-view";
+const PANE = "abso-view";
+const COMMAND = "abso-view";
 const TICK_MS = 3_000;
 const REFRESH_MS = 30_000;
 const AFTER_EDIT_MS = 2_000;
 const NEWS_SHOWN = 12;
 const EDIT_TOOLS = ["Edit", "MultiEdit", "Write", "NotebookEdit", "Bash"];
 /** Sent with each call, so the server can tell which mod, from which commit, made it (#29). */
-const CLIENT = `avcs-view/${STAMP ?? "checkout"}`;
+const CLIENT = `abso-view/${STAMP ?? "checkout"}`;
 
-const view = atom({ plugin: "avcs-view", key: "view" } as const, null);
-const seenNewsAt = atom({ plugin: "avcs-view", key: "seenNewsAt" } as const, "");
+const view = atom({ plugin: "abso-view", key: "view" } as const, null);
+const seenNewsAt = atom({ plugin: "abso-view", key: "seenNewsAt" } as const, "");
 
 // The engine interface, passed along (the validator refuses keeping it).
 type Engine = any;
@@ -204,7 +204,7 @@ function statusLine(v: AvcsView, seen: string): string {
 		parts.push(`${v.space === "shared" ? "shared" : "the draft"} is ${v.version - v.base} ahead (abso sync)`);
 	if (v.overlap.length > 0) parts.push(`${v.overlap.map((o) => o.agent).join(", ")} also on your files`);
 	const fresh = unread(v, seen);
-	if (fresh > 0) parts.push(`${plural(fresh, "news item")} (/avcs-view)`);
+	if (fresh > 0) parts.push(`${plural(fresh, "news item")} (/abso-view)`);
 	return parts.join(" · ");
 }
 
@@ -244,7 +244,7 @@ export const register: Register = (on) => {
 			await update($, seenNewsAt, () => newest);
 			$.ui.status(statusLine(v, newest));
 		}
-		return { text: "Opened the avcs view." };
+		return { text: "Opened the abso view." };
 	});
 
 	on("ui.render", { component: "Pane", requestId: PANE }, async ($, e) => {

@@ -107,26 +107,49 @@ const at = (dir: string, rel: string, suffix = "") => join(dir, ...rel.split("/"
 
 /** The abso mod: what the hook imports first, plugin.json last. src/core.ts is the only client file it imports. */
 export const AVCS_MOD: ModSpec = {
-	name: "avcs",
+	name: "abso-hooks",
 	from: CLIENT_DIR,
 	files: ["src/core.ts", "hooks/stamp.ts", "hooks/register.ts", "hooks/hooks.json", ".claude-plugin/plugin.json"],
 	test: "hooks/register.test.ts",
 };
 
-/** The avcs-view mod (#12), from client/view. */
+/** The abso-view mod (#12), from client/view. */
 export const VIEW_MOD: ModSpec = {
-	name: "avcs-view",
+	name: "abso-view",
 	from: join(CLIENT_DIR, "view"),
 	files: ["types/index.d.ts", "hooks/stamp.ts", "hooks/register.tsx", "hooks/hooks.json", ".claude-plugin/plugin.json"],
 	test: "hooks/register.test.ts",
 };
+
+/** The skills folders the mods had before the rename; an install moves them out of the way (see retireOldMod). */
+export const OLD_MOD_NAMES: Readonly<Record<string, string>> = { "abso-hooks": "avcs", "abso-view": "avcs-view" };
 
 /** Where Claude Code's skills folder keeps a mod. */
 export const skillsFolder = (name: string, env: Readonly<Record<string, string | undefined>> = process.env) =>
 	join(env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "skills", name);
 
 export const modInstalled = (env: Readonly<Record<string, string | undefined>> = process.env) =>
-	existsSync(at(skillsFolder(AVCS_MOD.name, env), MANIFEST));
+	existsSync(at(skillsFolder(AVCS_MOD.name, env), MANIFEST)) ||
+	existsSync(at(skillsFolder(OLD_MOD_NAMES[AVCS_MOD.name]!, env), MANIFEST));
+
+/**
+ * After the new mod is in, the folder it replaces (skills/avcs, skills/avcs-view) would load beside it, so it
+ * is moved, not deleted, to ~/.abso/retired-mods/<name>-<stamp>. Returns where it went, or undefined when there was none.
+ */
+export function retireOldMod(
+	spec: ModSpec,
+	env: Readonly<Record<string, string | undefined>> = process.env,
+	now: Date = new Date(),
+): string | undefined {
+	const old = OLD_MOD_NAMES[spec.name];
+	if (old === undefined) return undefined;
+	const from = skillsFolder(old, env);
+	if (!existsSync(from)) return undefined;
+	const to = join(homedir(), ".abso", "retired-mods", `${old}-${now.toISOString().replace(/[:.]/g, "-")}`);
+	mkdirSync(dirname(to), { recursive: true });
+	renameRetrying(from, to);
+	return to;
+}
 
 /** The version an install of `spec` gets: plugin.json's, plus the last commit that changed its files (and .dirty when they differ from it). */
 export function versionFor(spec: ModSpec, commit?: string | null): string {
@@ -405,6 +428,9 @@ export function runInstaller(
 		}
 		const unchecked = options.includes("--unchecked");
 		const r = installMod(spec, { target, check: unchecked ? () => undefined : checkWithClaude(spec) });
+		// Only for the real skills folder: an install to another folder leaves the old mod alone.
+		const retired = target === resolve(skillsFolder(spec.name)) ? retireOldMod(spec) : undefined;
+		if (retired) console.log(`Moved the old ${OLD_MOD_NAMES[spec.name]} mod out of the skills folder, to ${retired}.`);
 		if (!r.changed) {
 			console.log(`The ${spec.name} mod ${r.version} is already installed in ${target}; nothing changed.`);
 			return;

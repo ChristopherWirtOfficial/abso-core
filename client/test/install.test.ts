@@ -24,7 +24,16 @@ import { dirname, join, relative } from "node:path";
 import { after, describe, it } from "node:test";
 import { Api } from "../src/api.ts";
 import { clientVersion, headCommit } from "../src/client-version.ts";
-import { installMod, type ModSpec, modsBehindText, rollbackMod, versionFor, versionReport } from "../src/install.ts";
+import {
+	AVCS_MOD,
+	installMod,
+	type ModSpec,
+	modsBehindText,
+	retireOldMod,
+	rollbackMod,
+	versionFor,
+	versionReport,
+} from "../src/install.ts";
 import { main } from "../src/main.ts";
 
 const hasGit = spawnSync("git", ["--version"]).status === 0;
@@ -335,7 +344,7 @@ describe("which client this is", () => {
 		const config = temp();
 		const spec = source();
 		installMod(spec, {
-			target: join(config, "skills", "avcs"),
+			target: join(config, "skills", "abso-hooks"),
 			check: pass,
 			commit: "aaaaaaa",
 			now: new Date("2026-10-05T04:30:00Z"),
@@ -346,9 +355,9 @@ describe("which client this is", () => {
 		assert.equal(client, `abso ${clientVersion()} (${dirname(import.meta.dirname)})`);
 		assert.match(
 			mod!,
-			/^the avcs mod: 0\.1\.0\+aaaaaaa in .*skills[\\/]avcs, installed 2026-10-05 04:30 UTC; this client has 0.2.0(\+[0-9a-f]{7}(\.dirty)?)?: node client\/install-mod\.ts installs it$/,
+			/^the abso-hooks mod: 0\.1\.0\+aaaaaaa in .*skills[\\/]abso-hooks, installed 2026-10-05 04:30 UTC; this client has 0.2.0(\+[0-9a-f]{7}(\.dirty)?)?: node client\/install-mod\.ts installs it$/,
 		);
-		assert.equal(view, "the avcs-view mod: not installed (node client/install-view.ts)");
+		assert.equal(view, "the abso-view mod: not installed (node client/install-view.ts)");
 		const json = JSON.parse(
 			(await main(["--version", "--json"], { cwd: config, env: { CLAUDE_CONFIG_DIR: config }, write: () => {} }))
 				.stdout,
@@ -357,12 +366,35 @@ describe("which client this is", () => {
 		assert.equal(json.mods[0].version, "0.1.0+aaaaaaa");
 	});
 
+	it("moves the old avcs mod folder out of the skills folder, not deleting it, once abso-hooks is in", () => {
+		const config = temp();
+		const old = join(config, "skills", "avcs");
+		write(old, ".claude-plugin/plugin.json", '{"name":"avcs","version":"0.1.0"}');
+		const home = temp();
+		const was = process.env.USERPROFILE;
+		const was2 = process.env.HOME;
+		process.env.USERPROFILE = home;
+		process.env.HOME = home;
+		try {
+			const to = retireOldMod(AVCS_MOD, { CLAUDE_CONFIG_DIR: config });
+			assert.ok(to?.startsWith(join(home, ".abso", "retired-mods")));
+			assert.equal(existsSync(old), false);
+			assert.equal(existsSync(join(to!, ".claude-plugin", "plugin.json")), true);
+			assert.equal(retireOldMod(AVCS_MOD, { CLAUDE_CONFIG_DIR: config }), undefined);
+		} finally {
+			if (was === undefined) delete process.env.USERPROFILE;
+			else process.env.USERPROFILE = was;
+			if (was2 === undefined) delete process.env.HOME;
+			else process.env.HOME = was2;
+		}
+	});
+
 	it("status says when an installed mod is behind this client, where the client knows its commit (abso issue 41)", () => {
 		const config = temp();
 		const env = { CLAUDE_CONFIG_DIR: config };
 		assert.deepEqual(modsBehindText(env), [], "nothing installed, nothing to say");
 		installMod(source(), {
-			target: join(config, "skills", "avcs"),
+			target: join(config, "skills", "abso-hooks"),
 			check: pass,
 			commit: "aaaaaaa",
 			now: new Date("2026-10-05T04:30:00Z"),

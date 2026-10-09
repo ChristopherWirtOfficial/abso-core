@@ -23,6 +23,6 @@ export type AvcsView = {
 
 declare module "claude-code" {
 	interface PluginState {
-		"avcs-view": { view: AvcsView | null; seenNewsAt: string };
+		"abso-view": { view: AvcsView | null; seenNewsAt: string };
 	}
 }

@@ -44,6 +44,11 @@ const DEFAULT_TIMEOUT_MS = 4000;
 
 /** Where install-mod.ts puts the mod: Claude Code's skills folder, which every session loads. */
 export function modDir(env: Readonly<Record<string, string | undefined>> = process.env): string {
+	return join(env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "skills", "abso-hooks");
+}
+
+/** Where the same mod lived before the rename. */
+export function oldModDir(env: Readonly<Record<string, string | undefined>> = process.env): string {
 	return join(env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "skills", "avcs");
 }
 
@@ -60,7 +65,9 @@ export async function runHook(
 	}
 	// With the abso mod installed, every Claude Code session on this machine sends
 	// its edits in-process, so this hook stands down rather than send them twice.
-	if (fromEnv(env, "HOOK_FORCE") !== "1" && existsSync(join(modDir(env), ".claude-plugin", "plugin.json"))) {
+	if (fromEnv(env, "HOOK_FORCE") !== "1" && (existsSync(join(modDir(env), ".claude-plugin", "plugin.json")) ||
+			existsSync(join(oldModDir(env), ".claude-plugin", "plugin.json"))))
+	{
 		return { stdout: "", outcome: "skipped: the abso mod sends edits" };
 	}
 	const tool = input.tool_name ?? "";

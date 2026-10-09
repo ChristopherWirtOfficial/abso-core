@@ -90,14 +90,17 @@ export function crlfOnly(root: string): string[] {
  */
 export function staleModText(root: string, env: Readonly<Record<string, string | undefined>>): string[] {
 	let installed: string | undefined;
-	try {
-		const dir = join(env.CLAUDE_CONFIG_DIR || join(env.USERPROFILE || env.HOME || "", ".claude"), "skills", "avcs");
-		installed = String(
-			(JSON.parse(readFileSync(join(dir, ".claude-plugin", "plugin.json"), "utf8")) as { version?: unknown }).version,
-		);
-	} catch {
-		return [];
+	const skills = join(env.CLAUDE_CONFIG_DIR || join(env.USERPROFILE || env.HOME || "", ".claude"), "skills");
+	for (const name of ["abso-hooks", "avcs"]) {
+		try {
+			installed = String(
+				(JSON.parse(readFileSync(join(skills, name, ".claude-plugin", "plugin.json"), "utf8")) as { version?: unknown })
+					.version,
+			);
+			break;
+		} catch {}
 	}
+	if (installed === undefined) return [];
 	if (!installed.includes("+")) return [];
 	let last: string[] | undefined;
 	try {

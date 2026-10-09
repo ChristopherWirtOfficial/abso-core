@@ -24,7 +24,7 @@ export function stateDir(root: string): string {
 export const MOD_KNOWS_ABSO = [0, 2, 0] as const;
 
 /** Every name a mod has been installed under, in Claude Code's skills folder. */
-const MOD_NAMES = ["avcs", "avcs-view", "abso", "abso-view"] as const;
+const MOD_NAMES = ["avcs", "avcs-view", "abso", "abso-view", "abso-hooks"] as const;
 
 function versionAtLeast(version: string, min: readonly number[]): boolean {
 	const parts = version.split("+")[0]!.split(".").map(Number);

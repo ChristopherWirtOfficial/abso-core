@@ -1,5 +1,5 @@
 {
-	"name": "avcs-view",
+	"name": "abso-view",
 	"version": "0.2.0",
 	"description": "Shows this chat's abso state: its space, its draft, who else is on the same files, and recent news",
 	"types": "./types/index.d.ts"

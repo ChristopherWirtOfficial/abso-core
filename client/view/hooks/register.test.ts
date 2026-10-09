@@ -1,4 +1,4 @@
-// avcs-view against the engine: the server and the folder are answered here.
+// abso-view against the engine: the server and the folder are answered here.
 
 import type { On } from "claude-code";
 import { expect, mock, test } from "claude-code/testing";
@@ -80,7 +80,7 @@ test("in an abso folder it keeps a status line, and refreshes on a timer", async
 	await w.clock.advance(1);
 	expect(w.fetched).toEqual(["https://avcs.test/p/p/status", "https://avcs.test/p/p/where"]);
 	expect(w.statuses.at(-1)).toBe(
-		"abso: shared · 2 files unpublished · shared is 2 ahead (abso sync) · bob also on your files · 1 news item (/avcs-view)",
+		"abso: shared · 2 files unpublished · shared is 2 ahead (abso sync) · bob also on your files · 1 news item (/abso-view)",
 	);
 	await w.clock.advance(31_000);
 	expect(w.fetched.length).toBe(4);
@@ -92,10 +92,10 @@ test("the pane shows the space, the draft, who else is on the files, and news", 
 	await w.clock.advance(1);
 	for (const surface of ["terminal", "desktop"] as const) {
 		const ui = await $.ui.mount({
-			plugin: "avcs-view",
+			plugin: "abso-view",
 			surface,
 			component: "Pane",
-			requestId: "avcs-view",
+			requestId: "abso-view",
 			props: { title: "avcs", isFocused: false, bodyColumns: 80, placement: "dock" } as never,
 		});
 		expect(await ui.find({ text: /Working in shared, at version 7/ })).toBeDefined();
@@ -106,14 +106,14 @@ test("the pane shows the space, the draft, who else is on the files, and news", 
 	}
 });
 
-test("/avcs-view opens the pane, and the status line stops counting the news it showed", async ($, on) => {
+test("/abso-view opens the pane, and the status line stops counting the news it showed", async ($, on) => {
 	const w = world(on, true);
 	await $.session.start({ cwd: "/w/proj/src" });
 	await w.clock.advance(1);
 	expect(w.statuses.at(-1)).toContain("1 news item");
-	const answer = await $.command.run({ command: "avcs-view", args: "" } as never);
-	expect(answer).toMatchObject({ text: "Opened the avcs view." });
-	expect(w.opened).toEqual(["avcs-view"]);
+	const answer = await $.command.run({ command: "abso-view", args: "" } as never);
+	expect(answer).toMatchObject({ text: "Opened the abso view." });
+	expect(w.opened).toEqual(["abso-view"]);
 	expect(w.statuses.at(-1)).not.toContain("news");
 });
 
