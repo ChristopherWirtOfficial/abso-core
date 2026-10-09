@@ -34,7 +34,7 @@ export const notePatterns = (note: Starting | undefined): string[] =>
 
 /**
  * Peers with unpublished changes in a file `patterns` match, or a starting
- * note that can name the same file (#37, Builder 4: notes name files by glob,
+ * note that can name the same file (#37: notes name files by glob,
  * or only in their text).
  */
 export function overlapsOf(peers: readonly OverlapPeer[], patterns: readonly string[]): Overlap[] {
@@ -90,8 +90,7 @@ export function overlaps(host: OverlapHost, agent: AgentState, patterns: readonl
 
 /**
  * News the first time a draft touches a file someone else in its space has
- * unpublished changes in, or a starting note on (#37, Builder 6 and Writer
- * 1): one line per file and agent, once per draft. It tells; it never stops
+ * unpublished changes in, or a starting note on (#37): one line per file and agent, once per draft. It tells; it never stops
  * the edit.
  */
 export function overlapNews(host: OverlapHost, agent: AgentState, before: ReadonlySet<string>, entries: Entry[]): void {

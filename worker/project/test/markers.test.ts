@@ -166,7 +166,7 @@ test("the open block survives a reload of the log", () => {
 	assert.equal(loaded.publish("builder1", "Not yet", 4).ok, false);
 });
 
-test("a block is labeled by whose lines are newer, not by an older line it starts with (#37, Builder 3)", () => {
+test("a block is labeled by whose lines are newer, not by an older line it starts with (#37)", () => {
 	const project = new Project(new MemoryStore());
 	project.init({ "fronts.ts": "a\nb\nc\nd\n" }, 0);
 	for (const a of ["builder3", "artist1"]) project.sync(a);
@@ -270,7 +270,7 @@ test("markers.ts: blocks round-trip, settle, and say what was kept", () => {
 	assert.equal(keptOf(["top", "bottom"], { ...region, yours: [] }), "yours");
 });
 
-test("keeping both, with an edit to a line their block left as it was, is both, not yours (#37, Builder 2 and Writer 1)", () => {
+test("keeping both, with an edit to a line their block left as it was, is both, not yours (#37)", () => {
 	// The real region from the game log: writer1 added the isle-glut hint above the
 	// isle-welcome line it left alone; builder2 rewrote isle-welcome and added a comment.
 	const welcome =

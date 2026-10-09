@@ -7,7 +7,7 @@ import { pathKey } from "./pathkey.ts";
 
 /**
  * Whether paths entering shared would make two spellings of one name live
- * at once (#49; Git Lessons' review, batch 3): two
+ * at once (#49): two
  * files whose names differ only in case or Unicode form, or a file and a
  * folder with one name. No disk holds both, and the git copy can't either.
  * `touched` are the paths the work changes; `now` is shared as it is, so a

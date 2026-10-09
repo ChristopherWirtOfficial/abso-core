@@ -831,7 +831,7 @@ export async function main(argv: readonly string[], env: Env): Promise<MainResul
 			...(news.length > 0 && !("news" in out.json) ? { news } : {}),
 		};
 		if (json || bool(args, "json")) return { stdout: `${JSON.stringify(data, null, 2)}\n`, stderr: "", exit, data };
-		// run, logs and bisect: stdout is the box command's, and may be piped; news goes to stderr there (#37, Builder 3).
+		// run, logs and bisect: stdout is the box command's, and may be piped; news goes to stderr there (#37).
 		const boxOut = command === "run" || command === "logs" || command === "bisect";
 		const text = [...(out.text === "" ? [] : [out.text.replace(/\n$/, "")]), ...(boxOut ? [] : newsBlock(news))].join(
 			"\n",

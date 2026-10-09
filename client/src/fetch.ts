@@ -1,5 +1,5 @@
 // abso fetch <glob...> and abso run --fetch <glob>: bring files the box made
-// back into the folder (#37, Builder 4). Only paths abso ignores are written,
+// back into the folder (#37). Only paths abso ignores are written,
 // so a fetched file never becomes an edit; the rest are named and left alone.
 // Every path is screened as a sync's are (safety.ts): the box runs whatever
 // the folder held, so its files are not trusted any more than the server's.

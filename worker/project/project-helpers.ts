@@ -55,7 +55,7 @@ export function projectFileOf(files: Readonly<Record<string, unknown>>): ReturnT
 }
 
 /**
- * What's wrong with a project file (abso.json or avcs.json), or undefined (Git Lessons' review, batch 4):
+ * What's wrong with a project file (abso.json or avcs.json), or undefined:
  * it must be a JSON object, and the keys abso reads must have their types:
  * "whole" a list of globs, "queue" true or false, "review" a list of
  * {paths, reviewer}, and CI's "setup", "build", "check" and "out" strings.

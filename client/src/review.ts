@@ -1,7 +1,7 @@
 // Review (#44): review is reading what
 // landed. abso review lists the changes since you last looked, or shows one;
 // abso note leaves a note on lines, which follows them as the file changes;
-// abso notes lists them. The server holds changes and notes (Engine, 15a3035).
+// abso notes lists them. The server holds changes and notes.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -62,7 +62,7 @@ function versionsText(c: ChangeAnswer): string {
 
 /** One change in a list. */
 /**
- * A change's title as a list shows it (#43, Git Lessons): the first line, cut
+ * A change's title as a list shows it (#43): the first line, cut
  * to 100 characters, as git log --oneline does, with an imported commit's
  * trailer (`git <sha12>, <author>, <time>`) as a short hash beside it. The
  * change page keeps the whole message.
@@ -122,7 +122,7 @@ export function changePage(c: ChangeAnswer): string[] {
 async function findChange(api: ReturnType<typeof open>["api"], word: string): Promise<ChangeAnswer> {
 	if (/^\d+$/.test(word)) return api.change(Number(word));
 	const v = /^v(\d+)$/i.exec(word);
-	// show names a version's change (Engine, 6a2911b); older servers don't, and the recent changes are searched.
+	// show names a version's change; older servers don't, and the recent changes are searched.
 	if (v) {
 		const shown = await api.show(Number(v[1]), { draft: null }).catch(() => undefined);
 		if (shown?.change !== undefined) return api.change(shown.change);
@@ -169,7 +169,7 @@ export async function runReview(args: Parsed, env: Env): Promise<Output> {
 	const cutoff = back === undefined ? 0 : Date.now() - back;
 	const lastActive = (c: ChangeAnswer): number => Math.max(c.time, ...c.versions.map((v) => v.time));
 	// A first look shows the newest 20. Otherwise every change since the mark (or the span) is listed, page by
-	// page, before the mark moves past them (AVCS - Git Lessons' review): one page would drop the older ones.
+	// page, before the mark moves past them: one page would drop the older ones.
 	const firstLook = mark === undefined && raw === undefined;
 	// ABSO_REVIEW_PAGE shortens the page in tests.
 	const pageSize = Number(fromEnv(process.env, "REVIEW_PAGE")) || 200;

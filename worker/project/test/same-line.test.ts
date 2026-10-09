@@ -1,4 +1,4 @@
-// Both sides changing the same line (#37, Builder 5 and Writer 1): a sync
+// Both sides changing the same line (#37): a sync
 // showed the collision with both lines in the file, and the next sync, on
 // unrelated work, merged from a base that already had their line. The draft's
 // copy of both lines then read as the draft adding one, and the collision was

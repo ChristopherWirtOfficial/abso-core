@@ -100,7 +100,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 		check = pf.file.build === "" ? pf.file.check : `${pf.file.build} && ${pf.file.check}`;
 	}
 	if (check !== undefined) {
-		// Your draft on newest shared, as it would land, must pass the check (#37, Builder 1):
+		// Your draft on newest shared, as it would land, must pass the check (#37):
 		// two changes that each passed alone turned shared red twice. Sync first, then run it in the box.
 		const say = env.writeErr ?? env.write;
 		// Known to have no prep: refuse before syncing and running (#37, Artist 1). Unknown: the run below tells.
@@ -126,7 +126,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 			};
 		}
 		if (synced.text) say(`${synced.text}\n`);
-		// Paths the sync wouldn't write (safety.ts) don't block: the check just ran without them (Cloud).
+		// Paths the sync wouldn't write (safety.ts) don't block: the check just ran without them.
 		if ((sj.refused?.length ?? 0) > 0)
 			say(
 				`abso: the sync didn't write these: ${sj.refused!.map((r) => r.path).join(", ")}; the check runs without them.\n`,
@@ -137,7 +137,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 		if (box !== undefined) flags.set("box", box);
 		const ran = await runRun({ positionals: [check], flags }, { ...env, runKind: "publish-check" });
 		// No prep and a package-lock: the box had no node_modules, so the check can't be trusted either way
-		// (#37, Builder 1: npx tsc fetched an unrelated, deprecated tsc package).
+		// (#37: npx tsc fetched an unrelated, deprecated tsc package).
 		if ((ran.json as { prep?: string | null }).prep === null && existsSync(join(root, "package-lock.json"))) {
 			return {
 				exit: EXIT.refused,
@@ -146,7 +146,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 			};
 		}
 		if ((ran.exit ?? 0) !== 0) {
-			// Whose is it? Run the check once more on shared alone, at the version just synced to (#36, Builder 6:
+			// Whose is it? Run the check once more on shared alone, at the version just synced to (#36:
 			// stopped by someone else's red test, nothing said whose). One extra run, only when the check fails.
 			const recent = (await api.log({ agent: config.agent }, 5)).versions;
 			const newest = recent[0]?.version;
@@ -397,7 +397,7 @@ async function publishSteps(
 			answer.changes === 0
 				? await alreadyInShared(root, api, config.agent, recorded.paths, answer.version)
 				: `Published version ${answer.version}.${merged.length > 0 ? ` ${mergedText(merged)}` : ""}`;
-		// The check ran on shared as it was; what landed since went in unchecked (Cloud).
+		// The check ran on shared as it was; what landed since went in unchecked.
 		const moved =
 			checked && merged.length > 0
 				? [
@@ -409,7 +409,7 @@ async function publishSteps(
 				...pre,
 				what,
 				...moved,
-				// --check alone was skipped for a queue that turned out not to be on: the answer, not the draft's avcs.json, says (Cloud).
+				// --check alone was skipped for a queue that turned out not to be on: the answer, not the draft's avcs.json, says.
 				...(skippedCheck
 					? [
 							`It landed directly, with no check: your avcs.json says "queue": true, but shared's doesn't yet, so the merge queue isn't on and --check alone was skipped. abso ci ${answer.version} shows CI's result once it has run.`,
@@ -441,7 +441,7 @@ async function publishSteps(
 			json: { collisions, recorded: recorded.sent },
 		};
 	}
-	// Lines both sides changed, still as the sync left them (#37, Builder 1): publishing would put both in shared.
+	// Lines both sides changed, still as the sync left them (#37): publishing would put both in shared.
 	if (collisions.length > 0 && collisions.every((c) => c.untouched)) {
 		return {
 			exit: EXIT.refused,
@@ -586,7 +586,7 @@ async function alreadyInShared(
 }
 
 /**
- * Several files marked against one version (#37, Builder 6: twenty tool
+ * Several files marked against one version (#37: twenty tool
  * scripts muted twice at once): if that version already does what yours do,
  * one settle takes theirs in all of them.
  */

@@ -64,7 +64,7 @@ export function mergeIdentical(
 	const g = host.graph;
 	const draft = host.draft(agent);
 	const mine = new Set(draft);
-	// A collision an earlier sync already showed stands (#37, Builder 5): the
+	// A collision an earlier sync already showed stands (#37): the
 	// old base has their lines, so a merge from it would read the draft's
 	// copy of both sides as the draft adding a line, and keep both silently.
 	const fresh = pairs.filter((p) => mine.has(p.yours) && !oldBase.has(p.theirs));
@@ -121,7 +121,7 @@ export function mergeIdentical(
 			// markers, theirs labeled with who published it, so the file can't
 			// pass for finished code until the agent settles it.
 			const m = mergeLines(splitLines(b), splitLines(o), splitLines(t), oneLine, (c) => {
-				// Labeled by the first of their lines that is newer than the agent's old base (#37, Builder 3):
+				// Labeled by the first of their lines that is newer than the agent's old base (#37):
 				// the block can start with an older line nobody changed, by anyone, even the agent itself.
 				const span = theirLines.slice(c.theirsAt, c.theirsAt + c.theirs.length);
 				const first = span.find((l) => !oldBase.has(l.atom)) ?? span[0];

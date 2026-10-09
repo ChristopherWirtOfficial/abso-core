@@ -383,7 +383,7 @@ test("a full sync answers every file in the view, even for an agent that synced 
 	assert.throws(() => project.agentPaths("nobody"), /join first/);
 });
 
-test("a log entry of a kind this engine doesn't know stops the load instead of being skipped (AVCS - Git Lessons, report 8.3)", () => {
+test("a log entry of a kind this engine doesn't know stops the load instead of being skipped", () => {
 	const store = new MemoryStore();
 	const project = new Project(store);
 	project.init({ "a.txt": "a\n" }, 0);

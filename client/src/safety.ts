@@ -21,8 +21,8 @@ const DEVICE = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$
 /**
  * A Windows short (8.3) name: up to 8 characters with a ~ and a number, and a
  * short extension. On NTFS it can be another file's second name, so CLAUDE~1/x
- * is written into .claude/x and GIT~1/x into .git/x (git's CVE-2019-1353;
- * AVCS - Git Lessons). Git refuses these with core.protectNTFS; so does avcs.
+ * is written into .claude/x and GIT~1/x into .git/x (git's
+ * CVE-2019-1353). Git refuses these with core.protectNTFS; so does avcs.
  */
 const SHORT_NAME = /^[^.~ ]{1,6}~[0-9]{1,6}(\.[^. ]{1,3})?$/;
 
@@ -74,7 +74,7 @@ export function unsafeLink(rel: string, target: string): string | undefined {
 	const to = posix.normalize(posix.join(posix.dirname(rel), target));
 	if (to === ".." || to.startsWith("../")) return `it links to ${target}, outside this folder`;
 	if (to.split("/").some(isSkippedPart)) return `it links into ${to}, which stays local`;
-	// A short name in the target can be .git or .claude on Windows (AVCS - Git Lessons).
+	// A short name in the target can be .git or .claude on Windows.
 	for (const part of to.split("/")) {
 		const windows = windowsPart(part);
 		if (windows !== undefined) return `its link target goes through ${windows}`;

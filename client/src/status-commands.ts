@@ -65,7 +65,7 @@ export function missingHere(root: string, view: readonly string[], pending: Read
 
 /**
  * Recorded text files whose copy on disk differs from the record only by CRLF
- * line endings (#37, Builder 2: Python's text mode on Windows writes CRLF).
+ * line endings (#37: Python's text mode on Windows writes CRLF).
  * abso records them, and abso run sends them, with LF; a tool run here sees
  * CRLF. Files git would check out with CRLF are left out of the list.
  */
@@ -150,7 +150,7 @@ export function openCollisionsText(open: readonly OpenCollision[]): string[] {
 	];
 }
 
-/** abso fix-eol: rewrite the files that differ from the record only in line endings with LF, as recorded (#37, Writer 1). */
+/** abso fix-eol: rewrite the files that differ from the record only in line endings with LF, as recorded (#37). */
 /**
  * abso mv <from> <to> (#49): move a file in the draft,
  * its lines keeping their history, as git mv. The way to change a file's case
@@ -279,7 +279,7 @@ export async function runStatus(args: Parsed, env: Env): Promise<Output> {
 	const missing = view === undefined ? [] : missingHere(root, view.files, local);
 	const unwritten = readUnwritten(root);
 	const crlf = crlfOnly(root);
-	// Files an earlier record added to the draft and that are gone again (#37, Builder 6: scratch files a run
+	// Files an earlier record added to the draft and that are gone again (#37: scratch files a run
 	// recorded, deleted after): nothing reached shared, and the next record takes them out of the draft.
 	const deleted = [...pending.files].filter(([, text]) => text === null).map(([rel]) => rel);
 	const neverShared =

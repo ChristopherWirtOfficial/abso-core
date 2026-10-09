@@ -28,7 +28,7 @@ export function checkClash(
 	let view: View;
 	let now: View;
 	try {
-		// Publishes queued ahead (#39) land first, so they count as shared (Git Lessons' review).
+		// Publishes queued ahead (#39) land first, so they count as shared.
 		view = host.view(new Set([...host.shared().own, ...ahead, ...changes]));
 		now = ahead.size === 0 ? host.sharedView() : host.view(new Set([...host.shared().own, ...ahead]));
 	} catch (e) {
@@ -38,7 +38,7 @@ export function checkClash(
 	const touched = host.touchedFiles(changes, [view]);
 	const why = clashIn(view, touched, now);
 	if (why) throw new ProjectError("conflict", why);
-	// A broken project file would quietly switch off files kept whole, the queue and reviewers (Git Lessons' review, batch 4).
+	// A broken project file would quietly switch off files kept whole, the queue and reviewers.
 	for (const name of PROJECT_FILES) {
 		if (!touched.has(name) || !view.hasFile(name)) continue;
 		const bad = configProblem(view.text(name));

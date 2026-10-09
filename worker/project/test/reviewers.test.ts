@@ -78,7 +78,7 @@ test("a reviewer's own change doesn't notify it, and a project without rules or 
 	edit(project, "security", { file: "src/auth/login.ts", old: "1", new: "2" }, 1);
 	project.publish("security", "my own", 2);
 	assert.equal(project.news("security").news.length, 0);
-	// Bad rules from before init checked avcs.json (Git Lessons' review, batch 4): loaded from a log that holds them.
+	// Bad rules from before init checked avcs.json: loaded from a log that holds them.
 	const old = new MemoryStore();
 	new Project(old).init({ "avcs.json": '{"placeholder": 1}\n', "src/a.ts": "a\n" }, 0);
 	const bad = '{"review": [{"paths": "src/**", "reviewer": 3}]}';

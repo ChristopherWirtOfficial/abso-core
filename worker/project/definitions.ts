@@ -209,7 +209,7 @@ function wholeBlockEnd(code: readonly string[], i: number): number {
  * Whether a declaration found at `at` starts its line, after modifiers
  * only: `export const x`, `async function f`, `pub fn g`. A `let` inside
  * `for (let i = 0; ...)` or a `function` passed as an argument is not a
- * definition of the file (#37, Builder 4).
+ * definition of the file (#37).
  */
 const LEADS =
 	/^\s*(?:(?:export|default|declare|async|public|private|protected|static|abstract|override|readonly|pub(?:\([a-z]+\))?|unsafe|extern|const|final|sealed|open|data|inline|private\[this\])\s+)*$/;

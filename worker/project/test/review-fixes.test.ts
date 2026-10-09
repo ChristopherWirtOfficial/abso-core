@@ -1,4 +1,4 @@
-// Fixes from Git Lessons' code review (2026-10-07, batches 1 and 2), each
+// Fixes from a code review (2026-10-07, batches 1 and 2), each
 // with the review's repro: notes follow moved and parked lines, land and drop
 // tell an objector, a queued publish keeps its start note, announcement and
 // note numbers survive replay, and the queue never lands a tree it didn't

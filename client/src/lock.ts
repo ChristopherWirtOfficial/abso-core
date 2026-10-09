@@ -8,7 +8,7 @@
 //
 // The lock is never there without its contents: they're written to a file of
 // the taker's own and linked into place, which fails if a lock exists
-// (AVCS - Git Lessons). Its holder renews it every RENEW_MS, so a lock not
+// already. Its holder renews it every RENEW_MS, so a lock not
 // renewed for LOCK_STALE_MS was left behind, whatever process now has its
 // id; a long record or sync is never taken over while it writes. Taking one
 // over goes through a rename aside, which only one process can win.

@@ -115,7 +115,7 @@ function editLine(e: IssuePage["edits"][number]): string {
 	return `  ${e.by}, ${shortWhen(e.at)}: ${said.join("; ")} (${e.notified.length > 0 ? `told ${e.notified.join(", ")}` : "told nobody"})`;
 }
 
-/** Labels as typed, lower-cased, since the Worker refuses upper case (Security): --label Friction means friction. */
+/** Labels as typed, lower-cased, since the Worker refuses upper case: --label Friction means friction. */
 function labelList(value: string): string[] {
 	return listOf(value).map((l) => l.toLowerCase());
 }

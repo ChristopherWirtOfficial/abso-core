@@ -151,7 +151,7 @@ export interface ProjectHistory {
 	/** status and where as they stood with the first `at` log entries (#41, replay). */
 	statusAt(at: number): unknown;
 	whereAt(at: number): unknown;
-	/** Refused publishes and lands, newest first, with counts over all of them (Agent VCS's morning report). */
+	/** Refused publishes and lands, newest first, with counts over all of them. */
 	refusals(agent?: string, limit?: number): unknown;
 	/** A file as it was at a version (#27). */
 	fileAt(path: string, version: number, draft: string | null, agent?: string): unknown;

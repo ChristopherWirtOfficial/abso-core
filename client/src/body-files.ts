@@ -1,4 +1,4 @@
-// Bodies from a file or stdin (Design Lead, 2026-10-08): Windows PowerShell 5.1
+// Bodies from a file or stdin: Windows PowerShell 5.1
 // passes a native command's argument badly, so a multi-line --comment,
 // --description or answer reached the server cut to its first line, and nobody
 // knew. Any text flag also takes --<flag>-file <path>, and the commands whose

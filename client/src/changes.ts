@@ -442,7 +442,7 @@ export async function runShow(args: Parsed, env: Env): Promise<Output> {
 /**
  * A file's text with the draft's hunks that touch lines `from`-`to` (of the
  * file as it is now, as abso diff numbers them) put back as they were at the
- * base; the other hunks stay (#37, Builder 2: drop my copy of a teammate's
+ * base; the other hunks stay (#37: drop my copy of a teammate's
  * half and keep the rest). A hunk that only deleted lines touches the line
  * where they were.
  */
@@ -498,7 +498,7 @@ export async function runRestore(args: Parsed, env: Env): Promise<Output> {
 	// Folder-only edits go to the server first, so they are discarded with the rest.
 	await recordFolder(root, api);
 	if (ranged.length > 0) {
-		// Some lines of a file: put those hunks back here, then record the file (#37, Builder 2).
+		// Some lines of a file: put those hunks back here, then record the file (#37).
 		const diff = await api.diff();
 		const lines: string[] = [];
 		for (const r of ranged) {

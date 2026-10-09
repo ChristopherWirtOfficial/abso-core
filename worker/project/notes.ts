@@ -133,7 +133,7 @@ export function noteAnswerIn(n: NoteRecord, view: View | undefined): NoteAnswer 
 }
 
 /**
- * The view a note's lines live in (#44; Git Lessons' review, 2026-10-07):
+ * The view a note's lines live in (#44):
  * shared once any were published there; else the named draft they were
  * published into; else their author's draft, where it works now or where it
  * parked it. Undefined when no space holds them any more (a discarded draft).

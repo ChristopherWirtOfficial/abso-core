@@ -147,7 +147,7 @@ export async function runJoin(args: Parsed, env: Env): Promise<Output> {
 	};
 }
 
-/** What to run before building or testing here (#43, Engine): a joined folder has the project's files, not what avcs.json's setup installs. */
+/** What to run before building or testing here (#43): a joined folder has the project's files, not what avcs.json's setup installs. */
 function setupHint(root: string): string[] {
 	const read = readProjectFile(root);
 	const setup = read !== null && "file" in read ? read.file.setup : "";

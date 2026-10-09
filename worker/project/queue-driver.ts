@@ -1,7 +1,7 @@
 // The merge queue's checker loop (#39): one round takes a batch from the
 // front of the queue, runs the project's check on shared with the batch on
 // top, and lands it or finds the publish that turned it red. The check itself
-// is behind an interface (Cloud's CI box in the Worker, a function in tests),
+// is behind an interface (a CI runner on the server, a function in tests),
 // so this file holds only the rules agreed on #39:
 //
 // - A batch is everything waiting, in order, up to `cap` (8).
@@ -95,7 +95,7 @@ export async function queueRound(
 	const n = Math.min(Math.max(1, options.cap ?? 8), waiting);
 	let checks = 0;
 	let output: string | undefined;
-	/** The tree each prefix was checked as: a land or a pull goes ahead only on that same tree (Git Lessons' review). */
+	/** The tree each prefix was checked as: a land or a pull goes ahead only on that same tree. */
 	const checked = new Map<number, string>();
 	const same = (k: number): void => {
 		if (engine.queueCandidate(k).tree !== checked.get(k)) throw new Moved();

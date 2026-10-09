@@ -72,7 +72,7 @@ export function parallelScript(commands: readonly string[]): string {
 
 /**
  * abso run --with <box path>=<local path>[,...]: files for one run only (#37,
- * Builder 6's A/B runs), sent with the folder and never written to it or
+ * for A/B runs), sent with the folder and never written to it or
  * recorded. A local folder sends every file under it. Text goes with LF line
  * endings, as the folder's files do.
  */
@@ -177,7 +177,7 @@ export async function runPrep(args: Parsed, env: Env): Promise<Output> {
 
 /**
  * abso bisect [--good N] [--bad N] -- <check>: the first version of the folder's
- * space where the check fails (#37, Builders 1 and 6). Each step is an abso run
+ * space where the check fails (#37). Each step is an abso run
  * --at in the box. Without --good it walks back from --bad (newest by default)
  * in doubling steps until a version passes, then halves the gap.
  */
@@ -291,7 +291,7 @@ export async function runBisect(args: Parsed, env: Env): Promise<Output> {
 export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run"): Promise<Output> {
 	if (args.positionals.length === 0)
 		throw new UsageError("give the command to run: abso run <command>, or abso run -- <program> <arg...>");
-	// A glob before -- next to a list flag is a second value given the wrong way (#37, Builder 5: --fetch 'a' 'b' -- cmd ran "b"
+	// A glob before -- next to a list flag is a second value given the wrong way (#37: --fetch 'a' 'b' -- cmd ran "b"
 	// as the command, joined with the words after --, which lost their quoting).
 	// Once a plain word comes, run keeps the rest as typed, -- included; so the words before a literal -- are the suspects.
 	const before = args.dashed !== undefined ? args.dashed : args.positionals.indexOf("--");
@@ -306,7 +306,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 			);
 		}
 	}
-	// avcs's own lines (on stderr); --quiet drops them, and the box's stdout and stderr stay as they are (#37, Builder 3).
+	// avcs's own lines (on stderr); --quiet drops them, and the box's stdout and stderr stay as they are (#37).
 	const notice = bool(args, "quiet") ? (_text: string): void => {} : (env.writeErr ?? env.write);
 	// What the box said about its prep (X-Avcs-Prep): null when it has none.
 	let prepState: string | null | undefined;
@@ -363,7 +363,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 			entries.push({ path: rel, data: new Uint8Array(0), link: d.link });
 			continue;
 		}
-		// Text goes as abso records it, with LF line endings: a CRLF script fails in the box's sh (#37, Builder 2).
+		// Text goes as abso records it, with LF line endings: a CRLF script fails in the box's sh (#37).
 		const lf = d.text !== undefined && d.text.includes("\r") ? Buffer.from(d.text.replace(/\r\n?/g, "\n")) : undefined;
 		if (lf !== undefined) toLf.push(rel);
 		const data = lf ?? readFileSync(path);

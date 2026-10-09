@@ -140,7 +140,7 @@ export function publishDraft(
 	// What the agent has seen collide (it synced past both sides) and not
 	// settled by an edit. Lines both sides changed, still untouched since the
 	// sync, are both in the file, and publishing that doubles them in shared
-	// (#37, Builder 1: twenty goals twice, shared red for three versions). So
+	// (#37: twenty goals twice, shared red for three versions). So
 	// that is refused unless the agent says to publish as it is (asIs); then,
 	// like any other seen collision, publishing settles it.
 	const seen = host.pairs(draft, new Set([...now].filter((id) => !newer.has(id))), union);

@@ -130,7 +130,7 @@ test("a duplicate shows each whole definition, body and all, and counts common n
 	assert.equal(d.theirs.lines[1] - d.theirs.lines[0], 2);
 });
 
-test("loop variables and functions passed as arguments are not top-level definitions (#37, Builder 4)", () => {
+test("loop variables and functions passed as arguments are not top-level definitions (#37)", () => {
 	const project = new Project(new MemoryStore());
 	project.init({ "tools/play.mjs": "// play\n" }, 0);
 	project.sync("b4");
@@ -157,7 +157,7 @@ test("loop variables and functions passed as arguments are not top-level definit
 	assert.deepEqual(!refused.ok && refused.collisions.map((c) => [c.kind, c.name]), [["duplicate", "speed"]]);
 });
 
-test("for, while and if at the start of a line name nothing (#37, Builder 4 again)", () => {
+test("for, while and if at the start of a line name nothing (#37)", () => {
 	const project = new Project(new MemoryStore());
 	project.init({ "tools/fjord.mjs": "// fjord\n" }, 0);
 	project.sync("b4");

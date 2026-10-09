@@ -144,7 +144,7 @@ export function why(project: Project, asked: string, n: number, where: BlameWher
 				});
 		}
 	}
-	// What it built on (#41, FE Lead, the line's story): the versions that brought in the changes it
+	// What it built on (#41, the line's story): the versions that brought in the changes it
 	// depends on (its needs, and the changes whose lines it edited beside), nearest first, once each.
 	const builtOn: { version: number; agent: string; message: string; draft?: string }[] = [];
 	const own = publish ? `${publish.draft ?? ""} ${publish.version}` : undefined;

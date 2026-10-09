@@ -41,7 +41,7 @@ const GIT_KEY = pathKey(".git");
  * A path part's key for comparing it against reserved names: pathKey, after
  * dropping the characters HFS+ ignores in names, so ".g\u200Cit" is .git
  * there (git's is_hfs_dotgit). Only for this comparison: U+200C and U+200D
- * are ordinary characters in Persian and Indic names (Pinch Hitter).
+ * are ordinary characters in Persian and Indic names.
  */
 function reservedKey(seg: string): string {
 	return pathKey(seg.replace(/[\u200C-\u200F\u202A-\u202E\u206A-\u206F\uFEFF]/g, ""));

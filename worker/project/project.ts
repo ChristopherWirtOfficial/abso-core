@@ -739,7 +739,7 @@ export class Project {
 	}
 
 	/**
-	 * The view a note's lines live in (#44; Git Lessons' review, 2026-10-07):
+	 * The view a note's lines live in (#44):
 	 * shared once any were published there; else the named draft they were
 	 * published into; else their author's draft, where it works now or where it
 	 * parked it. Undefined when no space holds them any more (a discarded draft).
@@ -1004,8 +1004,7 @@ export class Project {
 
 	/**
 	 * News the first time a draft touches a file someone else in its space has
-	 * unpublished changes in, or a starting note on (#37, Builder 6 and Writer
-	 * 1): one line per file and agent, once per draft. It tells; it never stops
+	 * unpublished changes in, or a starting note on (#37): one line per file and agent, once per draft. It tells; it never stops
 	 * the edit.
 	 */
 	#overlapNews(...args: Tail<Parameters<typeof hostedOverlapNews>>): ReturnType<typeof hostedOverlapNews> {
@@ -1209,7 +1208,7 @@ export class Project {
 	// Applying entries ------------------------------------------------------------
 
 	#apply(entry: Entry): void {
-		// Entries written before #41 have no time on these kinds; new ones do, so replay can place them (website, Product Lead).
+		// Entries written before #41 have no time on these kinds; new ones do, so replay can place them.
 		const kept =
 			this.#loading || !UNTIMED.has(entry.type) || "time" in entry ? entry : ({ ...entry, time: Date.now() } as Entry);
 		if (!this.#loading) this.#pending.push(kept);

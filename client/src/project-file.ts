@@ -89,7 +89,7 @@ export function guessProjectFile(root: string): ProjectFile {
 
 /**
  * Writes a guessed abso.json (unless it has abso.json or avcs.json) when the folder has none and package.json gives
- * a check or a build to guess (#39, Agent VCS: a project with nothing to
+ * a check or a build to guess (#39: a project with nothing to
  * check shouldn't start boxes; CI skips a version with nothing to run).
  * Answers what it wrote; 'exists' or 'nothing' when it wrote none.
  */

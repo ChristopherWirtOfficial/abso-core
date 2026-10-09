@@ -30,7 +30,7 @@ export interface PrepAnswer {
 }
 
 /** Where a run's output goes. */
-/** What a box run is for (#39, DevOps's box-use counts). */
+/** What a box run is for (#39). */
 export type RunKind = "run" | "shot" | "bisect" | "publish-check";
 
 export interface RunIO {

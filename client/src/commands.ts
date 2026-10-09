@@ -86,7 +86,7 @@ interface Recorded {
 	readonly paths: readonly string[];
 	/** Those of them sent as deleted (gone from the folder). */
 	readonly deleted: readonly string[];
-	/** Those of them new to avcs: no copy recorded before (#37, Builder 7: a file a script made is easy to miss). */
+	/** Those of them new to avcs: no copy recorded before (#37: a file a script made is easy to miss). */
 	readonly added?: readonly string[];
 	/** Nothing was sent because the folder is paused (abso pause). */
 	readonly paused?: boolean;
@@ -305,14 +305,14 @@ export function recordedFirst(r: Recorded): string[] {
 	return [`Recorded first: ${recordedList(r)}.`, ...gitMarkerText(r.gitMarkers), ...longPathText(r.longPaths)];
 }
 
-/** "2 changed (a, b), 3 deleted (x, y, z)": deletions said as such (#37, Builder 2 read its rm'd files as edits). */
+/** "2 changed (a, b), 3 deleted (x, y, z)": deletions said as such (#37: deleted files were read as edits). */
 function recordedList(r: Recorded): string {
 	const names = (list: readonly string[]) =>
 		list.length <= LISTED ? list.join(", ") : `${list.slice(0, LISTED).join(", ")}, and ${list.length - LISTED} more`;
 	const gone = new Set(r.deleted);
 	const fresh = new Set(r.added ?? []);
 	const changed = r.paths.filter((p) => !gone.has(p) && !fresh.has(p));
-	// New files are named in full: they are the ones a script made and nobody remembers (#37, Builder 7).
+	// New files are named in full: they are the ones a script made and nobody remembers (#37).
 	return [
 		...(fresh.size > 0 ? [`${fresh.size} new (${[...fresh].join(", ")})`] : []),
 		...(changed.length > 0 ? [`${changed.length} changed (${names(changed)})`] : []),
@@ -493,7 +493,7 @@ async function applyAnswerLocked(root: string, api: Api, unscreened: SyncAnswer)
 	// Other agents' paths: nothing outside this folder, in .git/.claude/.avcs, or through a link.
 	const { answer, refused } = screenAnswer(root, unscreened);
 	// A write the disk refuses anyway is named and skipped, so the rest of the sync still lands with its
-	// known copies and modes, rather than stopping partway (AVCS - Git Lessons; git checks every path first).
+	// known copies and modes, rather than stopping partway (git checks every path first).
 	const failed = new Set<string>();
 	// Remembered until a write works (#51): the server won't send these files again.
 	const unwritten = readUnwritten(root);

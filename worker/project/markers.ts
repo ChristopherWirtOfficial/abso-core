@@ -223,7 +223,7 @@ export function lostLines(lines: readonly string[], region: MarkedRegion): strin
 
 /**
  * What a settled region kept, judged from the file as it is now, by each
- * side's own changes (#37, Builder 2 and Writer 1): the lines it added, and
+ * side's own changes (#37): the lines it added, and
  * the base lines only it removed. A side's block also holds lines it left as
  * they were, and an edit to one of those must not hide that its change was
  * kept. Lines both sides added alike, and lines with no letters or digits

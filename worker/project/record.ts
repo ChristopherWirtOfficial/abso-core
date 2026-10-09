@@ -77,7 +77,7 @@ export function record(
 		if (view) {
 			// A record naming both spellings (the old one gone, the new one written) is a rename, taken as it is.
 			const named = new Set([...Object.keys(files), ...Object.keys(modes), ...Object.keys(blobs)]);
-			// Both written is two spellings of one new file (Git Lessons' review, batch 3): refused, naming both.
+			// Both written is two spellings of one new file: refused, naming both.
 			const written = new Map<string, string>();
 			for (const p of named) {
 				if (files[p] === null) continue;

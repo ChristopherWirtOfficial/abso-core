@@ -60,7 +60,7 @@ export async function runStart(args: Parsed, env: Env): Promise<Output> {
 				.join(", ");
 			lines.push(`  ${o.file}: ${o.agent}${what === "" ? "" : ` (${what})`}`);
 		}
-		// The sentence people act on names who, and their note (#37, Builder 5 had to run abso where to learn it).
+		// The sentence people act on names who, and their note (#37: without it, an agent had to run abso where to learn it).
 		const agents = [...new Set(answer.overlaps.map((o) => o.agent))];
 		const notes = agents.flatMap((a) => {
 			const note = answer.overlaps.find((o) => o.agent === a && o.starting)?.starting;

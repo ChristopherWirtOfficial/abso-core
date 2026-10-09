@@ -27,7 +27,7 @@ export function mergedLinesText(merged: readonly MergedLine[]): string[] {
 
 /** The line above a sync's or switch's collisions: what the folder now holds, said only for the kinds that apply. */
 export function collisionsHeading(collisions: readonly Collision[]): string {
-	// Lines changed on both sides: publish refuses them untouched (#37, Builder 1), so say to edit them, or --as-is to keep both.
+	// Lines changed on both sides: publish refuses them untouched (#37), so say to edit them, or --as-is to keep both.
 	const marked = collisions.some((c) => c.marked);
 	const lines = !marked && collisions.some((c) => c.kind === undefined || c.kind === "lines");
 	const twice = collisions.some((c) => c.kind === "duplicate");

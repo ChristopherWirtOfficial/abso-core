@@ -100,7 +100,7 @@ test("a log with a non-canonical path from before still loads, reads, and the fi
 	assert.deepEqual(Object.keys(project.files()), ["a.ts"]);
 });
 
-test("paths every agent's disk can hold: no Windows short names, no < > \" | ? *, no part ending in a dot or space (AVCS - Git Lessons, git's CVE-2019-1353)", () => {
+test("paths every agent's disk can hold: no Windows short names, no < > \" | ? *, no part ending in a dot or space (git's CVE-2019-1353)", () => {
 	for (const p of [
 		"CLAUDE~1/settings.json",
 		"GIT~1/hooks/pre-commit",
@@ -123,7 +123,7 @@ test("paths every agent's disk can hold: no Windows short names, no < > \" | ? *
 	}
 });
 
-test("the engine refuses what the client refuses: colons, .git and .avcs in any spelling, invisible characters, device names (AVCS - Security)", () => {
+test("the engine refuses what the client refuses: colons, .git and .avcs in any spelling, invisible characters, device names", () => {
 	const project = new Project(new MemoryStore());
 	project.init({ "a.txt": "a\n" }, 0);
 	const refused = (p: string) =>

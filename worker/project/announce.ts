@@ -44,12 +44,12 @@ export function announce(
 	const targets = [...new Set(to ?? [...host.agents.keys()].filter((a) => a !== sender.name))].toSorted();
 	const id = host.announced() + 1;
 	// "(as claimed)": every agent holds the same token, so the name is only
-	// the one the sender's route gave (Security, #31). A staging key says
+	// the one the sender's route gave (#31). A staging key says
 	// which key (abso issue 103); claimMark allows only that wording.
 	const sentence = agentAnnouncement(sender.name, claimMark(how), text);
 	for (const name of targets)
 		host.queueNews(host.agents.get(name)!, [{ key: `announce ${id}`, text: sentence }], entries);
-	// Replay knows the number only from the news written, so it's taken only when some was (Git Lessons' review).
+	// Replay knows the number only from the news written, so it's taken only when some was.
 	if (entries.some((e) => e.type === "news")) host.setAnnounced(id);
 	host.flush(entries);
 	return { id, to: targets };

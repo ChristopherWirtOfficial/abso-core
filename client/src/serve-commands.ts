@@ -196,15 +196,15 @@ export async function runShot(args: Parsed, env: Env): Promise<Output> {
 	const size = str(args, "size") ?? "1280x720";
 	if (!/^\d{2,5}x\d{2,5}$/.test(size)) throw new UsageError("--size is WIDTHxHEIGHT, like 1280x720");
 	const [width, height] = size.split("x").map(Number) as [number, number];
-	// --eval and --click set the page up before the shot (#37, Builder 7): JS first, then each click, in order.
+	// --eval and --click set the page up before the shot (#37): JS first, then each click, in order.
 	const evalJs = str(args, "eval");
-	// x,y@ms waits ms before that click (#37, Writer 1): a card --eval or an earlier click brings up may need a draw or two.
+	// x,y@ms waits ms before that click (#37): a card --eval or an earlier click brings up may need a draw or two.
 	const clicks = (str(args, "click") ?? "")
 		.split(";")
 		.map((s) => s.trim())
 		.filter((s) => s !== "")
 		.map((s) => shotPoint(s, "--click", true));
-	// --mouse leaves the pointer over a point for the shot, for hover cards (#37, Builder 7).
+	// --mouse leaves the pointer over a point for the shot, for hover cards (#37).
 	const mouseSpec = str(args, "mouse");
 	const mouse = mouseSpec === undefined ? null : shotPoint(mouseSpec, "--mouse", false);
 	for (const pt of [...clicks, ...(mouse ? [mouse] : [])]) {
@@ -290,7 +290,7 @@ export async function runShot(args: Parsed, env: Env): Promise<Output> {
 	const flags = new Map<string, string | boolean>();
 	const box = str(args, "box");
 	if (box !== undefined) flags.set("box", box);
-	// --at shoots a version of the folder's space instead of the folder, as abso run --at runs one (#37, Builder 5).
+	// --at shoots a version of the folder's space instead of the folder, as abso run --at runs one (#37).
 	const at = str(args, "at");
 	if (at !== undefined && !/^\d+$/.test(at))
 		throw new UsageError(`--at is a version number (got ${JSON.stringify(at)})`);

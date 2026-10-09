@@ -155,8 +155,7 @@ export type Entry =
 			readonly remove?: boolean;
 	  }
 	/**
-	 * A publish or land that was refused, kept for counting (Agent VCS, the
-	 * morning report). Changes nothing else; refusals before this entry kind
+	 * A publish or land that was refused, kept for counting. Changes nothing else; refusals before this entry kind
 	 * existed left no trace.
 	 */
 	| {

@@ -1,4 +1,4 @@
-// File patterns for starting notes (#37, Builder 4): a note may name files
+// File patterns for starting notes (#37): a note may name files
 // by glob ("tools/*.mjs"), or only in its text ("Add --mute-audio to every
 // Chromium launch in tools/*.mjs"). Overlap news matches both.
 

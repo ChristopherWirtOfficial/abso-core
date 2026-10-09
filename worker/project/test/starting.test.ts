@@ -1,4 +1,4 @@
-// Seeing overlap before it happens (#37, Builder 6 and Writer 1; #13): a
+// Seeing overlap before it happens (#37; #13): a
 // starting note says what an agent is taking on before any edit lands, and
 // the first edit to a file someone else is working on brings one line of
 // news. Neither ever stops an edit or a publish.
@@ -142,7 +142,7 @@ test("a starting note lasts through publishes until taken back, the next start, 
 	);
 });
 
-test("a note that names files by glob, or only in its text, brings news on a first edit (#37, Builder 4)", () => {
+test("a note that names files by glob, or only in its text, brings news on a first edit (#37)", () => {
 	const project = new Project(new MemoryStore());
 	project.init(
 		{

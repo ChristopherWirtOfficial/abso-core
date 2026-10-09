@@ -1,5 +1,5 @@
 // Bodies from a file or stdin (body-files.ts): text with several lines arrives
-// whole, whatever shell passed the command (Design Lead, 2026-10-08).
+// whole, whatever shell passed the command.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

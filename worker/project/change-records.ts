@@ -169,7 +169,7 @@ export function changes(
 	issue?: number,
 ): { since: number; next: number; changes: ChangeAnswer[]; older?: number } {
 	const noted = new Set([...host.notes.values()].filter((n) => n.change !== undefined).map((n) => n.change!));
-	// `before` pages back (#44, Builder 4): changes whose newest entry is before that log position.
+	// `before` pages back (#44): changes whose newest entry is before that log position.
 	// `issue` (#54): only the changes whose start note named it, begun or not.
 	const found = [...host.changes.values()]
 		.filter(

@@ -318,7 +318,7 @@ export function answer(
 		}
 		if (op === "announce" && agent === undefined) {
 			// The sender comes from the route, like every other agent op, not from
-			// a body field anyone can fill in (Security, #31).
+			// a body field anyone can fill in (#31).
 			return fail(400, "announce from your own agent: POST /p/:project/a/<you>/announce {text, to?}");
 		}
 		if (op === "files" && agent === undefined) {

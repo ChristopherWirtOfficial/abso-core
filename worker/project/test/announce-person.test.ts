@@ -1,5 +1,4 @@
-// A signed-in person's announcement from the website (#41, Builder 2's item
-// 5, Security's conditions): recorded on each recipient's news with `from`,
+// A signed-in person's announcement from the website (#41): recorded on each recipient's news with `from`,
 // the text JSON-quoted so a line break can't pass for another item, and the
 // person never made an agent.
 
@@ -118,7 +117,7 @@ test("a signed-in person's note: recorded as person:<id>, heard by the lines' au
 	);
 });
 
-test('no agent can be named like a person\'s writer ("person:<id>"), so notes and closing can tell them apart (AVCS - Security)', () => {
+test('no agent can be named like a person\'s writer ("person:<id>"), so notes and closing can tell them apart', () => {
 	const { project } = setup();
 	assert.throws(
 		() => project.sync("person:x"),

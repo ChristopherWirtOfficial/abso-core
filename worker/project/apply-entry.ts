@@ -280,7 +280,7 @@ export function applyEntry(host: ApplyEntryHost, entry: Entry, at: number, time:
 		default: {
 			// A kind this engine doesn't know was written by a newer one. Skipping
 			// it would show, and then build on, a project without that entry, so
-			// the load stops instead (AVCS - Git Lessons, report 8.3).
+			// the load stops instead.
 			const kind = (entry as { type?: unknown }).type;
 			throw new ProjectError(
 				"unknown-entry",

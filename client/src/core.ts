@@ -24,9 +24,9 @@ export function uncomposedText(path: string): string {
 export const LOCK_FILE = "lock";
 /**
  * A lock not renewed for this long was left behind, even if its process id
- * now belongs to another process (AVCS - Git Lessons). A holder renews it
+ * now belongs to another process. A holder renews it
  * every 20 seconds, so a long record or sync is never taken over while it
- * writes (AVCS - Security); a lock whose process is gone is taken over by
+ * writes; a lock whose process is gone is taken over by
  * the next command at once.
  */
 export const LOCK_STALE_MS = 2 * 60_000;
@@ -48,7 +48,7 @@ export function lockHeld(text: string | undefined, now: number): boolean {
 	}
 }
 
-/** The Windows short names of the ALWAYS_SKIPPED folders: on NTFS, CLAUDE~1 is .claude (AVCS - Git Lessons). */
+/** The Windows short names of the ALWAYS_SKIPPED folders: on NTFS, CLAUDE~1 is .claude. */
 const SKIPPED_SHORT = /^(git|abso|avcs|claude|node_m)~[0-9]+$/i;
 
 /**
@@ -69,7 +69,7 @@ export function pathKey(path: string): string {
 }
 
 /**
- * The key a path part is compared with ALWAYS_SKIPPED by (AVCS - Security):
+ * The key a path part is compared with ALWAYS_SKIPPED by:
  * pathKey, after taking out what HFS+ leaves out. It folds .avc\u017F (long s) to .avcs and
  * .g\u0131t (dotless i) to .git, as a case-insensitive disk may.
  */
@@ -161,7 +161,7 @@ export function tokenGoesTo(server: string, trusted?: string): boolean {
 	if (o === undefined) return false;
 	const host = o.replace(/^https?:\/\//, "").replace(/:\d+$/, "");
 	if (host === "localhost" || host === "127.0.0.1" || host === "[::1]") return true;
-	// Off this machine only https: a token over plain http goes in clear text (Security, 608).
+	// Off this machine only https: a token over plain http goes in clear text.
 	if (!o.startsWith("https://")) return false;
 	return [...TOKEN_SERVERS, ...(trusted ?? "").split(",")].some((t) => t.trim() !== "" && origin(t) === o);
 }

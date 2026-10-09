@@ -87,7 +87,7 @@ export function starting(
 	}
 	if (issue !== undefined && agent.noteAt !== undefined)
 		hooks.claim = { issue: issue as number, agent: agent.name, change: agent.noteAt };
-	// Files named by glob, and paths written in the text, count too (#37, Builder 4).
+	// Files named by glob, and paths written in the text, count too (#37).
 	const overlaps = text === null ? [] : host.overlaps(agent, notePatterns(host.liveNote(agent)));
 	for (const name of [...new Set(overlaps.map((o) => o.agent))]) {
 		const mine = overlaps.filter((o) => o.agent === name).map((o) => o.file);
