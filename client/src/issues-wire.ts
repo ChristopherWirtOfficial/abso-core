@@ -56,6 +56,8 @@ export interface Attachment {
 	name: string;
 	type: string;
 	size: number;
+	/** The SVG an image was drawn from, when it was one: the server serves the image as a PNG, and this only as a download at attachments/<id>/source. */
+	source?: { name: string; size: number };
 }
 
 export interface Ask {

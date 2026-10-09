@@ -160,9 +160,15 @@ function attachmentLines(
 	files: readonly Attachment[] | undefined,
 	indent: string,
 ): string[] {
-	return (files ?? []).map(
-		(a) => `${indent}attached ${a.id}: ${q(a.name)}, ${sizeText(a.size)}${api ? `, ${api.attachmentUrl(a.id)}` : ""}`,
-	);
+	return (files ?? []).flatMap((a) => [
+		`${indent}attached ${a.id}: ${q(a.name)}, ${sizeText(a.size)}${api ? `, ${api.attachmentUrl(a.id)}` : ""}`,
+		// An SVG is shown as the PNG drawn from it; its own file is a download beside it.
+		...(a.source
+			? [
+					`${indent}  drawn from ${q(a.source.name)}, ${sizeText(a.source.size)}${api ? `, ${api.attachmentUrl(a.id)}/source` : ""}`,
+				]
+			: []),
+	]);
 }
 
 /** An issue's page, as text. */

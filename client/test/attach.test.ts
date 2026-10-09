@@ -171,7 +171,16 @@ describe("--attach (abso issue 171)", () => {
 					kind: "comment",
 					text: "same here",
 					at: 0,
-					attachments: [{ id: "a00000000000f", name: "mine.png", type: "image/png", size: 3 * 1024 * 1024 }],
+					attachments: [
+						{ id: "a00000000000f", name: "mine.png", type: "image/png", size: 3 * 1024 * 1024 },
+						{
+							id: "a0000000000aa",
+							name: "logo.png",
+							type: "image/png",
+							size: 4096,
+							source: { name: "logo.svg", size: 512 },
+						},
+					],
 				},
 			],
 			edits: [],
@@ -187,5 +196,10 @@ describe("--attach (abso issue 171)", () => {
 			/attached a0123456789ab: "shot.png", 2 KB, https:\/\/issues.example\/p\/x\/attachments\/a0123456789ab/,
 		);
 		assert.match(text, /\n {4}attached a00000000000f: "mine.png", 3.0 MB/);
+		// An SVG is listed as its PNG, with its own file as a download beside it.
+		assert.match(
+			text,
+			/\n {4}attached a0000000000aa: "logo.png", 4 KB, \S+\/a0000000000aa\n {6}drawn from "logo.svg", 512 B, https:\/\/issues.example\/p\/x\/attachments\/a0000000000aa\/source/,
+		);
 	});
 });
