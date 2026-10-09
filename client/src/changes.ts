@@ -141,6 +141,25 @@ export async function runDiff(args: Parsed, env: Env): Promise<Output> {
 			.filter((p) => only.length > 1 || !existsHere(root, p))
 			.map((p) => nothingAt(root, p));
 
+	// --agent: someone else's draft, to review it. What they've recorded, not their folder; nothing here is recorded.
+	const other = str(args, "agent");
+	if (other !== undefined) {
+		if (between || str(args, "draft") !== undefined)
+			throw new UsageError("--agent shows that agent's unpublished changes: abso diff [file...] --agent <name>");
+		const answer = await api.diffOf(other);
+		const files = pick(answer.files);
+		const d = diffs(files);
+		const where = `${spaceName(answer.draft)}${answer.base === null ? "" : ` (on version ${answer.base})`}`;
+		const head =
+			files.length === 0
+				? `${other} has no recorded, unpublished changes${inPaths(only, "to")} in ${where}.`
+				: `${other}'s recorded, unpublished changes${inPaths(only, "to")} in ${where}: ${totals(files)}.`;
+		return {
+			text: [head, ...d.text].join("\n"),
+			json: { agent: other, draft: answer.draft, base: answer.base, files: d.json, unmatched: unmatched(files) },
+		};
+	}
+
 	if (between) {
 		const from = version(words[0]!);
 		const to = version(words[1]!);

@@ -846,6 +846,11 @@ export class Api {
 		return this.json("POST", this.agentPath("diff"), {});
 	}
 
+	/** Another agent's recorded, unpublished changes, file by file: read only, as the website's drafts show them. */
+	diffOf(agent: string): Promise<DiffAnswer> {
+		return this.json("GET", `/diff?${query({ agent })}`);
+	}
+
 	/** Discard this agent's unpublished changes to `files` (null: all of them). */
 	restore(files: readonly string[] | null): Promise<RestoreAnswer> {
 		return this.json("POST", this.agentPath("restore"), files === null ? { all: true } : { files });

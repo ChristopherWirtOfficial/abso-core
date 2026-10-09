@@ -271,7 +271,7 @@ export async function startFake(port = 0, token = "fake-token"): Promise<Fake> {
 			return;
 		}
 		const m =
-			/^\/p\/([^/]+)\/(init|status|queue|change\/\d+|changes|notes|ci\/revoke|ci|blame|why|where|labels|files|log|show|file|compare|a\/([^/]+)\/(edit|record|publish|sync|run|draft|land|draft-sync|diff|restore|announce|news|starting|reader|drop|pluck|amend|label|files|unqueue|note|note-close|move))$/.exec(
+			/^\/p\/([^/]+)\/(init|status|queue|change\/\d+|changes|notes|ci\/revoke|ci|blame|why|where|labels|files|diff|log|show|file|compare|a\/([^/]+)\/(edit|record|publish|sync|run|draft|land|draft-sync|diff|restore|announce|news|starting|reader|drop|pluck|amend|label|files|unqueue|note|note-close|move))$/.exec(
 				url.pathname,
 			);
 		if (!m) return send(res, 404, { error: "no such route; see docs/v2-slice1.md" });
@@ -405,6 +405,17 @@ export async function startFake(port = 0, token = "fake-token"): Promise<Fake> {
 		}
 		if (op === "where") return send(res, 200, where(hosted.project));
 		if (op === "labels") return send(res, 200, hosted.project.labels());
+		if (op === "diff" && agent === undefined) {
+			// Another agent's draft, read only (abso diff --agent), as the Worker answers GET /p/:project/diff?agent=.
+			const of = url.searchParams.get("agent");
+			if (!of) return send(res, 400, { error: "diff needs ?agent=<name>" });
+			try {
+				return send(res, 200, hosted.project.diffOf(of));
+			} catch (e) {
+				const code = (e as { code?: string }).code;
+				return send(res, code === "not-found" ? 404 : 500, { error: e instanceof Error ? e.message : String(e) });
+			}
+		}
 		if (op === "files" && agent === undefined) {
 			const q = Object.fromEntries(url.searchParams) as Record<string, string | undefined>;
 			try {

@@ -577,10 +577,10 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		run: runDraftSync,
 	},
 	diff: {
-		flags: { draft: "string" },
-		usage: "abso diff [file...] | abso diff <from> <to> [file...] [--draft <name>]",
+		flags: { draft: "string", agent: "string" },
+		usage: "abso diff [file...] [--agent <name>] | abso diff <from> <to> [file...] [--draft <name>]",
 		about:
-			"Your unpublished changes, line by line, as git prints them (records first). With two versions: what changed between them in this space.",
+			"Your unpublished changes, line by line, as git prints them (records first). --agent <name>: that agent's recorded, unpublished changes instead, to review them; it changes nothing. With two versions: what changed between them in this space.",
 		run: runDiff,
 	},
 	restore: {

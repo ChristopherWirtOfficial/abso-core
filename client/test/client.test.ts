@@ -4248,6 +4248,29 @@ describe("diff, log, show and restore", () => {
 			/^Your unpublished changes to a\.txt in shared \(on version 0\): 1 file, 1 line added, 1 removed\.\n--- a\/a\.txt/,
 		);
 
+		// bob reviews alice's draft: what she recorded, read only.
+		const theirs = await main(["diff", "a.txt", "--agent", "alice"], { cwd: folders.bob!, env: ENV, write: () => {} });
+		assert.equal(theirs.exit, 0, theirs.stderr);
+		assert.match(
+			theirs.stdout,
+			/^alice's recorded, unpublished changes to a\.txt in shared \(on version 0\): 1 file, 1 line added, 1 removed\.\n--- a\/a\.txt\n\+\+\+ b\/a\.txt\n@@ -1,3 \+1,3 @@\n one\n-two\n\+TWO\n three/,
+		);
+		assert.deepEqual((await avcs(folders.bob!, "diff", "--agent", "alice")).json.files.map((f: any) => f.path).sort(), [
+			"a.txt",
+			"c.txt",
+		]);
+		assert.match(
+			(await main(["diff", "--agent", "bob"], { cwd: folders.bob!, env: ENV, write: () => {} })).stdout,
+			/^bob has no recorded, unpublished changes in shared/,
+		);
+		const nobody = await main(["diff", "--agent", "carol"], { cwd: folders.bob!, env: ENV, write: () => {} });
+		assert.notEqual(nobody.exit, 0);
+		assert.match(nobody.stderr, /there is no agent "carol"/);
+		assert.equal(
+			(await main(["diff", "0", "1", "--agent", "alice"], { cwd: folders.bob!, env: ENV, write: () => {} })).exit,
+			1,
+		);
+
 		assert.equal((await avcs(alice, "publish", "-m", "alice: shout two, add c")).exit, 0);
 		await edit(folders.bob!, "b.txt", "b\n", "b from bob\n");
 		assert.equal((await avcs(folders.bob!, "publish", "-m", "bob: change b")).exit, 0);
