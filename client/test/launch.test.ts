@@ -3,16 +3,31 @@
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	utimesSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 
 const LAUNCH = new URL("../launch.mjs", import.meta.url);
+const roots: string[] = [];
+after(() => {
+	for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 /** A checkout on main with one commit, launch.mjs and a stand-in client/abso.ts that names itself. */
 function checkout(): { repo: string; home: string; head: string } {
 	const root = mkdtempSync(join(tmpdir(), "abso-launch-"));
+	roots.push(root);
 	const repo = join(root, "repo");
 	const home = join(root, "home");
 	mkdirSync(join(repo, "client"), { recursive: true });
@@ -125,6 +140,28 @@ describe("client/launch.mjs", () => {
 		mkdirSync(lock);
 		assert.equal(launch(c, [], { ABSO_LAUNCH_UPDATE: "1" }).status, 0);
 		assert.equal(existsSync(lock), true);
+	});
+
+	it("takes over a lock a dead run left behind, and removes it after", () => {
+		const c = checkout();
+		const lock = join(c.home, ".abso", "client-update.lock");
+		mkdirSync(lock);
+		const old = new Date(Date.now() - 11 * 60 * 1000);
+		utimesSync(lock, old, old);
+		assert.equal(launch(c, [], { ABSO_LAUNCH_UPDATE: "1" }).status, 0);
+		assert.deepEqual(
+			readdirSync(join(c.home, ".abso")).filter((f) => f.includes("lock")),
+			[],
+		);
+	});
+
+	it("reads the commit in a git worktree, where .git is a file", () => {
+		const c = checkout();
+		const wt = join(c.repo, "..", "wt");
+		execFileSync("git", ["-C", c.repo, "worktree", "add", "-q", "--detach", wt, "HEAD"]);
+		bundle(wt, NAMES_ITSELF, c.head);
+		const r = launch({ repo: wt, home: c.home }, ["status"]);
+		assert.match(r.stdout, /^bundle /);
 	});
 
 	it("keeps the background step quiet when it can't fetch or build", () => {

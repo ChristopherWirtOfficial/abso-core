@@ -24,7 +24,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repo = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -38,29 +38,69 @@ const UPDATE = "ABSO_LAUNCH_UPDATE";
 /** Set by the bundle's first line: an error after it came from the command, so it's never run again. */
 const STARTED = "__absoBundleStarted";
 
-/** The checkout's commit, read from .git without running git; undefined if it can't be read. */
-function headCommit(root = repo) {
+/**
+ * The checkout's git folders: its own (HEAD) and the shared one (refs, info/exclude). They are the same
+ * folder in a plain clone; in a worktree .git is a file naming its own folder, which names the shared one.
+ */
+function gitDirs(root = repo) {
+	const dot = join(root, ".git");
 	try {
-		const head = readFileSync(join(root, ".git", "HEAD"), "utf8").trim();
-		if (!head.startsWith("ref:")) return head;
-		const ref = head.slice(4).trim();
+		if (statSync(dot).isDirectory()) return { own: dot, common: dot };
+		const own = resolve(
+			root,
+			readFileSync(dot, "utf8")
+				.trim()
+				.replace(/^gitdir:\s*/, ""),
+		);
+		let common = own;
 		try {
-			return readFileSync(join(root, ".git", ...ref.split("/")), "utf8").trim();
-		} catch {
-			const line = readFileSync(join(root, ".git", "packed-refs"), "utf8")
-				.split("\n")
-				.find((l) => l.endsWith(` ${ref}`));
-			return line?.split(" ")[0];
-		}
+			common = resolve(own, readFileSync(join(own, "commondir"), "utf8").trim());
+		} catch {}
+		return { own, common };
 	} catch {
 		return undefined;
 	}
 }
 
-/** Runs fn under a lock folder; a lock older than 10 minutes is a dead run's and is cleared. */
-function locked(lock, fn) {
+/** The checkout's commit, read from .git without running git; undefined if it can't be read. */
+function headCommit(root = repo) {
+	const dirs = gitDirs(root);
+	if (!dirs) return undefined;
 	try {
-		if (Date.now() - statSync(lock).mtimeMs > 10 * 60 * 1000) rmSync(lock, { recursive: true, force: true });
+		const head = readFileSync(join(dirs.own, "HEAD"), "utf8").trim();
+		if (!head.startsWith("ref:")) return head;
+		const ref = head.slice(4).trim();
+		for (const dir of [dirs.own, dirs.common]) {
+			try {
+				return readFileSync(join(dir, ...ref.split("/")), "utf8").trim();
+			} catch {}
+		}
+		const line = readFileSync(join(dirs.common, "packed-refs"), "utf8")
+			.split("\n")
+			.find((l) => l.endsWith(` ${ref}`));
+		return line?.split(" ")[0];
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Runs fn under a lock folder, or not at all when another run holds it. A lock older than 10 minutes is a
+ * dead run's: it is renamed aside before it's removed, so of two runs that find it stale only one takes it
+ * over, and one that renamed away a lock taken over a moment ago puts it back.
+ */
+function locked(lock, fn) {
+	const stale = (path) => Date.now() - statSync(path).mtimeMs > 10 * 60 * 1000;
+	try {
+		if (stale(lock)) {
+			const aside = `${lock}.${process.pid}.stale`;
+			renameSync(lock, aside);
+			if (stale(aside)) rmSync(aside, { recursive: true, force: true });
+			else {
+				renameSync(aside, lock);
+				return;
+			}
+		}
 	} catch {}
 	try {
 		mkdirSync(lock);
@@ -124,7 +164,7 @@ function build(head) {
 	} catch {
 		return;
 	}
-	const exclude = join(repo, ".git", "info", "exclude");
+	const exclude = join(gitDirs()?.common ?? join(repo, ".git"), "info", "exclude");
 	try {
 		if (!readFileSync(exclude, "utf8").split(/\r?\n/).includes("client/dist/"))
 			appendFileSync(exclude, "\nclient/dist/\n");

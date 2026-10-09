@@ -27,6 +27,9 @@ and builds the bundle in the background, with esbuild if the checkout has it.
 It never changes the command's output or exit code, and writes its own notices
 to `~/.abso/launcher.log`.
 
+Point it at a clone or worktree that nobody edits in. The bundle is keyed on
+the commit, so changes that aren't committed don't run until the next commit.
+
 ## Setting up a folder
 
 Folders and machines set up before abso had its name keep working: the older 
