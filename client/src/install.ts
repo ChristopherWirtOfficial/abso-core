@@ -45,7 +45,7 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { CLIENT_DIR, clientPlace, clientVersion } from "./client-version.ts";
+import { CLIENT_DIR, clientPlace, clientVersion, headCommit } from "./client-version.ts";
 
 export interface ModSpec {
 	/** The mod's name, as its plugin.json has it. */
@@ -165,6 +165,65 @@ function modCommit(spec: ModSpec): string | null {
 	if (last.status !== 0 || !/^[0-9a-f]{40}/.test(last.stdout)) return null;
 	const changed = git("status", "--porcelain", "--", ...spec.files).stdout.trim() !== "";
 	return `${last.stdout.slice(0, 7)}${changed ? ".dirty" : ""}`;
+}
+
+/** A file changed this close to when an answer was kept can't be told apart from one changed just after it. */
+const RACY_MS = 2_000;
+
+interface KeptModCommit {
+	readonly head: string;
+	readonly files: readonly string[];
+	readonly at: number;
+	readonly commit: string | null;
+}
+
+/**
+ * modCommit for the version report, which `abso status` asks on every run: it runs git twice per mod, so
+ * the answer is kept in ~/.abso/mod-commits.json. A kept answer holds while the checkout's commit (read
+ * from .git, without git) and each of the mod's files (size, modified time, inode) are as they were, and
+ * every file was changed clearly before the answer was kept; anything else asks git again. Outside a git
+ * checkout there is no commit, and git isn't run at all.
+ */
+export function keptModCommit(spec: ModSpec, home: string = homedir()): string | null {
+	const head = headCommit(spec.from);
+	if (head === undefined) return null;
+	const at = Date.now();
+	const files = spec.files.map((rel) => {
+		try {
+			const s = statSync(join(spec.from, ...rel.split("/")));
+			return `${s.size}:${s.mtimeMs}:${s.ino}`;
+		} catch {
+			return "-";
+		}
+	});
+	const newest = Math.max(...files.map((f) => (f === "-" ? 0 : Number(f.split(":")[1]))));
+	const path = join(home, ".abso", "mod-commits.json");
+	const key = `${resolve(spec.from)}|${spec.files.join("|")}`;
+	let kept: Record<string, KeptModCommit> = {};
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf8")) as { format?: unknown; mods?: unknown };
+		if (parsed.format === 1 && typeof parsed.mods === "object" && parsed.mods !== null)
+			kept = parsed.mods as Record<string, KeptModCommit>;
+	} catch {}
+	const was = kept[key];
+	if (
+		was !== undefined &&
+		was.head === head &&
+		Array.isArray(was.files) &&
+		was.files.join() === files.join() &&
+		newest < was.at - RACY_MS
+	)
+		return was.commit;
+	const commit = modCommit(spec);
+	try {
+		mkdirSync(dirname(path), { recursive: true });
+		const next = `${path}.${process.pid}.tmp`;
+		writeFileSync(next, JSON.stringify({ format: 1, mods: { ...kept, [key]: { head, files, at, commit } } }));
+		renameSync(next, path);
+	} catch {
+		// Best effort: the next run asks git again.
+	}
+	return commit;
 }
 
 /** The files to install, stamped with `version`, in install order. */
@@ -486,7 +545,7 @@ export function versionReport(env: Readonly<Record<string, string | undefined>>)
 			at: field(RECORD, "at"),
 			current: (() => {
 				try {
-					return versionFor(spec);
+					return versionFor(spec, keptModCommit(spec));
 				} catch {
 					return "not in this copy";
 				}

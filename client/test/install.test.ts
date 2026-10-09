@@ -27,6 +27,7 @@ import { clientVersion, headCommit } from "../src/client-version.ts";
 import {
 	AVCS_MOD,
 	installMod,
+	keptModCommit,
 	type ModSpec,
 	modsBehindText,
 	retireOldMod,
@@ -300,6 +301,70 @@ describe("installing a mod", () => {
 		assert.equal(versionFor(spec), `0.1.0+${git("rev-parse", "--short=7", "HEAD")}`);
 		// Outside a git checkout there is no commit to add.
 		assert.equal(versionFor(spec, null), "0.1.0");
+	});
+
+	it("keeps the mod's commit between runs, and asks git again when the checkout or a file moves, or a file is too new to trust", {
+		skip: !hasGit,
+	}, () => {
+		const spec = source();
+		const home = temp();
+		const kept = join(home, ".abso", "mod-commits.json");
+		const git = (...args: string[]) =>
+			spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-C", spec.from, ...args], {
+				encoding: "utf8",
+			}).stdout.trim();
+		// Every mod file a minute old, so a kept answer can be trusted.
+		const age = () => {
+			const old = new Date(Date.now() - 60_000);
+			for (const rel of FILES) utimesSync(at(spec.from, rel), old, old);
+		};
+		// Swaps every kept answer for a made-up one: what comes back says whether git ran.
+		const plant = () => {
+			const file = JSON.parse(readFileSync(kept, "utf8"));
+			for (const k of Object.keys(file.mods)) file.mods[k].commit = "fffffff";
+			writeFileSync(kept, JSON.stringify(file));
+		};
+		// Not a git checkout yet: no commit, and nothing kept.
+		assert.equal(keptModCommit(spec, home), null);
+		assert.equal(existsSync(kept), false);
+		git("init", "-q");
+		git("add", ".");
+		git("commit", "-q", "-m", "mod");
+		const mod = git("rev-parse", "--short=7", "HEAD");
+		age();
+		assert.equal(keptModCommit(spec, home), mod);
+		plant();
+		assert.equal(keptModCommit(spec, home), "fffffff", "a kept answer is used while nothing moved");
+
+		// A file changed in the same moment the answer was kept is never trusted, even when its size and time match.
+		write(spec.from, "src/core.ts", "export const core = 2\n");
+		assert.equal(keptModCommit(spec, home), `${mod}.dirty`);
+		plant();
+		assert.equal(keptModCommit(spec, home), `${mod}.dirty`, "too new to trust: git runs again");
+
+		// An edit that keeps the size, with its time set back a minute, still isn't the time that was kept.
+		age();
+		assert.equal(keptModCommit(spec, home), `${mod}.dirty`);
+		plant();
+		write(spec.from, "src/core.ts", "export const core = 3\n");
+		age();
+		assert.equal(keptModCommit(spec, home), `${mod}.dirty`);
+
+		// A commit moves the checkout.
+		git("commit", "-q", "-am", "core");
+		age();
+		const next = git("rev-parse", "--short=7", "HEAD");
+		assert.equal(keptModCommit(spec, home), next);
+		plant();
+		git("commit", "-q", "--allow-empty", "-m", "empty");
+		assert.equal(keptModCommit(spec, home), next, "a new commit asks git again");
+
+		// A file it can't read, or doesn't know the format of, is the same as none.
+		plant();
+		writeFileSync(kept, JSON.stringify({ format: 2, mods: JSON.parse(readFileSync(kept, "utf8")).mods }));
+		assert.equal(keptModCommit(spec, home), next);
+		writeFileSync(kept, "not json");
+		assert.equal(keptModCommit(spec, home), next);
 	});
 });
 
