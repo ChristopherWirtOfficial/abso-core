@@ -85,6 +85,17 @@ export function timeoutFor(baseMs: number, sent: string | undefined): number {
 	return sent === undefined ? baseMs : baseMs + Math.floor(Buffer.byteLength(sent) / 100_000) * 1000;
 }
 
+/**
+ * How long a publish or a land may take before the client stops waiting: the
+ * server gives one request up to 2 minutes of work, so a small body can still
+ * take that long (a large merge). Waiting less reported publishes as failed
+ * that went on to land.
+ */
+export const PUBLISH_TIMEOUT_MS = 150_000;
+
+/** The most versions the server's log sends at once. */
+export const LOG_PAGE = 200;
+
 /** A query string from the values that are set (null and undefined are left out). */
 function query(values: Record<string, string | number | null | undefined>): URLSearchParams {
 	const q = new URLSearchParams();
@@ -168,10 +179,16 @@ export class Api {
 		};
 	}
 
-	async json<T>(method: "GET" | "POST", path: string, body?: unknown, server = this.config.server): Promise<T> {
+	async json<T>(
+		method: "GET" | "POST",
+		path: string,
+		body?: unknown,
+		server = this.config.server,
+		atLeastMs = 0,
+	): Promise<T> {
 		let res: Response | undefined;
 		const sent = body === undefined ? undefined : JSON.stringify(body);
-		const timeoutMs = timeoutFor(this.timeoutMs, sent);
+		const timeoutMs = Math.max(atLeastMs, timeoutFor(this.timeoutMs, sent));
 		// A connection that never opened is tried once more, IPv4 first (#37, GAME - UI/UX: one IPv6
 		// address timed out, and the same command went through seconds later). Nothing went out, so
 		// a POST is as safe to send again as a GET.
@@ -375,7 +392,13 @@ export class Api {
 	}
 
 	publish(message: string, asIs = false): Promise<PublishAnswer> {
-		return this.json("POST", this.agentPath("publish"), { message, ...(asIs ? { asIs: true } : {}) });
+		return this.json(
+			"POST",
+			this.agentPath("publish"),
+			{ message, ...(asIs ? { asIs: true } : {}) },
+			undefined,
+			PUBLISH_TIMEOUT_MS,
+		);
 	}
 
 	/** One change (#44). */
@@ -709,7 +732,7 @@ export class Api {
 
 	/** Land never queues: with the merge queue on, the server refuses it (#39). */
 	land(message: string): Promise<Exclude<PublishAnswer, { queued: number }>> {
-		return this.json("POST", this.agentPath("land"), { message });
+		return this.json("POST", this.agentPath("land"), { message }, undefined, PUBLISH_TIMEOUT_MS);
 	}
 
 	draftSync(): Promise<DraftSyncAnswer> {
@@ -731,8 +754,29 @@ export class Api {
 	}
 
 	/** The versions of a space, newest first; with `path`, only those that changed it. */
-	log(where: Where, limit?: number, path?: string): Promise<LogAnswer> {
-		return this.json("GET", `/log?${query({ ...where, limit, path })}`);
+	/**
+	 * The versions newest first, below `before` when it's given. The server
+	 * sends at most LOG_PAGE at a time, so a longer log is read page by page,
+	 * following each page's next. `next` on the answer says older ones are left.
+	 */
+	async log(where: Where, limit?: number, path?: string, before?: number): Promise<LogAnswer> {
+		let page = await this.#logPage(where, limit === undefined ? undefined : Math.min(limit, LOG_PAGE), path, before);
+		const versions = [...page.versions];
+		while (limit !== undefined && versions.length < limit && page.next !== undefined) {
+			page = await this.#logPage(where, Math.min(limit - versions.length, LOG_PAGE), path, page.next);
+			versions.push(...page.versions);
+		}
+		const { next, ...rest } = page;
+		return { ...rest, versions, ...(next !== undefined ? { next } : {}) };
+	}
+
+	#logPage(
+		where: Where,
+		limit: number | undefined,
+		path: string | undefined,
+		before: number | undefined,
+	): Promise<LogAnswer> {
+		return this.json("GET", `/log?${query({ ...where, limit, path, before })}`);
 	}
 
 	show(version: number, where: Where): Promise<ShowAnswer> {

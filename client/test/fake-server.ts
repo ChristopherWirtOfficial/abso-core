@@ -726,6 +726,9 @@ export async function startFake(port = 0, token = "fake-token"): Promise<Fake> {
 			else res.end();
 		});
 	});
+	// Never close an idle kept-alive connection: on Windows, under load, the client could reuse one in the moment
+	// the server closed it, and the next call failed with ECONNRESET. close() below drops every connection.
+	server.keepAliveTimeout = 0;
 	await new Promise<void>((ok) => server.listen(port, "127.0.0.1", ok));
 	const address = server.address() as AddressInfo;
 	return Object.assign(fake, {

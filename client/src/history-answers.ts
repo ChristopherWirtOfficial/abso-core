@@ -82,6 +82,8 @@ export interface LogAnswer {
 	readonly draft: string | null;
 	readonly version: number;
 	readonly versions: readonly LogEntry[];
+	/** When older versions are left: the version to read below (log --before) for the next ones. */
+	readonly next?: number;
 }
 export interface ShowAnswer extends LogEntry {
 	readonly draft: string | null;

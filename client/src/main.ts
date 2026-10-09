@@ -573,11 +573,11 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		run: runFiles,
 	},
 	log: {
-		flags: { limit: "string", draft: "string", since: "string", by: "string", count: "boolean" },
+		flags: { limit: "string", before: "string", draft: "string", since: "string", by: "string", count: "boolean" },
 		usage:
-			"abso log [file] [-n <count>] [--draft <name>] [--since <version|30m|2h|1d|date>] [--by <agent,...>] [--count]",
+			"abso log [file] [-n <count>] [--before <version>] [--draft <name>] [--since <version|30m|2h|1d|date>] [--by <agent,...>] [--count]",
 		about:
-			"The published versions of this folder's space (shared or a named draft), newest first: who, when, why and which files, and for shared, whether the version passed CI's check (abso ci). With a file: only the versions that changed it. --since takes a version (the versions after it), a span back from now (30m, 2h, 1d), a clock time today (20:00) or a date and time; --by keeps one agent's versions (or several, comma-separated); --count prints versions and files per agent instead of the list.",
+			"The published versions of this folder's space (shared or a named draft), newest first: who, when, why and which files, and for shared, whether the version passed CI's check (abso ci). With a file: only the versions that changed it. --before <version> starts below that version, so any stretch of history can be listed; the end of the list names the --before for the next older ones. --since takes a version (the versions after it), a span back from now (30m, 2h, 1d), a clock time today (20:00) or a date and time; --by keeps one agent's versions (or several, comma-separated); --count prints versions and files per agent instead of the list.",
 		run: runLog,
 	},
 	show: {

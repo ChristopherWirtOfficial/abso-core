@@ -311,6 +311,8 @@ export async function runLog(args: Parsed, env: Env): Promise<Output> {
 	const rawLimit = str(args, "limit");
 	const limit = rawLimit === undefined ? undefined : version(rawLimit, "-n");
 	if (limit === 0) throw new UsageError("-n is how many versions to show; give 1 or more");
+	const rawBefore = str(args, "before");
+	const before = rawBefore === undefined ? undefined : version(rawBefore, "--before");
 	// The server filters by one file; a folder (or the whole folder) is filtered here, from a longer log.
 	const folder = path !== undefined && (path === "" || /[/]$/.test(typed!) || isFolder(root, path));
 	// --since, --by and --count (#37, Reporter's progress reports) filter here, from a longer log.
@@ -332,6 +334,7 @@ export async function runLog(args: Parsed, env: Env): Promise<Output> {
 		space(args, config.agent),
 		folder || filtering ? FOLDER_LOG : limit,
 		folder ? undefined : path,
+		before,
 	);
 	const found = folder
 		? {
@@ -392,9 +395,14 @@ export async function runLog(args: Parsed, env: Env): Promise<Output> {
 		]),
 	];
 	const oldest = answer.versions[answer.versions.length - 1];
-	if (path === undefined && !filtering && oldest !== undefined && oldest.version > 0)
-		lines.push(`Older versions: abso log -n ${answer.versions.length + 50}`);
+	if (!filtering && !folder && raw.next !== undefined && oldest !== undefined)
+		lines.push(`Older versions: abso log${typed === undefined ? "" : ` ${typed}`} --before ${oldest.version}`);
 	if (filtering && answer.versions.length === 0) lines.push("No version matches.");
+	// A filter or a folder reads the newest FOLDER_LOG versions; say so when older ones were left unread.
+	if ((filtering || folder) && raw.next !== undefined)
+		lines.push(
+			`Only the newest ${FOLDER_LOG} versions${before === undefined ? "" : ` below ${before}`} were read; --before ${raw.next} reads older ones.`,
+		);
 	return { text: lines.join("\n"), json: { ...answer } };
 }
 

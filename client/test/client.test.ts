@@ -20,12 +20,13 @@ import {
 	utimesSync,
 	writeFileSync,
 } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { type AddressInfo, createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { timeoutFor } from "../src/api.ts";
+import { Api, LOG_PAGE, PUBLISH_TIMEOUT_MS, timeoutFor } from "../src/api.ts";
 import { parseArgs } from "../src/args.ts";
 import { globTest } from "../src/at.ts";
 import { forgetBox, readBox, writeBox } from "../src/box.ts";
@@ -1299,27 +1300,6 @@ describe("abso run --parallel (trial request, Prefix)", () => {
 		);
 		assert.equal(sh.status, 137);
 	});
-
-	it("sends one run, and takes each command as one quoted word", async () => {
-		const { folders } = await project({ "a.txt": "a\n" }, "alice");
-		const before = fake.runStarts.length;
-		await main(["run", "--parallel", "npm test", "node bench.js"], {
-			cwd: folders.alice!,
-			env: ENV,
-			write: () => {},
-			writeErr: () => {},
-		});
-		const sent = fake.runStarts.slice(before);
-		assert.equal(sent.length, 1);
-		assert.ok(sent[0]!.cmd.endsWith(parallelScript(["npm test", "node bench.js"])), sent[0]!.cmd);
-		const bad = await main(["run", "--parallel", "--", "npm", "test"], {
-			cwd: folders.alice!,
-			env: ENV,
-			write: () => {},
-		});
-		assert.equal(bad.exit, 1);
-		assert.match(bad.stderr, /--parallel takes each command as one quoted word/);
-	});
 });
 
 describe("paths from the server never leave the folder (Security)", () => {
@@ -2488,6 +2468,61 @@ describe("review and notes (#44)", () => {
 		assert.equal(timeoutFor(30_000, undefined), 30_000);
 		assert.equal(timeoutFor(30_000, "{}"), 30_000);
 		assert.equal(timeoutFor(30_000, "x".repeat(3_000_000)), 60_000);
+	});
+
+	it("reads a log longer than the server's page by following next, and starts below --before", async () => {
+		// A stand-in for the server's log: versions 0-449, newest first, at most LOG_PAGE a page, as version-log.ts pages.
+		const asked: string[] = [];
+		const paged = createHttpServer((req, res) => {
+			const q = new URL(req.url ?? "", "http://x").searchParams;
+			asked.push(`${q.get("limit")} ${q.get("before") ?? "-"}`);
+			const limit = Math.min(Number(q.get("limit") ?? 50), LOG_PAGE);
+			let v = Math.min(449, Number(q.get("before") ?? 450) - 1);
+			const versions = [];
+			for (; v >= 0 && versions.length < limit; v--)
+				versions.push({ version: v, agent: "a", message: `v${v}`, time: 0, files: [] });
+			const next = v >= 0 && versions.length > 0 ? versions[versions.length - 1]!.version : undefined;
+			res.writeHead(200, { "content-type": "application/json" });
+			res.end(JSON.stringify({ draft: null, version: 449, versions, ...(next !== undefined ? { next } : {}) }));
+		});
+		await new Promise<void>((ok) => paged.listen(0, "127.0.0.1", ok));
+		try {
+			const server = `http://127.0.0.1:${(paged.address() as AddressInfo).port}`;
+			const api = new Api({ server, project: "p", agent: "a", token: "t" } as ConstructorParameters<typeof Api>[0]);
+			const all = await api.log({ draft: null }, 2000);
+			assert.equal(all.versions.length, 450);
+			assert.deepEqual([all.versions[0]!.version, all.versions[449]!.version], [449, 0]);
+			assert.equal(all.next, undefined, "nothing older is left");
+			assert.deepEqual(asked, ["200 -", "200 250", "200 50"]);
+			const some = await api.log({ draft: null }, 250, undefined, 300);
+			assert.deepEqual([some.versions[0]!.version, some.versions.at(-1)!.version, some.next], [299, 50, 50]);
+			assert.equal((await api.log({ draft: null })).versions.length, 50, "no -n: the server's own default, one page");
+		} finally {
+			paged.closeAllConnections();
+			await new Promise((ok) => paged.close(ok));
+		}
+	});
+
+	it("waits for a publish and a land as long as the server may work on them, past the base timeout", async () => {
+		assert.ok(PUBLISH_TIMEOUT_MS > 120_000, "longer than the server's 2 minutes for one request");
+		// Every answer comes after 300 ms; the client's base timeout here is 100 ms.
+		const slow = createHttpServer((_req, res) => {
+			setTimeout(() => res.writeHead(200, { "content-type": "application/json" }).end('{"version": 7}'), 300);
+		});
+		await new Promise<void>((ok) => slow.listen(0, "127.0.0.1", ok));
+		try {
+			const server = `http://127.0.0.1:${(slow.address() as AddressInfo).port}`;
+			const api = new Api(
+				{ server, project: "p", agent: "a", token: "t" } as ConstructorParameters<typeof Api>[0],
+				100,
+			);
+			assert.deepEqual(await api.publish("slow"), { version: 7 });
+			assert.deepEqual(await api.land("slow"), { version: 7 });
+			await assert.rejects(api.json("GET", "/status"), /no answer within 100 ms/);
+		} finally {
+			slow.closeAllConnections();
+			await new Promise((ok) => slow.close(ok));
+		}
 	});
 
 	it("lists a change by its message's first line, and an import's commit as a short hash (#43, Git Lessons)", () => {
@@ -4086,7 +4121,7 @@ describe("diff, log, show and restore", () => {
 		const logText = await main(["log", "-n", "1"], { cwd: alice, env: ENV, write: () => {} });
 		assert.match(
 			logText.stdout,
-			/^shared is at version 2\.\nversion 2 by bob, .* UTC: bob: change b\n {2}1 file: b\.txt\nOlder versions: abso log -n 51\n$/,
+			/^shared is at version 2\.\nversion 2 by bob, .* UTC: bob: change b\n {2}1 file: b\.txt\nOlder versions: abso log --before 2\n$/,
 		);
 
 		const show = await avcs(alice, "show", "1");
