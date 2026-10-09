@@ -11,6 +11,22 @@ this folder, so the folder can be shipped as it is.
 node client/abso.ts help
 ```
 
+### Running it from a git checkout
+
+`client/launch.mjs` runs the client from a git checkout of abso and keeps the
+checkout current. Point your `abso` command at it:
+
+```bash
+node /path/to/abso/client/launch.mjs help
+```
+
+It runs a bundle of the client when one matches the checkout's commit, which
+starts several times faster than the TypeScript, and `client/abso.ts`
+otherwise. Every few minutes it fast-forwards the checkout (on `main` only)
+and builds the bundle in the background, with esbuild if the checkout has it.
+It never changes the command's output or exit code, and writes its own notices
+to `~/.abso/launcher.log`.
+
 ## Setting up a folder
 
 Folders and machines set up before abso had its name keep working: the older 
