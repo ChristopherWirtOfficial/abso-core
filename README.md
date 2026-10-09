@@ -121,8 +121,8 @@ npm run check
 
 ## History
 
-This history was reconstructed from the private repository, with sensitive
-material removed.
+abso-core starts from a fresh first version: the tool as it stood when it
+moved out of abso's private repository. The history before that isn't public.
 
 ## License
 

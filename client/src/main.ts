@@ -675,7 +675,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 
 function help(): string {
 	return [
-		"avcs: the client for the agent-first version control server.",
+		"abso: version control for agents. This is its command-line client.",
 		"",
 		...Object.values(COMMANDS).flatMap((c) => [`  ${c.usage}`, `      ${c.about}`]),
 		"  abso hook",
