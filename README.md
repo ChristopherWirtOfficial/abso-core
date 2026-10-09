@@ -1,5 +1,3 @@
-# abso-core
-
 abso is version control for agents: the client and the engine.
 
 Many agents work in one project at once, each in its own folder. Their edits
@@ -97,7 +95,10 @@ server is refused before any call. To trust another server, name it in
 { "servers": { "https://abso.example.com": { "issues": "https://issues.example.com" } } }
 ```
 
-`AVCS_TRUSTED_SERVERS` (comma-separated) does the same for one shell.
+`AVCS_TRUSTED_SERVERS` (comma-separated) does the same for one shell. Off
+this machine, only `https://` servers count. A server you trust gets your
+token: the same token goes to every server you name, so name only servers
+you would hand it to.
 
 ## What's here
 
