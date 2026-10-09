@@ -173,9 +173,9 @@ async function run($: Engine, job: Job): Promise<void> {
 	let outcome: string;
 	let news: readonly string[] = [];
 	try {
-		if ((await readOr($, `${job.root}/.avcs/paused`)) !== undefined) {
+		if ((await readOr($, `${await stateOf($, job.root)}/paused`)) !== undefined) {
 			outcome = "skipped: recording is paused (abso resume)";
-		} else if (/"reader"\s*:\s*true/.test((await readOr($, `${job.root}/.avcs/config.json`)) ?? "")) {
+		} else if (/"reader"\s*:\s*true/.test((await readOr($, `${await stateOf($, job.root)}/config.json`)) ?? "")) {
 			outcome = "skipped: this folder is a reader";
 		} else if (await ignored($, job.root, job.rel)) {
 			outcome = "skipped: ignored path";
@@ -189,7 +189,7 @@ async function run($: Engine, job: Job): Promise<void> {
 		}
 	} catch (err) {
 		outcome = `error: ${(err as Error).message}`;
-		await $.fs.write(`${job.root}/.avcs/known/${job.rel}`, FORGOTTEN).catch(() => {});
+		await $.fs.write(`${await stateOf($, job.root)}/known/${job.rel}`, FORGOTTEN).catch(() => {});
 	}
 	const done = await $.clock.now().catch(() => started);
 	await log(
@@ -217,7 +217,7 @@ async function run($: Engine, job: Job): Promise<void> {
 /** Ask for the news waiting for this agent (announcements, collisions) and hand it to the model. */
 async function pollNews($: Engine, root: string): Promise<void> {
 	try {
-		const config = JSON.parse(await $.fs.read(`${root}/.avcs/config.json`)) as {
+		const config = JSON.parse(await $.fs.read(`${await stateOf($, root)}/config.json`)) as {
 			server: string;
 			project: string;
 			agent: string;
@@ -263,9 +263,19 @@ async function readOr($: Engine, path: string): Promise<string | undefined> {
 	}
 }
 
+/** A folder's state folder: .abso, or .avcs in a folder from before the rename. (A mod can't import the client's state-dir.ts.) */
+async function stateOf($: Engine, root: string): Promise<string> {
+	return (await $.fs.exists(`${root}/.abso/config.json`)) ? `${root}/.abso` : `${root}/.avcs`;
+}
+
+/** A file under the user's home: ~/.abso/<name>, else the older ~/.avcs/<name>. */
+async function readHome($: Engine, home: string, name: string): Promise<string | undefined> {
+	return (await readOr($, `${slash(home)}/.abso/${name}`)) ?? (await readOr($, `${slash(home)}/.avcs/${name}`));
+}
+
 /** Whether the server has this path as a symbolic link (.avcs/modes.json, written by the client). */
 async function isLink($: Engine, root: string, rel: string): Promise<boolean> {
-	const raw = await readOr($, `${root}/.avcs/modes.json`);
+	const raw = await readOr($, `${await stateOf($, root)}/modes.json`);
 	if (raw === undefined) return false;
 	try {
 		const modes = JSON.parse(raw) as Record<string, { link?: unknown }>;
@@ -293,7 +303,7 @@ async function ignored($: Engine, root: string, rel: string): Promise<boolean> {
 	return makeIgnore((f) => files.get(f), setup.git)(rel, false);
 }
 
-/** The nearest folder above the file that has .avcs/config.json, cached per folder. */
+/** The nearest folder above the file that has .abso/config.json (or .avcs/config.json from before the rename), cached per folder. */
 async function findRoot($: Engine, path: string): Promise<string | undefined> {
 	const start = path.slice(0, path.lastIndexOf("/"));
 	const now = await $.clock.now();
@@ -302,7 +312,7 @@ async function findRoot($: Engine, path: string): Promise<string | undefined> {
 	let found: string | undefined;
 	let dir = start;
 	while (dir.includes("/")) {
-		if (await $.fs.exists(`${dir}/.avcs/config.json`)) {
+		if ((await $.fs.exists(`${dir}/.abso/config.json`)) || (await $.fs.exists(`${dir}/.avcs/config.json`))) {
 			found = dir;
 			break;
 		}
@@ -314,23 +324,23 @@ async function findRoot($: Engine, path: string): Promise<string | undefined> {
 	return found;
 }
 
-/** AVCS_TOKEN if set, else ~/.avcs/token; none for a server the token may not go to (core.ts tokenGoesTo, with this machine's servers.json). */
+/** AVCS_TOKEN if set, else ~/.abso/token, else ~/.avcs/token; none for a server the token may not go to (core.ts tokenGoesTo, with this machine's servers.json). */
 async function token($: Engine, server: string): Promise<string | undefined> {
 	const home = (await $.env.get("USERPROFILE")) ?? (await $.env.get("HOME"));
-	const machine = machineServers(home ? await readOr($, `${slash(home)}/.avcs/servers.json`) : undefined);
+	const machine = machineServers(home ? await readHome($, home, "servers.json") : undefined);
 	if (!tokenGoesTo(server, trustedList(await $.env.get("AVCS_TRUSTED_SERVERS"), machine))) return undefined;
 	const env = await $.env.get("AVCS_TOKEN");
 	if (env) return env.trim();
-	return home ? (await readOr($, `${slash(home)}/.avcs/token`))?.trim() || undefined : undefined;
+	return home ? (await readHome($, home, "token"))?.trim() || undefined : undefined;
 }
 
 async function send($: Engine, job: Job, who: Who): Promise<{ outcome: string; news: readonly string[] }> {
 	const { root, rel } = job;
 	// While an abso command changes the folder's records, leave the known copy alone: the next record sends the file (#51).
-	if (lockHeld(await readOr($, `${root}/.avcs/${LOCK_FILE}`), Date.now()))
+	if (lockHeld(await readOr($, `${await stateOf($, root)}/${LOCK_FILE}`), Date.now()))
 		return { outcome: "skipped: another abso command is changing this folder; abso record sends it", news: [] };
 	const disk = job.snapshot;
-	const knownPath = `${root}/.avcs/known/${rel}`;
+	const knownPath = `${await stateOf($, root)}/known/${rel}`;
 	const knownRaw = await readOr($, knownPath);
 	if (disk === undefined) {
 		if (job.nul !== undefined && knownRaw !== undefined && !looksBinary(knownRaw)) {
@@ -342,7 +352,7 @@ async function send($: Engine, job: Job, who: Who): Promise<{ outcome: string; n
 	}
 	const known = knownRaw === undefined || looksBinary(knownRaw) ? undefined : knownRaw;
 
-	const config = JSON.parse(await $.fs.read(`${root}/.avcs/config.json`)) as {
+	const config = JSON.parse(await $.fs.read(`${await stateOf($, root)}/config.json`)) as {
 		server: string;
 		project: string;
 		agent: string;
@@ -386,7 +396,7 @@ async function remember($: Engine, knownPath: string, text: string): Promise<voi
 /** One line per edit in .avcs/hook.log (or another log there), as the command hook writes, kept under LOG_LIMIT. */
 async function log($: Engine, root: string, line: string, file = "hook.log"): Promise<void> {
 	try {
-		const path = `${root}/.avcs/${file}`;
+		const path = `${await stateOf($, root)}/${file}`;
 		let text = `${(await readOr($, path)) ?? ""}${line}\n`;
 		if (text.length > LOG_LIMIT) text = text.slice(text.indexOf("\n", text.length - LOG_LIMIT / 2) + 1);
 		await $.fs.write(path, text);

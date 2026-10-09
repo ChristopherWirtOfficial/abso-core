@@ -10,12 +10,13 @@ import { STARTING_AVCSIGNORE } from "./check-ignore.ts";
 import { CLIENT_DIR } from "./client-version.ts";
 import { type Env, type Output, plural } from "./command-env.ts";
 import { leftOutText, syncFolder, uploadBlobs } from "./commands.ts";
-import { AVCS_DIR, findRoot, installKey, readConfig, type Settings, tokenFor, writeConfig } from "./config.ts";
+import { findRoot, installKey, readConfig, type Settings, tokenFor, writeConfig } from "./config.ts";
 import { clearKnown, loadIgnore, readFolder, writeKnown } from "./folder.ts";
 import { modInstalled } from "./install.ts";
 import { type FullMode, foldModes, writeKnownModes } from "./modes.ts";
 import { PROJECT_FILE, readProjectFile, startingProjectFileText, writeStartingProjectFile } from "./project-file.ts";
 import { refusedText } from "./safety.ts";
+import { stateDir } from "./state-dir.ts";
 
 function serverFrom(args: Parsed, env: Env): string {
 	const server = str(args, "server") ?? env.env.AVCS_SERVER;
@@ -39,7 +40,7 @@ export async function runInit(args: Parsed, env: Env): Promise<Output> {
 	if (args.positionals.length > 1) throw new UsageError("init takes one folder");
 	const root = resolve(env.cwd, args.positionals[0] ?? ".");
 	if (!existsSync(root) || !statSync(root).isDirectory()) throw new UsageError(`${root} is not a folder`);
-	if (findRoot(root) === root) throw new UsageError(`${root} already has .avcs/config.json`);
+	if (findRoot(root) === root) throw new UsageError(`${root} already has .abso/config.json`);
 	const project = str(args, "project");
 	if (!project) throw new UsageError("give the project a name with --project <name>");
 	const config = makeSettings(args, env, project);
@@ -75,7 +76,7 @@ export async function runInit(args: Parsed, env: Env): Promise<Output> {
 				: []),
 			...startingProjectFileText(wroteProject),
 			...(answer.skipped && answer.skipped.length > 0 ? [`The server skipped: ${answer.skipped.join(", ")}.`] : []),
-			`This folder is agent ${config.agent}. Settings are in .avcs/config.json.`,
+			`This folder is agent ${config.agent}. Settings are in .abso/config.json.`,
 			...refusedText(synced.refused),
 			...(synced.kept.length > 0 ? [`Kept your copy of ${synced.kept.join(", ")}.`] : []),
 			hookHint(env.env),
@@ -99,12 +100,12 @@ export async function runJoin(args: Parsed, env: Env): Promise<Output> {
 	const project = args.positionals[0]!;
 	const root = resolve(env.cwd, str(args, "dir") ?? ".");
 	mkdirSync(root, { recursive: true });
-	if (findRoot(root) === root) throw new UsageError(`${root} already has .avcs/config.json`);
+	if (findRoot(root) === root) throw new UsageError(`${root} already has .abso/config.json`);
 	const reader = bool(args, "reader");
 	const config = { ...makeSettings(args, env, project), ...(reader ? { reader: true } : {}) };
 	const box = readBox(config.server);
 	const minted =
-		box && !existsSync(join(root, AVCS_DIR, "key")) ? await mintKey(box, project, config.agent) : undefined;
+		box && !existsSync(join(stateDir(root), "key")) ? await mintKey(box, project, config.agent) : undefined;
 	writeConfig(root, config);
 	clearKnown(root);
 	if (minted) installKey(root, JSON.stringify(minted));
@@ -118,7 +119,7 @@ export async function runJoin(args: Parsed, env: Env): Promise<Output> {
 		synced = await syncFolder(root, api, true);
 	} catch (error) {
 		if (!(error instanceof ApiError && error.status === 401 && !box && !settings.token)) throw error;
-		rmSync(join(root, AVCS_DIR), { recursive: true, force: true });
+		rmSync(stateDir(root), { recursive: true, force: true });
 		throw new UsageError(`This box isn't signed in to ${config.server}. abso login signs it in.`);
 	}
 	return {

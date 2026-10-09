@@ -8,10 +8,11 @@
 // ever sent to the server that issued it, on /box/ routes.
 
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { UsageError } from "./args.ts";
+import { homeFile, homeWritePath, OLD_STATE_DIR } from "./state-dir.ts";
 
 /** What the person who approved the code allowed: each project with the highest role its agents get there, and how many agents. */
 export interface Grant {
@@ -35,14 +36,13 @@ export function originOf(server: string): string {
 	}
 }
 
-function boxPath(server: string, home: string): string {
-	const name = createHash("sha256").update(originOf(server)).digest("hex").slice(0, 16);
-	return join(home, ".avcs", "boxes", `${name}.json`);
+function boxFile(server: string): string {
+	return `${createHash("sha256").update(originOf(server)).digest("hex").slice(0, 16)}.json`;
 }
 
 export function readBox(server: string, home = homedir()): BoxRecord | undefined {
 	try {
-		const raw = JSON.parse(readFileSync(boxPath(server, home), "utf8")) as Partial<BoxRecord>;
+		const raw = JSON.parse(readFileSync(homeFile(home, "boxes", boxFile(server)), "utf8")) as Partial<BoxRecord>;
 		if (
 			typeof raw.server !== "string" ||
 			originOf(raw.server) !== originOf(server) ||
@@ -59,8 +59,8 @@ export function readBox(server: string, home = homedir()): BoxRecord | undefined
 }
 
 export function writeBox(record: BoxRecord, home = homedir()): void {
-	const path = boxPath(record.server, home);
-	mkdirSync(join(home, ".avcs", "boxes"), { recursive: true });
+	const path = homeWritePath(home, "boxes", boxFile(record.server));
+	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(record)}\n`, { mode: 0o600 });
 	try {
 		chmodSync(path, 0o600);
@@ -69,15 +69,12 @@ export function writeBox(record: BoxRecord, home = homedir()): void {
 	}
 }
 
+/** Logout ends the sign-in everywhere on this machine: the credential under ~/.abso and any older copy under ~/.avcs. */
 export function forgetBox(server: string, home = homedir()): boolean {
-	const path = boxPath(server, home);
-	try {
-		readFileSync(path);
-	} catch {
-		return false;
-	}
-	rmSync(path, { force: true });
-	return true;
+	const paths = [homeWritePath(home, "boxes", boxFile(server)), join(home, OLD_STATE_DIR, "boxes", boxFile(server))];
+	const had = paths.filter((path) => existsSync(path));
+	for (const path of had) rmSync(path, { force: true });
+	return had.length > 0;
 }
 
 /** Error text with the credential (and anything shaped like a key) taken out. */

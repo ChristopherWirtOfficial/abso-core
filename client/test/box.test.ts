@@ -93,9 +93,9 @@ test("login shows the code, waits while it's pending, and keeps the credential i
 		"To sign this box in, open https://abso.dev/login/box?code=WXYZ-BCDF and approve the code WXYZ-BCDF.",
 	]);
 	assert.equal(readBox(SERVER, h)?.credential, CREDENTIAL);
-	const files = readdirSync(join(h, ".avcs", "boxes"));
+	const files = readdirSync(join(h, ".abso", "boxes"));
 	assert.equal(files.length, 1);
-	assert.ok(readFileSync(join(h, ".avcs", "boxes", files[0]!), "utf8").includes(CREDENTIAL));
+	assert.ok(readFileSync(join(h, ".abso", "boxes", files[0]!), "utf8").includes(CREDENTIAL));
 	assert.equal(boxText(got, SERVER, 0).includes(CREDENTIAL), false);
 	assert.match(boxText(got, SERVER, 0), /abso \(writer\), game \(reader\)\. Up to 5 agents\./);
 	assert.equal(JSON.stringify(boxPublic(got)).includes(CREDENTIAL), false);

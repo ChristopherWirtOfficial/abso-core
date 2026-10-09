@@ -103,7 +103,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		usage:
 			"abso key install [--server <url> [--dir <folder>]] | abso key new <agent> [--server <url> [--dir <folder>]] [--project <name>] [--expires <Nd>] [--role owner|writer|reader] [--print] | abso key list [--agent <name>] [--project <name>] | abso key revoke <id> [--project <name>]",
 		about:
-			"install reads {key, id} from stdin into .avcs/key. With --server, it writes it into a folder not joined yet, so abso join there signs in with the key. new writes the key into that folder and prints only the id; its role is writer unless --role says otherwise (a reader only reads; a writer writes on its own agent's routes; an owner also skips or revokes CI, resumes the queue, syncs git and exports); --print writes the key to stdout instead. list and revoke never print a key. These three read the admin token from AVCS_ADMIN_TOKEN or ~/.avcs/admin-token and send it only to a server named in AVCS_ADMIN_SERVERS. An agent does not run them unless a person on the project says so.",
+			"install reads {key, id} from stdin into .abso/key. With --server, it writes it into a folder not joined yet, so abso join there signs in with the key. new writes the key into that folder and prints only the id; its role is writer unless --role says otherwise (a reader only reads; a writer writes on its own agent's routes; an owner also skips or revokes CI, resumes the queue, syncs git and exports); --print writes the key to stdout instead. list and revoke never print a key. These three read the admin token from AVCS_ADMIN_TOKEN or ~/.abso/admin-token and send it only to a server named in AVCS_ADMIN_SERVERS. An agent does not run them unless a person on the project says so.",
 		run: async (args, env) => {
 			const sub = args.positionals[0];
 			if (sub === "install" && args.positionals.length === 1) return runKeyInstall(args, env);
@@ -694,7 +694,7 @@ function help(): string {
 		"  abso --version",
 		"      This client's version and commit, and the abso mods installed on this machine.",
 		"",
-		"Every command takes --json. Settings live in .avcs/config.json. The token comes from AVCS_TOKEN, or else ~/.avcs/token.",
+		"Every command takes --json. Settings live in .abso/config.json (.avcs/config.json in a folder from before the rename). The token comes from AVCS_TOKEN, or else ~/.abso/token (or ~/.avcs/token from before).",
 	].join("\n");
 }
 

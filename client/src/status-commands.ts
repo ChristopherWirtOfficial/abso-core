@@ -42,6 +42,7 @@ import { readKnownModes, writeKnownModes } from "./modes.ts";
 import { queueText } from "./queue.ts";
 import { unsafePath } from "./safety.ts";
 import { keepFrom, settleText } from "./settle.ts";
+import { stateDir } from "./state-dir.ts";
 
 // --- status ---
 
@@ -100,7 +101,7 @@ export function staleModText(root: string, env: Readonly<Record<string, string |
 	if (!installed.includes("+")) return [];
 	let last: string[] | undefined;
 	try {
-		const lines = readFileSync(join(root, ".avcs", "hook.log"), "utf8")
+		const lines = readFileSync(join(stateDir(root), "hook.log"), "utf8")
 			.split("\n")
 			.filter((l) => l.includes("(in process"));
 		last = lines.at(-1)?.split("\t");
@@ -125,7 +126,7 @@ export async function runReader(args: Parsed, env: Env): Promise<Output> {
 	const on = word === "on";
 	// The server first: it refuses a reader with unpublished or parked work (409), and then nothing here changes.
 	await api.reader(on);
-	const raw = JSON.parse(readFileSync(join(root, ".avcs", "config.json"), "utf8")) as Record<string, unknown>;
+	const raw = JSON.parse(readFileSync(join(stateDir(root), "config.json"), "utf8")) as Record<string, unknown>;
 	if (on) raw.reader = true;
 	else delete raw.reader;
 	writeConfig(root, raw as unknown as Settings);

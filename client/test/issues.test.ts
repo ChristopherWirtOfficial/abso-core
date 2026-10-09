@@ -81,7 +81,7 @@ describe("issues commands, the client's part (#54)", () => {
 		assert.notEqual(none.exit, 0);
 		assert.match(
 			none.out,
-			/has no Issues Worker beside it that abso knows; ~\/\.avcs\/servers\.json or AVCS_ISSUES_SERVER names one/,
+			/has no Issues Worker beside it that abso knows; ~\/\.abso\/servers\.json or AVCS_ISSUES_SERVER names one/,
 		);
 	});
 

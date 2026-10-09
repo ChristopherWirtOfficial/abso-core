@@ -305,7 +305,7 @@ describe("ignore rules", { skip: hasGit ? false : "git is not installed" }, () =
 		assert.equal(ignore.why("src/b.md", false).rule?.source, "src/.avcsignore");
 	});
 
-	it("always skip .git, .avcs, .claude and node_modules", () => {
+	it("always skip .git, .abso, .claude and node_modules", () => {
 		const ignore = loadIgnore(temp(), {});
 		assert.equal(ignore.why(".claude/scheduled_tasks.lock", false).alwaysSkipped, ".claude");
 		assert.equal(ignore.why("a/node_modules/m/i.js", false).alwaysSkipped, "a/node_modules");
@@ -327,7 +327,7 @@ describe("ignore rules", { skip: hasGit ? false : "git is not installed" }, () =
 	it("abso check-ignore names the deciding line, the ignored folder above, or no rule", async () => {
 		const root = temp();
 		write(root, {
-			".avcs/config.json": "{}",
+			".abso/config.json": "{}",
 			".gitignore": "*.log\n!keep.log\nbuild/\n",
 			"src/.avcsignore": "gen/\n",
 			"build/x/a.txt": "x",

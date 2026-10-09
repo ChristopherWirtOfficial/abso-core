@@ -16,11 +16,12 @@ import { appendFileSync, existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { Api, type News, newsLines } from "./api.ts";
-import { AVCS_DIR, findRoot, isReader, readConfig } from "./config.ts";
+import { findRoot, isReader, readConfig } from "./config.ts";
 import { editBody, newsContext, normalize, spellingText, uncomposedText } from "./core.ts";
 import { forgetKnown, isPaused, loadIgnore, logNews, readKnown, readText, relativeTo, writeKnown } from "./folder.ts";
 import { tryFolderLock } from "./lock.ts";
 import { readKnownModes } from "./modes.ts";
+import { stateDir } from "./state-dir.ts";
 
 /** The fields of Claude Code's PostToolUse input that the hook reads. */
 interface HookInput {
@@ -189,7 +190,7 @@ function realOrSame(path: string): string {
 
 function log(root: string, line: string): void {
 	try {
-		appendFileSync(join(root, AVCS_DIR, "hook.log"), `${line}\n`);
+		appendFileSync(join(stateDir(root), "hook.log"), `${line}\n`);
 	} catch {
 		// Logging is best effort.
 	}

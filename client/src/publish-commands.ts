@@ -27,6 +27,7 @@ import { PROJECT_FILE, readProjectFile } from "./project-file.ts";
 import { pulledText, STILL_QUEUED, standing, WAIT_SECONDS, waitForQueued } from "./queue.ts";
 import { type Refused, refusedText, unsafePath } from "./safety.ts";
 import { blocksIn, settleText } from "./settle.ts";
+import { stateDir } from "./state-dir.ts";
 
 /**
  * Files new in the draft that this folder's ignore rules leave out. An edit
@@ -565,7 +566,7 @@ async function alreadyInShared(
 	const since = log.versions.find((v) => v.agent === agent)?.time ?? 0;
 	const edited = new Set(recordedPaths);
 	try {
-		for (const line of readFileSync(join(root, ".avcs", "hook.log"), "utf8").split("\n")) {
+		for (const line of readFileSync(join(stateDir(root), "hook.log"), "utf8").split("\n")) {
 			const [at, , rel, outcome] = line.split("\t");
 			if (rel && outcome?.startsWith("sent") && Date.parse(at ?? "") >= since) edited.add(rel);
 		}

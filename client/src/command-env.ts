@@ -34,7 +34,7 @@ export function open(env: Env): { root: string; config: Config; api: Api } {
 	const root = findRoot(env.cwd);
 	if (root === undefined)
 		throw new UsageError(
-			`${env.cwd} is not in an abso folder (no .avcs/config.json here or above); run abso init or abso join first`,
+			`${env.cwd} is not in an abso folder (no .abso/config.json here or above); run abso init or abso join first`,
 		);
 	const config = readConfig(root, env.env);
 	return { root, config, api: new Api(config) };

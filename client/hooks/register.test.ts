@@ -17,10 +17,10 @@ function world(on: On, inFolder: boolean, news: string[][]) {
 	const norm = (p: string) => p.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "");
 	on("session.start", (_$, e) => ({ cwd: (e as { cwd?: string }).cwd ?? "/w/p" }));
 	on("session.cwd", () => ({ value: "/w/p" }));
-	on("fs.exists", (_$, e) => ({ value: inFolder && norm(e.path) === "/w/p/.avcs/config.json" }));
+	on("fs.exists", (_$, e) => ({ value: inFolder && norm(e.path) === "/w/p/.abso/config.json" }));
 	on("fs.read", (_$, e) => {
 		const path = norm(e.path);
-		if (inFolder && path === "/w/p/.avcs/config.json")
+		if (inFolder && path === "/w/p/.abso/config.json")
 			return { value: JSON.stringify({ server: "https://avcs.test", project: "p", agent: "bob" }) };
 		if (written.has(path)) return { value: written.get(path)! };
 		return { deny: `ENOENT: ${path}` };
@@ -57,7 +57,7 @@ test("the news poll asks every 30 seconds in an abso folder, and keeps each item
 	expect(w.clients[0]).toMatch(/^avcs-mod\/(checkout|\d+\.\d+\.\d+(\+[\w.]+)?)$/);
 	await w.clock.advance(30_000);
 	expect(w.asked).toHaveLength(2);
-	const log = w.written.get("/w/p/.avcs/news.log") ?? "";
+	const log = w.written.get("/w/p/.abso/news.log") ?? "";
 	expect(log.split("\n").filter((l) => l.includes("Announcement from lead"))).toHaveLength(1);
 });
 
@@ -71,7 +71,7 @@ test("outside an abso folder it never asks", async ($, on) => {
 
 test("an edit that leaves a NUL byte in a text file is not sent, and the log says where", async ($, on) => {
 	const w = world(on, true, []);
-	w.written.set("/w/p/.avcs/known/fuzz.ts", "one\ntwo\nthree\n");
+	w.written.set("/w/p/.abso/known/fuzz.ts", "one\ntwo\nthree\n");
 	w.written.set("/w/p/fuzz.ts", "one\ntwo\nth\u0000ree\n");
 	on("fs.stat", () => ({ value: { realPath: "/w/p/fuzz.ts" } }) as never);
 	on("tool.call", () => ({ result: { isError: false, text: "ok" } }) as never);
@@ -84,6 +84,6 @@ test("an edit that leaves a NUL byte in a text file is not sent, and the log say
 		content: "one\ntwo\nth\u0000ree\n",
 	} as never);
 	await w.clock.advance(1_000);
-	expect(w.written.get("/w/p/.avcs/hook.log") ?? "").toContain("not sent: a NUL byte at line 3");
+	expect(w.written.get("/w/p/.abso/hook.log") ?? "").toContain("not sent: a NUL byte at line 3");
 	expect(w.asked.filter((u) => !u.endsWith("/news"))).toEqual([]);
 });

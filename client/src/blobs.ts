@@ -7,8 +7,8 @@
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { AVCS_DIR } from "./config.ts";
 import { writeFileAtomic } from "./folder.ts";
+import { stateDir } from "./state-dir.ts";
 
 /** The server's limit for one file's bytes. */
 export const MAX_BLOB_BYTES = 20 * 1024 * 1024;
@@ -47,7 +47,7 @@ export function blobOf(
 export function readKnownBlobs(root: string): Map<string, string> {
 	try {
 		return new Map(
-			Object.entries(JSON.parse(readFileSync(join(root, AVCS_DIR, BLOBS_FILE), "utf8")) as Record<string, string>),
+			Object.entries(JSON.parse(readFileSync(join(stateDir(root), BLOBS_FILE), "utf8")) as Record<string, string>),
 		);
 	} catch {
 		return new Map();
@@ -56,7 +56,7 @@ export function readKnownBlobs(root: string): Map<string, string> {
 
 export function writeKnownBlobs(root: string, blobs: ReadonlyMap<string, string>): void {
 	const sorted = Object.fromEntries([...blobs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
-	writeFileAtomic(join(root, AVCS_DIR, BLOBS_FILE), `${JSON.stringify(sorted, null, 1)}\n`);
+	writeFileAtomic(join(stateDir(root), BLOBS_FILE), `${JSON.stringify(sorted, null, 1)}\n`);
 }
 
 /** Short form of a hash for people: the first 12 hex digits. */

@@ -99,7 +99,7 @@ export interface Fake {
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
 
 function isLocal(path: string): boolean {
-	return path === ".avcs" || path.startsWith(".avcs/") || path.startsWith("./.avcs/");
+	return path === ".abso" || path.startsWith(".abso/") || path.startsWith("./.abso/");
 }
 
 async function readBody(req: IncomingMessage): Promise<Buffer> {
@@ -295,7 +295,7 @@ export async function startFake(port = 0, token = "fake-token"): Promise<Fake> {
 			if (!files || typeof files !== "object") return send(res, 400, { error: "init needs {files: {path: text}}" });
 			if (hosted) return send(res, 409, { error: "the project already exists" });
 			const bad = Object.keys(files).find(isLocal);
-			if (bad) return send(res, 400, { error: `${bad} is under .avcs/, which stays in the agent's folder` });
+			if (bad) return send(res, 400, { error: `${bad} is under .abso/, which stays in the agent's folder` });
 			const store = new MemoryStore();
 			const blobs = pendingBlobs(name);
 			waiting.delete(name);
@@ -498,7 +498,7 @@ export async function startFake(port = 0, token = "fake-token"): Promise<Fake> {
 				if (typeof body.file !== "string")
 					return send(res, 400, { error: "edit needs {file, old, new}, {file, content} or {file, edits}" });
 				if (isLocal(body.file))
-					return send(res, 400, { error: `${body.file} is under .avcs/, which stays in the agent's folder` });
+					return send(res, 400, { error: `${body.file} is under .abso/, which stays in the agent's folder` });
 				return send(res, 200, project.edit(agent, body as unknown as Parameters<Project["edit"]>[1], Date.now()));
 			}
 			if (op === "record") {
@@ -506,7 +506,7 @@ export async function startFake(port = 0, token = "fake-token"): Promise<Fake> {
 				if (!files || typeof files !== "object")
 					return send(res, 400, { error: "record needs {files: {path: text or null}}" });
 				const bad = Object.keys(files).find(isLocal);
-				if (bad) return send(res, 400, { error: `${bad} is under .avcs/, which stays in the agent's folder` });
+				if (bad) return send(res, 400, { error: `${bad} is under .abso/, which stays in the agent's folder` });
 				const meta = {
 					...(typeof body.session === "string" ? { session: body.session } : {}),
 					...(typeof body.subagent === "string" ? { subagent: body.subagent } : {}),

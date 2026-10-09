@@ -8,16 +8,16 @@ import { join } from "node:path";
 import type { ChangeAnswer, NoteAnswer } from "./api.ts";
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { type Env, type Output, open, plural, recordFolder } from "./commands.ts";
-import { AVCS_DIR } from "./config.ts";
 import { writeFileAtomic } from "./folder.ts";
 import { fileArg, when } from "./history.ts";
+import { stateDir } from "./state-dir.ts";
 
 /** Where this folder last looked: a log position, kept in .avcs/review.json. */
 const MARK = "review.json";
 
 function readMark(root: string): number | undefined {
 	try {
-		const n = (JSON.parse(readFileSync(join(root, AVCS_DIR, MARK), "utf8")) as { since?: unknown }).since;
+		const n = (JSON.parse(readFileSync(join(stateDir(root), MARK), "utf8")) as { since?: unknown }).since;
 		return typeof n === "number" && Number.isInteger(n) && n >= 0 ? n : undefined;
 	} catch {
 		return undefined;
@@ -25,7 +25,7 @@ function readMark(root: string): number | undefined {
 }
 
 function writeMark(root: string, since: number): void {
-	writeFileAtomic(join(root, AVCS_DIR, MARK), `${JSON.stringify({ since })}\n`);
+	writeFileAtomic(join(stateDir(root), MARK), `${JSON.stringify({ since })}\n`);
 }
 
 const SAID = { comment: "says", objection: "objects", read: "read it" } as const;

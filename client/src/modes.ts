@@ -23,8 +23,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { AVCS_DIR } from "./config.ts";
 import { readText, writeFileAtomic } from "./folder.ts";
+import { stateDir } from "./state-dir.ts";
 
 /** A change to a file's mode: only the fields given change. */
 export interface Mode {
@@ -47,7 +47,7 @@ export const FILE_MODE = process.platform !== "win32";
 const MODES_FILE = "modes.json";
 
 function modesPath(root: string): string {
-	return join(root, AVCS_DIR, MODES_FILE);
+	return join(stateDir(root), MODES_FILE);
 }
 
 /** The modes the server has, as far as the client knows: only files that are executable or links. */

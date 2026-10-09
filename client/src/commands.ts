@@ -17,7 +17,7 @@ import {
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { blobOf, keptWholeAs, MAX_BLOB_BYTES, readKnownBlobs, writeKnownBlobs } from "./blobs.ts";
 import { type Env, EXIT, heard, type Output, open } from "./command-env.ts";
-import { AVCS_DIR, findRoot, isReader } from "./config.ts";
+import { findRoot, isReader } from "./config.ts";
 import { spellingText, uncomposedText } from "./core.ts";
 import { pairRenames } from "./diff.ts";
 import type { BlobToSend, TurnedBinary } from "./folder.ts";
@@ -76,6 +76,7 @@ export {
 } from "./status-commands.ts";
 
 import { gitMarkerLine } from "./settle.ts";
+import { stateDir } from "./state-dir.ts";
 
 // --- record ---
 
@@ -461,7 +462,7 @@ const UNWRITTEN_FILE = "unwritten.json";
 /** Files earlier syncs couldn't write here, kept in .avcs/unwritten.json until a write of them works. */
 export function readUnwritten(root: string): Record<string, Unwritten> {
 	try {
-		return JSON.parse(readFileSync(join(root, AVCS_DIR, UNWRITTEN_FILE), "utf8")) as Record<string, Unwritten>;
+		return JSON.parse(readFileSync(join(stateDir(root), UNWRITTEN_FILE), "utf8")) as Record<string, Unwritten>;
 	} catch {
 		return {};
 	}
@@ -626,7 +627,7 @@ async function applyAnswerLocked(root: string, api: Api, unscreened: SyncAnswer)
 					.map((f) => ({ from: f.from!, to: f.path }))
 			: [];
 	if (JSON.stringify(unwritten) !== unwrittenBefore)
-		writeFileAtomic(join(root, AVCS_DIR, UNWRITTEN_FILE), `${JSON.stringify(unwritten, null, 1)}\n`);
+		writeFileAtomic(join(stateDir(root), UNWRITTEN_FILE), `${JSON.stringify(unwritten, null, 1)}\n`);
 	return {
 		version: answer.version,
 		written,

@@ -14,11 +14,11 @@
 // over goes through a rename aside, which only one process can win.
 
 import { closeSync, linkSync, openSync, readFileSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { UsageError } from "./args.ts";
-import { AVCS_DIR } from "./config.ts";
 import { LOCK_FILE, LOCK_STALE_MS, type LockInfo } from "./core.ts";
 import { writeFileAtomic } from "./folder.ts";
+import { stateDir } from "./state-dir.ts";
 
 /** How long a command waits for the lock before it says who holds it. */
 const WAIT_MS = 3000;
@@ -28,7 +28,7 @@ const RENEW_MS = 20_000;
 /** Locks this process holds, by folder, and how deep: a locked call inside another one doesn't wait for itself. */
 const held = new Map<string, { depth: number; renew: ReturnType<typeof setInterval> }>();
 
-const lockPath = (root: string): string => join(root, AVCS_DIR, LOCK_FILE);
+const lockPath = (root: string): string => join(stateDir(root), LOCK_FILE);
 
 function readInfo(path: string): LockInfo | undefined {
 	try {
@@ -152,7 +152,7 @@ export async function withFolderLock<T>(root: string, what: string, fn: () => Pr
 				const info = readInfo(lockPath(root));
 				const since = info ? new Date(info.time).toISOString().slice(11, 19) : "?";
 				throw new UsageError(
-					`another abso command (${info?.what ?? "one"}, process ${info?.pid ?? "?"}, since ${since} UTC) is changing this folder's records; run this again when it has finished. If none is running, delete .avcs/lock.`,
+					`another abso command (${info?.what ?? "one"}, process ${info?.pid ?? "?"}, since ${since} UTC) is changing this folder's records; run this again when it has finished. If none is running, delete ${basename(stateDir(root))}/lock.`,
 				);
 			}
 			await new Promise((ok) => setTimeout(ok, 50));

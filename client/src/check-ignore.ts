@@ -13,7 +13,7 @@ import { gitHome, loadIgnore, relativeTo } from "./folder.ts";
 /** Starting .avcsignore for `abso init`, when the folder has none. */
 export const STARTING_AVCSIGNORE = `# Files abso leaves out, on top of .gitignore. Same rules as .gitignore; this
 # file wins over .gitignore in the same folder. \`abso check-ignore <path>\`
-# says which line decided. .git, .avcs, .claude and node_modules are always
+# says which line decided. .git, .abso, .avcs, .claude and node_modules are always
 # left out.
 
 # Each session's own Claude Code state

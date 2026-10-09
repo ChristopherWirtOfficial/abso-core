@@ -26,9 +26,9 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { blobOf, keptWholeAs, readKnownBlobs } from "./blobs.ts";
-import { AVCS_DIR } from "./config.ts";
 import { type GitHome, gitIgnoreSetup, type Ignore, isLocalOnly, makeIgnore, normalize, readAllSync } from "./core.ts";
 import { type Mode, modeChange, onDisk, PLAIN, readKnownModes } from "./modes.ts";
+import { stateDir } from "./state-dir.ts";
 
 export { type Ignore, isLocalOnly, normalize, withEndingsOf } from "./core.ts";
 /** Files bigger than this are not sent as text. */
@@ -270,7 +270,7 @@ export function removeFile(path: string): void {
 
 /** .avcs/paused: while it exists, nothing from the folder is sent (abso pause, abso resume). */
 export function pausedPath(root: string): string {
-	return join(root, AVCS_DIR, "paused");
+	return join(stateDir(root), "paused");
 }
 
 export function isPaused(root: string): boolean {
@@ -280,7 +280,7 @@ export function isPaused(root: string): boolean {
 // --- the known copy ---
 
 function knownPath(root: string, rel: string): string {
-	return join(root, AVCS_DIR, KNOWN, ...insideParts(rel));
+	return join(stateDir(root), KNOWN, ...insideParts(rel));
 }
 
 export function readKnown(root: string, rel: string): string | undefined {
@@ -298,7 +298,7 @@ export function forgetKnown(root: string, rel: string): void {
 
 /** Every path in the known copy. */
 export function listKnown(root: string): string[] {
-	const base = join(root, AVCS_DIR, KNOWN);
+	const base = join(stateDir(root), KNOWN);
 	if (!existsSync(base)) return [];
 	const out: string[] = [];
 	const visit = (dir: string, prefix: string): void => {
@@ -313,7 +313,7 @@ export function listKnown(root: string): string[] {
 }
 
 export function clearKnown(root: string): void {
-	rmSync(join(root, AVCS_DIR, KNOWN), { recursive: true, force: true });
+	rmSync(join(stateDir(root), KNOWN), { recursive: true, force: true });
 }
 
 /**
@@ -390,7 +390,7 @@ export function logNews(root: string, news: readonly string[]): void {
 	if (news.length === 0) return;
 	const at = new Date().toISOString();
 	try {
-		appendFileSync(join(root, AVCS_DIR, "news.log"), news.map((n) => `${at}\t${n}\n`).join(""));
+		appendFileSync(join(stateDir(root), "news.log"), news.map((n) => `${at}\t${n}\n`).join(""));
 	} catch {
 		// Best effort.
 	}

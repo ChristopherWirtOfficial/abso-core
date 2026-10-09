@@ -45,9 +45,9 @@ function world(on: On, inFolder: boolean) {
 		// The engine hands hooks the path resolved for this machine (C:\w\proj on Windows).
 		const path = e.path.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "");
 		reads.push(path);
-		if (inFolder && path === "/w/proj/.avcs/config.json")
+		if (inFolder && path === "/w/proj/.abso/config.json")
 			return { value: JSON.stringify({ server: "https://avcs.test", project: "p", agent: "me" }) };
-		if (inFolder && path === "/w/proj/.avcs/news.log") return { value: NEWS };
+		if (inFolder && path === "/w/proj/.abso/news.log") return { value: NEWS };
 		return { deny: `ENOENT: ${e.path}` };
 	});
 	on("http.fetch", (_$, e) => {

@@ -13,7 +13,7 @@ import { byWhom } from "./history-answers.ts";
 function open(env: Env): { root: string; api: Api; agent: string } {
 	const root = findRoot(env.cwd);
 	if (root === undefined)
-		throw new UsageError(`${env.cwd} is not in an abso folder (no .avcs/config.json here or above)`);
+		throw new UsageError(`${env.cwd} is not in an abso folder (no .abso/config.json here or above)`);
 	const config = readConfig(root, env.env);
 	return { root, api: new Api(config), agent: config.agent };
 }

@@ -14,6 +14,7 @@ import { fetchedText, fetchFromBox } from "./fetch.ts";
 import { absolute, isLocalOnly, loadIgnore, readText, walk, writeFileAtomic } from "./folder.ts";
 import { onDisk, PLAIN, readKnownModes } from "./modes.ts";
 import { unsafePath } from "./safety.ts";
+import { stateDir } from "./state-dir.ts";
 import { type TarEntry, tarGz } from "./tar.ts";
 
 /** One word for the box's shell (POSIX sh), quoted only when it needs it. */
@@ -87,7 +88,7 @@ export function withEntries(spec: string, cwd: string): TarEntry[] {
 			);
 		const box = pair.slice(0, eq).replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
 		const local = resolve(cwd, pair.slice(eq + 1));
-		const why = unsafePath(box) ?? (isLocalOnly(box) ? "it is under .git, .claude, .avcs or node_modules" : undefined);
+		const why = unsafePath(box) ?? (isLocalOnly(box) ? "it is under .git, .claude, .abso or node_modules" : undefined);
 		if (why !== undefined) throw new UsageError(`--with can't put a file at ${JSON.stringify(box)}: ${why}`);
 		let st;
 		try {
@@ -460,7 +461,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 	runner.box = api.box;
 	const log = (what: string, why: string): void => {
 		try {
-			appendFileSync(join(root, ".avcs", "run.log"), `${new Date().toISOString()}\t${what}: ${named}\t${why}\n`);
+			appendFileSync(join(stateDir(root), "run.log"), `${new Date().toISOString()}\t${what}: ${named}\t${why}\n`);
 		} catch {
 			// The log is a convenience.
 		}
@@ -521,7 +522,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
  * (#37, Artist 1: a 40 s suite ran, then was refused).
  */
 function prepFile(root: string): string {
-	return join(root, ".avcs", "box-prep.json");
+	return join(stateDir(root), "box-prep.json");
 }
 export function knownPrep(root: string, box: string | undefined): string | null | undefined {
 	try {
@@ -567,7 +568,7 @@ export async function runLogs(args: Parsed, env: Env): Promise<Output> {
 		onReconnect: (why, attempt) => {
 			try {
 				appendFileSync(
-					join(root, ".avcs", "run.log"),
+					join(stateDir(root), "run.log"),
 					`${new Date().toISOString()}\treconnecting (try ${attempt}) to run ${id}\t${why}\n`,
 				);
 			} catch {

@@ -6,9 +6,10 @@
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { UsageError } from "./args.ts";
 import { type MachineServers, machineServers, TOKEN_SERVERS, tokenGoesTo, trustedList } from "./core.ts";
+import { homeFile, stateDir } from "./state-dir.ts";
 
 /** What .avcs/config.json holds. */
 export interface Settings {
@@ -25,13 +26,11 @@ export interface Config extends Settings {
 	readonly token?: string;
 }
 
-export const AVCS_DIR = ".avcs";
-
 export function configPath(root: string): string {
-	return join(root, AVCS_DIR, "config.json");
+	return join(stateDir(root), "config.json");
 }
 
-/** The nearest folder at or above `start` that has .avcs/config.json, or undefined. */
+/** The nearest folder at or above `start` that has .abso/config.json (or .avcs/config.json, from before the rename), or undefined. */
 export function findRoot(start: string): string | undefined {
 	let dir = resolve(start);
 	for (;;) {
@@ -92,7 +91,7 @@ interface StoredKey {
 }
 
 function keyPath(root: string): string {
-	return join(root, AVCS_DIR, "key");
+	return join(stateDir(root), "key");
 }
 
 function originOf(server: string): string {
@@ -126,7 +125,7 @@ export function installKey(root: string, stdin: string, serverFlag?: string): { 
 	if (configured && serverFlag && originOf(configured) !== originOf(serverFlag))
 		throw new UsageError(`this folder's server is ${configured}, not ${serverFlag}`);
 	const server = configured ?? serverFlag;
-	if (!server) throw new UsageError("this folder has no .avcs/config.json yet: give --server <url>");
+	if (!server) throw new UsageError("this folder has no .abso/config.json yet: give --server <url>");
 	let parsed: { key?: unknown; id?: unknown };
 	try {
 		parsed = JSON.parse(stdin) as { key?: unknown; id?: unknown };
@@ -140,7 +139,7 @@ export function installKey(root: string, stdin: string, serverFlag?: string): { 
 		!/^k_[0-9a-f]{8}$/.test(parsed.id)
 	)
 		throw new UsageError("stdin needs {key, id} from the staging issue route");
-	mkdirSync(join(root, AVCS_DIR), { recursive: true });
+	mkdirSync(stateDir(root), { recursive: true });
 	writeFileSync(keyPath(root), `${JSON.stringify({ server, key: parsed.key, id: parsed.id })}\n`, { mode: 0o600 });
 	try {
 		chmodSync(keyPath(root), 0o600);
@@ -167,16 +166,16 @@ export function tokenFor(
 	const trusted = trustedServers(env);
 	if (token === undefined || tokenGoesTo(server, trusted)) return token;
 	throw new UsageError(
-		`this folder's server is ${server}, and abso sends your token only to ${[...TOKEN_SERVERS, "this machine"].join(", ")}, and the servers ~/.avcs/servers.json or AVCS_TRUSTED_SERVERS name. ` +
-			`If ${server} is yours, name it in ~/.avcs/servers.json or AVCS_TRUSTED_SERVERS (comma-separated); if you didn't set it, someone else wrote .avcs/config.json.`,
+		`this folder's server is ${server}, and abso sends your token only to ${[...TOKEN_SERVERS, "this machine"].join(", ")}, and the servers ~/.abso/servers.json or AVCS_TRUSTED_SERVERS name. ` +
+			`If ${server} is yours, name it in ~/.abso/servers.json or AVCS_TRUSTED_SERVERS (comma-separated); if you didn't set it, someone else wrote .abso/config.json.`,
 	);
 }
 
 let machine: MachineServers | undefined;
-/** This machine's servers (core.ts machineServers), from ~/.avcs/servers.json, read once. AVCS_SERVERS_FILE names another file (tests). */
+/** This machine's servers (core.ts machineServers), from ~/.abso/servers.json (or ~/.abso/servers.json), read once. AVCS_SERVERS_FILE names another file (tests). */
 export function readMachineServers(env: Readonly<Record<string, string | undefined>> = process.env): MachineServers {
 	if (env.AVCS_SERVERS_FILE !== undefined) return machineServers(readOr(env.AVCS_SERVERS_FILE));
-	machine ??= machineServers(readOr(join(homedir(), AVCS_DIR, "servers.json")));
+	machine ??= machineServers(readOr(homeFile(homedir(), "servers.json")));
 	return machine;
 }
 const readOr = (path: string): string | undefined => {
@@ -192,18 +191,18 @@ export function trustedServers(env: Readonly<Record<string, string | undefined>>
 	return trustedList(env.AVCS_TRUSTED_SERVERS, readMachineServers(env));
 }
 
-/** AVCS_TOKEN if set, else ~/.avcs/token, else none. */
+/** AVCS_TOKEN if set, else ~/.abso/token, else ~/.avcs/token, else none. */
 export function readToken(env: Readonly<Record<string, string | undefined>> = process.env): string | undefined {
 	if (env.AVCS_TOKEN) return env.AVCS_TOKEN.trim();
 	try {
-		return readFileSync(join(homedir(), AVCS_DIR, "token"), "utf8").trim() || undefined;
+		return readFileSync(homeFile(homedir(), "token"), "utf8").trim() || undefined;
 	} catch {
 		return undefined;
 	}
 }
 
 export function writeConfig(root: string, settings: Settings): void {
-	mkdirSync(join(root, AVCS_DIR), { recursive: true });
+	mkdirSync(stateDir(root), { recursive: true });
 	const { server, project, agent, follow, reader } = settings;
 	writeFileSync(
 		configPath(root),
@@ -212,13 +211,14 @@ export function writeConfig(root: string, settings: Settings): void {
 	excludeFromGit(root);
 }
 
-/** If the folder is a git repo, keep .avcs/ out of it (in .git/info/exclude, so .gitignore isn't changed). */
+/** If the folder is a git repo, keep its state folder (.abso/, or .avcs/ in an older folder) out of it (in .git/info/exclude, so .gitignore isn't changed). */
 function excludeFromGit(root: string): void {
 	const git = join(root, ".git");
 	if (!existsSync(join(git, "HEAD"))) return;
 	const exclude = join(git, "info", "exclude");
 	const text = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
-	if (text.split(/\r?\n/).some((line) => line.trim() === ".avcs/" || line.trim() === "/.avcs/")) return;
+	const name = `${basename(stateDir(root))}/`;
+	if (text.split(/\r?\n/).some((line) => line.trim() === name || line.trim() === `/${name}`)) return;
 	mkdirSync(dirname(exclude), { recursive: true });
-	writeFileSync(exclude, `${text}${text === "" || text.endsWith("\n") ? "" : "\n"}/.avcs/\n`);
+	writeFileSync(exclude, `${text}${text === "" || text.endsWith("\n") ? "" : "\n"}/${name}\n`);
 }

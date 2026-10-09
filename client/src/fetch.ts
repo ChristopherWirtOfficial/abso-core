@@ -46,7 +46,7 @@ export async function fetchFromBox(root: string, api: Api, globs: readonly strin
 			seen.add(e.path);
 			const why =
 				unsafePath(e.path) ??
-				(isLocalOnly(e.path) ? "it is under .git, .claude, .avcs or node_modules, which stay local" : undefined) ??
+				(isLocalOnly(e.path) ? "it is under .git, .claude, .abso or node_modules, which stay local" : undefined) ??
 				(throughLink(root, e.path) ? "a folder on its way is a link" : undefined) ??
 				(e.link !== undefined ? "it is a link; fetch makes none" : undefined) ??
 				(!ignoredHere(ignore, e.path)

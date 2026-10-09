@@ -50,10 +50,20 @@ async function readOr($: Engine, path: string): Promise<string | undefined> {
 	}
 }
 
+/** A folder's state folder: .abso, or .avcs in a folder from before the rename. (A mod can't import the client's state-dir.ts.) */
+async function stateOf($: Engine, root: string): Promise<string> {
+	return (await $.fs.exists(`${root}/.abso/config.json`)) ? `${root}/.abso` : `${root}/.avcs`;
+}
+
+/** A file under the user's home: ~/.abso/<name>, else the older ~/.avcs/<name>. */
+async function readHome($: Engine, home: string, name: string): Promise<string | undefined> {
+	return (await readOr($, `${slash(home)}/.abso/${name}`)) ?? (await readOr($, `${slash(home)}/.avcs/${name}`));
+}
+
 /** The abso folder at or above `dir`, with its settings. */
 async function findFolder($: Engine, dir: string): Promise<Folder | undefined> {
 	for (let at = slash(dir); at !== ""; ) {
-		const raw = await readOr($, `${at}/.avcs/config.json`);
+		const raw = await readOr($, `${await stateOf($, at)}/config.json`);
 		if (raw !== undefined) {
 			try {
 				const c = JSON.parse(raw) as { server: string; project: string; agent: string };
@@ -106,12 +116,12 @@ function tokenGoesTo(server: string, trusted: string | undefined): boolean {
 
 async function token($: Engine, server: string): Promise<string | undefined> {
 	const home = (await $.env.get("USERPROFILE")) ?? (await $.env.get("HOME"));
-	const machine = home ? machineTrusted(await readOr($, `${slash(home)}/.avcs/servers.json`)) : [];
+	const machine = home ? machineTrusted(await readHome($, home, "servers.json")) : [];
 	const trusted = [(await $.env.get("AVCS_TRUSTED_SERVERS")) ?? "", ...machine].join(",");
 	if (!tokenGoesTo(server, trusted)) return undefined;
 	const env = await $.env.get("AVCS_TOKEN");
 	if (env) return env.trim();
-	return home ? (await readOr($, `${slash(home)}/.avcs/token`))?.trim() || undefined : undefined;
+	return home ? (await readHome($, home, "token"))?.trim() || undefined : undefined;
 }
 
 async function get($: Engine, f: Folder, path: string): Promise<any> {
@@ -125,7 +135,7 @@ async function get($: Engine, f: Folder, path: string): Promise<any> {
 
 /** The last news lines from .avcs/news.log, oldest first. */
 async function newsOf($: Engine, root: string): Promise<[string, string][]> {
-	const text = (await readOr($, `${root}/.avcs/news.log`)) ?? "";
+	const text = (await readOr($, `${await stateOf($, root)}/news.log`)) ?? "";
 	return text
 		.split("\n")
 		.filter((line) => line.includes("\t"))
@@ -224,7 +234,7 @@ export const register: Register = (on) => {
 
 	on("command.run", { command: COMMAND }, async ($) => {
 		if (folder === undefined)
-			return { text: "This chat is not in an abso folder (no .avcs/config.json at or above its folder)." };
+			return { text: "This chat is not in an abso folder (no .abso/config.json at or above its folder)." };
 		await refresh($);
 		await $.ui.open({ id: PANE, title: `abso: ${folder.project} as ${folder.agent}` });
 		// Opening the view reads the news: the status line stops counting it.

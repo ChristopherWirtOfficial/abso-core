@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { UsageError } from "./args.ts";
 import type { Config } from "./config.ts";
+import { homeFile } from "./state-dir.ts";
 
 function originOf(server: string): string {
 	try {
@@ -31,10 +32,10 @@ export function adminToken(env: Readonly<Record<string, string | undefined>> = p
 	const fromEnv = env.AVCS_ADMIN_TOKEN?.trim();
 	if (fromEnv) return fromEnv;
 	try {
-		const fromFile = readFileSync(join(homedir(), ".avcs", "admin-token"), "utf8").trim();
+		const fromFile = readFileSync(homeFile(homedir(), "admin-token"), "utf8").trim();
 		if (fromFile) return fromFile;
 	} catch {}
-	throw new UsageError("abso key needs the admin token in AVCS_ADMIN_TOKEN or ~/.avcs/admin-token");
+	throw new UsageError("abso key needs the admin token in AVCS_ADMIN_TOKEN or ~/.abso/admin-token");
 }
 
 function scrub(text: string, secrets: readonly string[]): string {

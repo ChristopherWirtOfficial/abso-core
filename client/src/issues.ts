@@ -22,11 +22,11 @@ function openIssues(env: Env): { config: Config; api: Api } {
 	const server = env.env.AVCS_ISSUES_SERVER || issuesServerFor(config.server, readMachineServers(env.env));
 	if (server === undefined)
 		throw new UsageError(
-			`${config.server} has no Issues Worker beside it that abso knows; ~/.avcs/servers.json or AVCS_ISSUES_SERVER names one`,
+			`${config.server} has no Issues Worker beside it that abso knows; ~/.abso/servers.json or AVCS_ISSUES_SERVER names one`,
 		);
 	if (config.token !== undefined && !tokenGoesTo(server, trustedServers(env.env))) {
 		throw new UsageError(
-			`the Issues Worker is ${server}, and abso sends your token only to its own servers and this machine. If ${server} is yours, name it in ~/.avcs/servers.json or AVCS_TRUSTED_SERVERS.`,
+			`the Issues Worker is ${server}, and abso sends your token only to its own servers and this machine. If ${server} is yours, name it in ~/.abso/servers.json or AVCS_TRUSTED_SERVERS.`,
 		);
 	}
 	api.issuesServer = server;
