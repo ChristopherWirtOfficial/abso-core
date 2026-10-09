@@ -41,6 +41,9 @@ function world(on: On, inFolder: boolean) {
 	on("session.start", (_$, e) => ({ cwd: (e as { cwd?: string }).cwd ?? "/w/proj/src" }));
 	on("session.cwd", () => ({ value: "/w/proj/src" }));
 	on("command.register", (_$, e) => ({ value: { command: e.name } }));
+	on("fs.exists", (_$, e) => ({
+		value: inFolder && e.path.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "") === "/w/proj/.abso/config.json",
+	}));
 	on("fs.read", (_$, e) => {
 		// The engine hands hooks the path resolved for this machine (C:\w\proj on Windows).
 		const path = e.path.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "");

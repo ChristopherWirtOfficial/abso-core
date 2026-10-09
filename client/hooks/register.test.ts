@@ -35,9 +35,10 @@ function world(on: On, inFolder: boolean, news: string[][]) {
 		clients.push(String((e.init?.headers as Record<string, string> | undefined)?.["x-abso-client"]));
 		return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ news: news.shift() ?? [] }) } };
 	});
-	on("session.append", (_$, e) => {
+	// The engine stores the row itself: a session.append hook passes it on and answers what next answered.
+	on("session.append", (_$, e, next) => {
 		appended.push((e.message.content as { text: string }[])[0]!.text);
-		return { value: { message: e.message, uuid: `u${appended.length}` } } as never;
+		return next(e);
 	});
 	return { clock, asked, auth, clients, appended, written };
 }
