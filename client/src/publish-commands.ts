@@ -103,7 +103,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 		// Your draft on newest shared, as it would land, must pass the check (#37):
 		// two changes that each passed alone turned shared red twice. Sync first, then run it in the box.
 		const say = env.writeErr ?? env.write;
-		// Known to have no prep: refuse before syncing and running (#37, Artist 1). Unknown: the run below tells.
+		// Known to have no prep: refuse before syncing and running (#37). Unknown: the run below tells.
 		const noPrep =
 			"your box has no prep, so a check would run without node_modules and its result couldn't be trusted. Run abso prep 'npm ci --ignore-scripts' once (every fresh box then starts from it), then publish --check again.";
 		if (knownPrep(root, boxOf(args, env)) === null && existsSync(join(root, "package-lock.json"))) {
@@ -556,7 +556,7 @@ function settledText(settled: readonly Settled[], version: number | undefined): 
 }
 
 /**
- * What an empty publish says (#37, Artist 1: "Nothing to publish: your draft
+ * What an empty publish says (#37: "Nothing to publish: your draft
  * is empty" read as lost work). The files this folder edited since its last
  * publish (this record's, and the edit hook's sends in .avcs/hook.log) that
  * someone else changed in shared since then: shared already has them as you

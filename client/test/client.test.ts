@@ -2006,7 +2006,7 @@ describe("abso export and status --short (#37)", () => {
 	});
 });
 
-describe("a folder missing files its view has (#37, Artist 1)", () => {
+describe("a folder missing files its view has (#37)", () => {
 	const FILES = {
 		"src/main.ts": "main\n",
 		"src/state.ts": "state\n",
@@ -3320,7 +3320,7 @@ describe("CEO's roundup: --check without a prep, run --quiet, restore some lines
 			r.stdout,
 			/Not published: your box has no prep, so the check ran without node_modules and its result can't be trusted\. Run abso prep 'npm ci --ignore-scripts' once/,
 		);
-		// Now the folder knows: the next --check refuses before running anything (#37, Artist 1).
+		// Now the folder knows: the next --check refuses before running anything (#37).
 		const runs = fake.runStarts.length;
 		const again = await main(["publish", "-m", "x", "--check", "node ok.cjs"], {
 			cwd: folders.alice!,
@@ -3484,7 +3484,7 @@ describe("every command that takes news prints it (#37, News Report)", () => {
 });
 
 describe("wishlist: publish clarity, who, fix-eol, one-version hint (#37)", () => {
-	it("an empty publish says shared already has the file and who changed it, not that work vanished (Artist 1)", async () => {
+	it("an empty publish says shared already has the file and who changed it, not that work vanished", async () => {
 		const { folders } = await project({ "tools/look.mjs": "look\n" }, "artist", "builder2");
 		write(folders.builder2!, { "tools/look.mjs": "look --mute-audio\n" });
 		assert.equal((await avcs(folders.builder2!, "publish", "-m", "Mute audio in look")).exit, 0);
@@ -3499,7 +3499,7 @@ describe("wishlist: publish clarity, who, fix-eol, one-version hint (#37)", () =
 		);
 	});
 
-	it("who names the last change, the drafts, and the starting notes for a file (Artist 1)", async () => {
+	it("who names the last change, the drafts, and the starting notes for a file", async () => {
 		const { folders } = await project({ "a.txt": "a\n", "b.txt": "b\n" }, "alice", "bob");
 		write(folders.alice!, { "a.txt": "a1\n" });
 		assert.equal((await avcs(folders.alice!, "publish", "-m", "alice a1")).exit, 0);

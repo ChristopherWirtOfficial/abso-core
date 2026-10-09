@@ -520,7 +520,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
  * What this folder last heard about a box's prep: a run's X-Avcs-Prep, or
  * abso prep and prep --forget. null means no prep; undefined, never heard. So
  * publish --check can refuse before running a check that can't be trusted
- * (#37, Artist 1: a 40 s suite ran, then was refused).
+ * (#37: a 40 s suite ran, then was refused).
  */
 function prepFile(root: string): string {
 	return join(stateDir(root), "box-prep.json");

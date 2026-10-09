@@ -84,7 +84,7 @@ export function sync(host: SyncHost, agentName: string, options: { label?: strin
 		host.apply(heard);
 	}
 	const merged = host.mergeIdentical(agent, before, oldBase, oldVersion, Date.now(), entries);
-	// full (#37, Artist 1's partial join): every file in the view, as for a first sync, whatever the folder had.
+	// full (#37, a partial join): every file in the view, as for a first sync, whatever the folder had.
 	const answer = host.changesSince(agent, options.full ? new View(host.graph, []) : before);
 	host.flush(entries);
 	return merged.length > 0 ? { ...answer, merged } : answer;

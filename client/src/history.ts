@@ -156,7 +156,7 @@ function names(entry: string, file: string): boolean {
 
 /**
  * abso who <file...>: for each file, who last changed it, who has unpublished
- * changes in it, and whose starting note names it (#37, Artist 1: "is anyone
+ * changes in it, and whose starting note names it (#37: "is anyone
  * in here right now?" before touching someone's file).
  */
 export async function runWho(args: Parsed, env: Env): Promise<Output> {
