@@ -1,6 +1,6 @@
 {
 	"name": "avcs",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Records each Claude Code edit into the agent's draft on the avcs server, and hands news about others' published work back to the agent.",
 	"license": "MIT"
 }

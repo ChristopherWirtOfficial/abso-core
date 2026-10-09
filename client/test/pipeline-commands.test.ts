@@ -91,7 +91,7 @@ describe("abso pipeline check", () => {
 	it("says which names it looked for when there's no file, and how to call it", async () => {
 		const none = await run(folder({}), "check");
 		assert.equal(none.exit, 1);
-		assert.match(none.stderr, /no pipeline file in .*: looked for abso\.yml, abso\.yaml, avcs\.json/);
+		assert.match(none.stderr, /no pipeline file in .*: looked for abso\.yml, abso\.yaml, abso\.json, avcs\.json/);
 		assert.match((await run(folder({}), "check", "nope.yml")).stderr, /no file nope\.yml/);
 		assert.match((await run(folder({}), "lint")).stderr, /abso pipeline check \[file\]/);
 		assert.match((await run(folder({}))).stderr, /abso pipeline check \[file\]/);

@@ -1,4 +1,4 @@
-// The merge queue on the client (#39): with "queue": true in avcs.json, a
+// The merge queue on the client (#39): with "queue": true in abso.json, a
 // publish to shared waits in the queue until a batch with it passes the
 // project's check, and lands, or is pulled with the check's output. publish
 // waits for that, up to a cap under the chat's 2-minute command limit; status

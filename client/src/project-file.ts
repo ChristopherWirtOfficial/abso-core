@@ -6,7 +6,15 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const PROJECT_FILE = "avcs.json";
+/** The project file's name: abso.json, or avcs.json from before the rename. A new one is written as abso.json. */
+export const PROJECT_FILE = "abso.json";
+export const OLD_PROJECT_FILE = "avcs.json";
+
+/** The name the folder's project file has: abso.json when it is there, else avcs.json when that is, else the new name. */
+export function projectFileName(root: string): string {
+	if (existsSync(join(root, PROJECT_FILE))) return PROJECT_FILE;
+	return existsSync(join(root, OLD_PROJECT_FILE)) ? OLD_PROJECT_FILE : PROJECT_FILE;
+}
 
 /** Each key optional; an empty string counts as missing. */
 export interface ProjectFile {
@@ -20,22 +28,22 @@ export interface ProjectFile {
 
 const KEYS = ["setup", "check", "build", "out"] as const;
 
-/** The folder's avcs.json, or why it can't be read; null when there is none. */
+/** The folder's abso.json (or avcs.json), or why it can't be read; null when there is none. */
 export function readProjectFile(root: string): { file: ProjectFile } | { error: string } | null {
-	const path = join(root, PROJECT_FILE);
+	const name = projectFileName(root);
+	const path = join(root, name);
 	if (!existsSync(path)) return null;
 	let raw: unknown;
 	try {
 		raw = JSON.parse(readFileSync(path, "utf8"));
 	} catch (e) {
-		return { error: `${PROJECT_FILE} isn't valid JSON (${(e as Error).message})` };
+		return { error: `${name} isn't valid JSON (${(e as Error).message})` };
 	}
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw))
-		return { error: `${PROJECT_FILE} should hold an object, like {"check": "npm test"}` };
+		return { error: `${name} should hold an object, like {"check": "npm test"}` };
 	const o = raw as Record<string, unknown>;
 	for (const k of KEYS) {
-		if (o[k] !== undefined && typeof o[k] !== "string")
-			return { error: `"${k}" in ${PROJECT_FILE} should be a string` };
+		if (o[k] !== undefined && typeof o[k] !== "string") return { error: `"${k}" in ${name} should be a string` };
 	}
 	const get = (k: (typeof KEYS)[number]) => ((o[k] as string | undefined) ?? "").trim();
 	return {
@@ -52,7 +60,7 @@ export function readProjectFile(root: string): { file: ProjectFile } | { error: 
 /** npm's placeholder test script, which always fails. */
 const NO_TEST = /no test specified/;
 
-/** A starting avcs.json, guessed from package.json; empty where nothing can be guessed. */
+/** A starting abso.json, guessed from package.json; empty where nothing can be guessed. */
 export function guessProjectFile(root: string): ProjectFile {
 	let pkg: {
 		scripts?: Record<string, unknown>;
@@ -80,20 +88,20 @@ export function guessProjectFile(root: string): ProjectFile {
 }
 
 /**
- * Writes a guessed avcs.json when the folder has none and package.json gives
+ * Writes a guessed abso.json (unless it has abso.json or avcs.json) when the folder has none and package.json gives
  * a check or a build to guess (#39, Agent VCS: a project with nothing to
  * check shouldn't start boxes; CI skips a version with nothing to run).
  * Answers what it wrote; 'exists' or 'nothing' when it wrote none.
  */
 export function writeStartingProjectFile(root: string): ProjectFile | "exists" | "nothing" {
-	if (existsSync(join(root, PROJECT_FILE))) return "exists";
+	if (existsSync(join(root, PROJECT_FILE)) || existsSync(join(root, OLD_PROJECT_FILE))) return "exists";
 	const guess = guessProjectFile(root);
 	if (guess.check === "" && guess.build === "") return "nothing";
 	writeFileSync(join(root, PROJECT_FILE), `${JSON.stringify(guess, null, 2)}\n`);
 	return guess;
 }
 
-/** What init says about avcs.json. */
+/** What init says about abso.json. */
 export function startingProjectFileText(wrote: ProjectFile | "exists" | "nothing"): string[] {
 	if (wrote === "exists") return [];
 	if (wrote === "nothing") {

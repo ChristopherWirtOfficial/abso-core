@@ -73,7 +73,7 @@ export type CiMark = "pass" | "fail" | "running" | "waiting" | "not checked";
 export interface CiJob {
 	readonly version: number;
 	readonly result: CiResult | "running" | "waiting" | "not checked";
-	/** The failing step: setup, build, check, avcs.json or box. */
+	/** The failing step: setup, build, check, abso.json or box. */
 	readonly step?: string;
 	readonly exit?: number | null;
 	readonly seconds?: number;

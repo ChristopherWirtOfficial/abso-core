@@ -21,7 +21,7 @@ export function sha256(bytes: Uint8Array): string {
 
 /**
  * Whether normalized text is the file the server keeps whole under `sha`
- * (#46): a text file matching avcs.json's "whole", or over 1 MB, is stored
+ * (#46): a text file matching abso.json's "whole", or over 1 MB, is stored
  * like a binary file, by the hash of its text with LF endings. The client
  * keeps that hash in blobs.json, and the file on disk stays text.
  */

@@ -2808,7 +2808,7 @@ describe("the project file, avcs.json (#39)", () => {
 	it("init guesses it from package.json, and keeps one that is already there", async () => {
 		const pkg = JSON.stringify({ scripts: { typecheck: "tsc", test: "node --test" }, devDependencies: { vite: "^5" } });
 		const { name } = await project({ "package.json": pkg, "package-lock.json": "{}\n" }, "alice");
-		assert.deepEqual(JSON.parse(shared(name)["avcs.json"]!), {
+		assert.deepEqual(JSON.parse(shared(name)["abso.json"]!), {
 			setup: "npm ci",
 			check: "npm run typecheck && npm test",
 			build: "npx --no-install vite build --base ./ --outDir dist",
@@ -2816,6 +2816,11 @@ describe("the project file, avcs.json (#39)", () => {
 		});
 		const kept = await project({ "avcs.json": '{"check": "node check.cjs"}\n' }, "alice");
 		assert.equal(shared(kept.name)["avcs.json"], '{"check": "node check.cjs"}\n');
+		assert.equal(
+			shared(kept.name)["abso.json"],
+			undefined,
+			"an avcs.json is kept as it is: no abso.json beside it to shadow it",
+		);
 		const dir = temp();
 		write(dir, {
 			"a.txt": "a\n",
@@ -2828,15 +2833,15 @@ describe("the project file, avcs.json (#39)", () => {
 		});
 		assert.equal(init.exit, 0, init.stdout + init.stderr);
 		assert.deepEqual(
-			JSON.parse(read(dir, "avcs.json")),
+			JSON.parse(read(dir, "abso.json")),
 			{ setup: "npm install", check: "", build: "npm run build", out: "" },
 			"npm's placeholder test is no check",
 		);
 		assert.match(
 			init.stdout,
-			/\nWrote avcs\.json: CI will run on every new version of shared \(setup "npm install", build "npm run build"\)\. Fill in check, out when the project has them\./,
+			/\nWrote abso.json: CI will run on every new version of shared \(setup "npm install", build "npm run build"\)\. Fill in check, out when the project has them\./,
 		);
-		// Nothing to check or build: no avcs.json, so CI has nothing to run and starts no boxes (#39, Agent VCS).
+		// Nothing to check or build: no abso.json, so CI has nothing to run and starts no boxes (#39, Agent VCS).
 		const bare = temp();
 		write(bare, { "a.txt": "a\n", "package.json": JSON.stringify({ scripts: { start: "node a.js" } }) });
 		const off = await main(["init", "--server", fake.url, "--project", "guess-none", "--agent", "alice"], {
@@ -2845,10 +2850,10 @@ describe("the project file, avcs.json (#39)", () => {
 			write: () => {},
 		});
 		assert.equal(off.exit, 0, off.stdout + off.stderr);
-		assert.equal(existsSync(join(bare, "avcs.json")), false);
+		assert.equal(existsSync(join(bare, "abso.json")), false);
 		assert.match(
 			off.stdout,
-			/\nNo avcs\.json written: package\.json gives no check or build to guess, so CI has nothing to run on each new version\. To give it a check, publish an avcs\.json like \{"check": "npm test"\}/,
+			/\nNo abso.json written: package\.json gives no check or build to guess, so CI has nothing to run on each new version\. To give it a check, publish an abso.json like \{"check": "npm test"\}/,
 		);
 		// --as-is (an import, #58): the folder goes up exactly as it is, with nothing of avcs's own added.
 		const asIs = temp();
@@ -2928,7 +2933,7 @@ describe("the project file, avcs.json (#39)", () => {
 		assert.equal(missing.exit, 1);
 		assert.match(
 			missing.stdout + missing.stderr,
-			/--check alone runs the project's check, but there is no avcs\.json\. Set "check" in avcs\.json/,
+			/--check alone runs the project's check, but there is no abso.json\. Set "check" in abso.json/,
 		);
 		write(folders.alice!, { "avcs.json": '{"build": "", "check": ""}\n' });
 		const none = await main(["publish", "-m", "x", "--check"], {
@@ -3062,7 +3067,7 @@ describe("the project file, avcs.json (#39)", () => {
 			"Not checked yet. Version 4 is being checked (35 s so far).",
 		]);
 		assert.deepEqual(ciText({ ...base, checked: { version: 2, result: "none" }, running: null }, 3, now), [
-			"CI couldn't check version 2 (the box failed twice, or avcs.json has nothing to run). Versions after 2 aren't checked yet.",
+			"CI couldn't check version 2 (the box failed twice, or abso.json has nothing to run). Versions after 2 aren't checked yet.",
 		]);
 		assert.deepEqual(
 			ciText({ ...base, running: null, red: { version: 1, agent: null, message: null, lastGood: null } }, 1, now),

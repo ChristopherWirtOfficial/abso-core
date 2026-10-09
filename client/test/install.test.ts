@@ -346,7 +346,7 @@ describe("which client this is", () => {
 		assert.equal(client, `abso ${clientVersion()} (${dirname(import.meta.dirname)})`);
 		assert.match(
 			mod!,
-			/^the avcs mod: 0\.1\.0\+aaaaaaa in .*skills[\\/]avcs, installed 2026-10-05 04:30 UTC; this client has 0\.1\.0(\+[0-9a-f]{7}(\.dirty)?)?: node client\/install-mod\.ts installs it$/,
+			/^the avcs mod: 0\.1\.0\+aaaaaaa in .*skills[\\/]avcs, installed 2026-10-05 04:30 UTC; this client has 0.2.0(\+[0-9a-f]{7}(\.dirty)?)?: node client\/install-mod\.ts installs it$/,
 		);
 		assert.equal(view, "the avcs-view mod: not installed (node client/install-view.ts)");
 		const json = JSON.parse(

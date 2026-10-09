@@ -15,7 +15,7 @@ import { fromEnv } from "./env-names.ts";
 import { clearKnown, loadIgnore, readFolder, writeKnown } from "./folder.ts";
 import { modInstalled } from "./install.ts";
 import { type FullMode, foldModes, writeKnownModes } from "./modes.ts";
-import { PROJECT_FILE, readProjectFile, startingProjectFileText, writeStartingProjectFile } from "./project-file.ts";
+import { projectFileName, readProjectFile, startingProjectFileText, writeStartingProjectFile } from "./project-file.ts";
 import { refusedText } from "./safety.ts";
 import { stateDir } from "./state-dir.ts";
 
@@ -153,7 +153,7 @@ function setupHint(root: string): string[] {
 	const setup = read !== null && "file" in read ? read.file.setup : "";
 	return setup === ""
 		? []
-		: [`Nothing is installed yet. Before building or testing here, run ${PROJECT_FILE}'s setup: ${setup}`];
+		: [`Nothing is installed yet. Before building or testing here, run ${projectFileName(root)}'s setup: ${setup}`];
 }
 
 function hookHint(env: Readonly<Record<string, string | undefined>>): string {

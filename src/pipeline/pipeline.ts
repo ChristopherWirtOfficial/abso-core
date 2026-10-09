@@ -107,7 +107,7 @@ export function readPipelineFile(text: string, fileName: string): Checked {
 		const first = String(e instanceof Error ? e.message : e).split("\n")[0];
 		return fail([{ at: "file", message: `${fileName} isn't valid ${json ? "JSON" : "YAML"}${where}: ${first}` }]);
 	}
-	return checkPipelines(doc, { avcsJson: /(^|[\\/])avcs\.json$/i.test(fileName) });
+	return checkPipelines(doc, { avcsJson: /(^|[\\/])(abso|avcs)\.json$/i.test(fileName) });
 }
 
 /** Checks a parsed file. With `avcsJson`, today's CI keys beside the pipelines are allowed. */

@@ -1,4 +1,4 @@
-// What the project's CI says (#39): the server runs avcs.json's setup, build
+// What the project's CI says (#39): the server runs abso.json's setup, build
 // and check on each new version of shared. status and log show it; abso ci
 // shows it whole, and one version's job with the end of its output.
 
@@ -51,7 +51,7 @@ export function ciText(ci: CiStatus | undefined, shared: number, now = Date.now(
 			shared > v ? (ci.running !== null ? running : ci.skipped ? "" : ` Versions after ${v} aren't checked yet.`) : "";
 		if (ci.checked.result === "pass") lines.push(`Shared is green: version ${v} passed its check.${newer}`);
 		else if (ci.checked.result === "fail") lines.push(`Version ${v} failed its check. abso ci ${v} shows why.${newer}`);
-		else lines.push(`CI couldn't check version ${v} (the box failed twice, or avcs.json has nothing to run).${newer}`);
+		else lines.push(`CI couldn't check version ${v} (the box failed twice, or abso.json has nothing to run).${newer}`);
 	} else {
 		lines.push(
 			ci.running === null
@@ -114,7 +114,7 @@ function jobText(job: CiJob): string[] {
 			? `Version ${job.version} passed${covered}${took === "" ? "" : ` (${took})`}${job.built ? "; its build is kept for the preview" : ""}.`
 			: job.result === "fail"
 				? `Version ${job.version} failed at ${job.step ?? "a step"}${job.exit === undefined || job.exit === null ? "" : ` (exit ${job.exit})`}${covered}${took === "" ? "" : `, ${took}`}.`
-				: `Version ${job.version} wasn't checked${job.step === undefined ? "" : ` (${job.step})`}: the box failed twice, or avcs.json has nothing to run.`;
+				: `Version ${job.version} wasn't checked${job.step === undefined ? "" : ` (${job.step})`}: the box failed twice, or abso.json has nothing to run.`;
 	const output = job.output?.trimEnd() ?? "";
 	return [
 		head,

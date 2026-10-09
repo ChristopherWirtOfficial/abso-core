@@ -11,7 +11,7 @@ import { type Env, EXIT, type Output } from "./command-env.ts";
 import { findRoot } from "./config.ts";
 
 /** The names a pipeline file may have, in the order they're looked for. */
-export const PIPELINE_FILES = ["abso.yml", "abso.yaml", "avcs.json"] as const;
+export const PIPELINE_FILES = ["abso.yml", "abso.yaml", "abso.json", "avcs.json"] as const;
 
 export async function runPipeline(args: Parsed, env: Env): Promise<Output> {
 	const [sub, file, ...rest] = args.positionals;

@@ -24,7 +24,7 @@ import { type Config, isReader } from "./config.ts";
 import { fromEnv } from "./env-names.ts";
 import { ignoredHere } from "./fetch.ts";
 import { absolute, forgetKnown, isLocalOnly, type LeftOut, loadIgnore, readText, writeFileAtomic } from "./folder.ts";
-import { PROJECT_FILE, readProjectFile } from "./project-file.ts";
+import { projectFileName, readProjectFile } from "./project-file.ts";
 import { pulledText, STILL_QUEUED, standing, WAIT_SECONDS, waitForQueued } from "./queue.ts";
 import { type Refused, refusedText, unsafePath } from "./safety.ts";
 import { blocksIn, settleText } from "./settle.ts";
@@ -89,6 +89,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 		// --check alone: the build and check in the draft's own avcs.json, as the server's job runs them on
 		// each version, so a draft that changes them runs the new ones (#39).
 		const pf = readProjectFile(root);
+		const PROJECT_FILE = projectFileName(root);
 		if (pf === null || "error" in pf || pf.file.check === "") {
 			const why =
 				pf === null ? `there is no ${PROJECT_FILE}` : "error" in pf ? pf.error : `${PROJECT_FILE} has no "check"`;
