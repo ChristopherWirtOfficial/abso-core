@@ -27,9 +27,20 @@ export interface FileChange {
 	readonly from?: string;
 	readonly similarity?: number;
 }
+/**
+ * Who to name for a version: its original author when the project's history
+ * was imported (abso issue 23, like git's author beside its committer), else
+ * the agent who published it. Code that matches agents keeps using agent.
+ */
+export function byWhom(p: { readonly agent: string; readonly author?: string }): string {
+	return p.author ?? p.agent;
+}
+
 export interface LogEntry {
 	readonly version: number;
 	readonly agent: string;
+	/** Who first wrote it, when the project's history was imported (abso issue 23); agent is who published it here. */
+	readonly author?: string;
 	readonly message: string;
 	readonly time: number;
 	readonly changes: number;
@@ -92,6 +103,8 @@ export interface RestoreAnswer {
 export interface Publish {
 	readonly version: number;
 	readonly agent: string;
+	/** Who first wrote it, when the project's history was imported (abso issue 23). */
+	readonly author?: string;
 	readonly message: string;
 	readonly time: number;
 }

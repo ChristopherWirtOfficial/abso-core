@@ -8,6 +8,7 @@ import { globTest } from "./at.ts";
 import type { Env, Output } from "./commands.ts";
 import { findRoot, readConfig } from "./config.ts";
 import { relativeTo } from "./folder.ts";
+import { byWhom } from "./history-answers.ts";
 
 function open(env: Env): { root: string; api: Api; agent: string } {
 	const root = findRoot(env.cwd);
@@ -46,7 +47,7 @@ function viewOf(args: Parsed, agent: string): View {
 }
 
 function published(p: Publish | null): string {
-	return p === null ? "not published" : `version ${p.version} by ${p.agent} (${when(p.time)}): "${p.message}"`;
+	return p === null ? "not published" : `version ${p.version} by ${byWhom(p)} (${when(p.time)}): "${p.message}"`;
 }
 
 export async function runBlame(args: Parsed, env: Env): Promise<Output> {
@@ -71,7 +72,7 @@ export async function runBlame(args: Parsed, env: Env): Promise<Output> {
 	for (const a of b.atoms) {
 		if (a.publish === null) continue;
 		const own = a.message && a.message !== a.publish.message ? ` (the change itself: "${a.message}")` : "";
-		const line = `  v${a.publish.version} by ${a.publish.agent}, ${when(a.publish.time)}: ${a.publish.message}${own}`;
+		const line = `  v${a.publish.version} by ${byWhom(a.publish)}, ${when(a.publish.time)}: ${a.publish.message}${own}`;
 		if (!versions.has(a.publish.version) || own) versions.set(a.publish.version, line);
 	}
 	const whose =
@@ -172,7 +173,7 @@ export async function runWho(args: Parsed, env: Env): Promise<Output> {
 		lines.push(
 			`${file}:`,
 			last
-				? `  last changed in version ${last.version} by ${last.agent}, ${when(last.time)}: ${last.message}`
+				? `  last changed in version ${last.version} by ${byWhom(last)}, ${when(last.time)}: ${last.message}`
 				: "  in no published version yet",
 			...(drafts.length > 0
 				? drafts.map(

@@ -25,6 +25,7 @@ import {
 	writeKnown,
 } from "./folder.ts";
 import { fileArg, when } from "./history.ts";
+import { byWhom } from "./history-answers.ts";
 import { applyMode, PLAIN, readKnownModes, writeKnownModes } from "./modes.ts";
 import { refusedText, screenAnswer } from "./safety.ts";
 
@@ -385,7 +386,7 @@ export async function runLog(args: Parsed, env: Env): Promise<Output> {
 		`${spaceName(answer.draft)} is at version ${answer.version}.${path === undefined ? "" : answer.versions.length === 0 ? ` No version changed ${named}.` : ` The versions that changed ${named}, newest first:`}`,
 		...(path !== undefined && answer.versions.length === 0 && !existsHere(root, path) ? [nothingAt(root, path)] : []),
 		...answer.versions.flatMap((v) => [
-			`version ${v.version} by ${v.agent}, ${when(v.time)}${answer.draft === null ? ciMarkText(v.ci) : ""}: ${v.message}`,
+			`version ${v.version} by ${byWhom(v)}, ${when(v.time)}${answer.draft === null ? ciMarkText(v.ci) : ""}: ${v.message}`,
 			`  ${plural(v.files.length, "file")}: ${v.files.slice(0, LOG_FILES).join(", ")}${v.files.length > LOG_FILES ? `, and ${v.files.length - LOG_FILES} more` : ""}`,
 			...notes(v),
 		]),
@@ -422,7 +423,7 @@ export async function runShow(args: Parsed, env: Env): Promise<Output> {
 	const changed = pairRenames(answer.diff);
 	const d = diffs(changed);
 	const lines = [
-		`version ${answer.version} of ${spaceName(answer.draft)} by ${answer.agent}, ${when(answer.time)}: ${answer.message}`,
+		`version ${answer.version} of ${spaceName(answer.draft)} by ${byWhom(answer)}, ${when(answer.time)}: ${answer.message}`,
 		...notes(answer),
 		changed.length === 0 ? "It changed no files." : `${totals(changed)}.`,
 		...d.text,
