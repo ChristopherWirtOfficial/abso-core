@@ -62,6 +62,9 @@ export function readBodyFiles(
 	const flags = new Map(args.flags);
 	let positionals = [...args.positionals];
 	for (const f of BODY_FLAGS) {
+		// A lone - as the text is a stdin read meant for the -file flag (abso issue 182): posting "-" helps nobody.
+		if (flags.get(f) === "-")
+			throw new UsageError(`--${f} - would send just "-"; --${f}-file - reads the text from stdin`);
 		const path = flags.get(`${f}-file`);
 		if (typeof path !== "string") continue;
 		if (flags.has(f)) throw new UsageError(`--${f} or --${f}-file, not both`);

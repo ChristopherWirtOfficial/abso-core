@@ -55,6 +55,12 @@ describe("bodies from a file or stdin", () => {
 		assert.throws(() => parse("issue", ISSUE, ["5", "--comment-file", "empty.md"]), /the text is empty/);
 	});
 
+	it("refuses a lone - as the text, pointing at the -file flag (abso issue 182)", () => {
+		assert.throws(() => parse("issue", ISSUE, ["5", "--comment", "-"]), /--comment-file - reads the text from stdin/);
+		assert.throws(() => parse("issue", ISSUE, ["new", "T", "--description", "-"]), /--description-file -/);
+		assert.equal(parse("issue", ISSUE, ["5", "--comment", "- one item"]).flags.get("comment"), "- one item");
+	});
+
 	it("adds -file twins only for the text flags a command has, and says so in --help", () => {
 		assert.deepEqual(Object.keys(withBodyFiles("issue", ISSUE)).sort(), [
 			"comment",
