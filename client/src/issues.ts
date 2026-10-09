@@ -69,7 +69,7 @@ export function issueLine(i: IssueRow): string {
 	return `  ${String(i.id).padStart(3)}  ${i.status.padEnd(11)}  ${q(i.title)}${detail.length > 0 ? ` (${detail.join("; ")})` : ""}`;
 }
 
-function askLine(a: Ask & { title?: string | null }): string {
+function askLine(a: Ask & { title?: string | null }, api?: Pick<Api, "attachmentUrl">): string {
 	const what = a.review ? "a review" : a.kind === "task" ? "a task" : "a question";
 	const where = a.issue === null ? "" : ` on issue ${a.issue}${a.title ? ` (${q(a.title)})` : ""}`;
 	const extra = [
@@ -82,12 +82,13 @@ function askLine(a: Ask & { title?: string | null }): string {
 		a.blocks.length > 0 ? `blocks ${a.blocks.join(", ")}` : "",
 	].filter((x) => x !== "");
 	const head = `  ask ${a.id}: ${a.by}, ${shortWhen(a.at)}, asks ${a.of} ${what}${where}${extra.length > 0 ? ` (${extra.join("; ")})` : ""}: ${q(a.question)}`;
-	const lines = [head];
+	const lines = [head, ...attachmentLines(api, a.attachments, "    ")];
 	if (a.options.length > 0) lines.push(`    options: ${a.options.map((o, i) => `${i + 1}. ${q(o)}`).join(", ")}`);
 	if (a.recommendation) lines.push(`    ${a.recommendation.by} recommends: ${q(a.recommendation.text)}`);
 	if (a.answer && a.outcome === "withdrawn") {
 		if (a.answer.words !== "") lines.push(`    why: ${q(a.answer.words)}`);
-	} else if (a.answer) lines.push(`    answer: ${q(a.answer.words)}`);
+	} else if (a.answer)
+		lines.push(`    answer: ${q(a.answer.words)}`, ...attachmentLines(api, a.answer.attachments, "      "));
 	return lines.join("\n");
 }
 
@@ -126,6 +127,20 @@ function listOf(value: string): string[] {
 				.split(",")
 				.map((v) => v.trim())
 				.filter((v) => v !== "");
+}
+
+/** " with 2 attachments (a…, a…)" after a write that carried some; nothing otherwise. */
+function withFiles(ids: readonly string[]): string {
+	return ids.length > 0 ? ` with ${plural(ids.length, "attachment")} (${ids.join(", ")})` : "";
+}
+
+/**
+ * What to say when a write sent files the server didn't keep: an Issues server from before asks carried
+ * attachments takes the words and leaves the files out. Nothing to say when it kept them, or none were sent.
+ */
+function notKept(sent: readonly string[], kept: readonly string[] | undefined, what: string): string | undefined {
+	if (sent.length === 0 || (kept !== undefined && sent.every((id) => kept.includes(id)))) return undefined;
+	return `The Issues server didn't keep the ${sent.length === 1 ? "file" : "files"} on ${what}: it is older than this client. The words went; the ${sent.length === 1 ? "file goes" : "files go"} on a comment instead (abso issue <N> --comment "..." --attach ...).`;
 }
 
 /** The most one attachment may be: the Issues Worker's cap, checked here before sending (abso issue 171). */
@@ -184,8 +199,8 @@ export function savedName(id: string, name: string): string {
 }
 
 /**
- * abso issue N --save-attachments <folder>: every attachment on the issue and
- * its comments, written to that folder as <id>-<name>; an svg's own file
+ * abso issue N --save-attachments <folder>: every attachment on the issue, its
+ * comments and its asks and answers, written to that folder as <id>-<name>; an svg's own file
  * beside the png drawn from it. Not into the abso folder unless abso leaves
  * that place out, or the images would be recorded as edits.
  */
@@ -197,9 +212,11 @@ async function saveAttachments(api: Api, root: string, cwd: string, dir: string,
 			`${dir} is inside this abso folder, so abso would record the images as your edits. Save them outside the folder, or into a folder .absoignore leaves out`,
 		);
 	const seen = new Set<string>();
-	const all = [...(page.issue.attachments ?? []), ...page.comments.flatMap((c) => c.attachments ?? [])].filter(
-		(a) => !seen.has(a.id) && seen.add(a.id),
-	);
+	const all = [
+		...(page.issue.attachments ?? []),
+		...page.comments.flatMap((c) => c.attachments ?? []),
+		...page.asks.flatMap((a) => [...(a.attachments ?? []), ...(a.answer?.attachments ?? [])]),
+	].filter((a) => !seen.has(a.id) && seen.add(a.id));
 	if (all.length === 0)
 		return {
 			text: `Issue ${page.issue.id} has no attachments.`,
@@ -247,7 +264,7 @@ export function issuePage(p: IssuePage, api?: Pick<Api, "attachmentUrl">): strin
 		...(i.lines ? [`From ${i.lines.file} lines ${i.lines.from}-${i.lines.to} at version ${i.lines.version}.`] : []),
 		...(i.description !== "" ? ["", ...i.description.split("\n").map((l) => `  ${l}`)] : []),
 		...attachmentLines(api, i.attachments, "  "),
-		...(p.asks.length > 0 ? ["", "Asks:", ...p.asks.map(askLine)] : []),
+		...(p.asks.length > 0 ? ["", "Asks:", ...p.asks.map((a) => askLine(a, api))] : []),
 		...(p.comments.length > 0
 			? [
 					"",
@@ -602,6 +619,7 @@ export async function runAsk(args: Parsed, env: Env): Promise<Output> {
 	const issue = str(args, "issue");
 	const blocks = str(args, "blocks");
 	const options = str(args, "options");
+	const attachments = await uploadAttachments(api, env.cwd, str(args, "attach"));
 	const r = await api.ask({
 		of,
 		question: words.join(" "),
@@ -618,13 +636,18 @@ export async function runAsk(args: Parsed, env: Env): Promise<Output> {
 						.filter((o) => o !== ""),
 				}
 			: {}),
+		...(attachments.length > 0 ? { attachments } : {}),
 	});
-	return { text: `Asked ${of} (ask ${r.id}). They hear it; abso waiting shows what's open.`, json: { id: r.id } };
+	const lost = notKept(attachments, r.attachments, `ask ${r.id}`);
+	return {
+		text: `Asked ${of} (ask ${r.id})${withFiles(attachments)}. They hear it; abso waiting shows what's open.${lost ? ` ${lost}` : ""}`,
+		json: { id: r.id, ...(attachments.length > 0 ? { attachments } : {}), ...(lost ? { notKept: lost } : {}) },
+	};
 }
 
 /** abso ask --withdraw <ask> [--note "why"]: the asker takes an ask back. It closes like an answer, and the one asked hears it. */
 async function withdrawAsk(args: Parsed, env: Env, word: string): Promise<Output> {
-	const others = ["issue", "due", "blocks", "options"].filter((f) => str(args, f) !== undefined);
+	const others = ["issue", "due", "blocks", "options", "attach"].filter((f) => str(args, f) !== undefined);
 	if (args.positionals.length > 0 || others.length > 0 || bool(args, "review") || bool(args, "task"))
 		throw new UsageError('abso ask --withdraw <ask> [--note "why"] takes nothing else: it takes back an ask you made');
 	const id = issueNumber(word, "the ask number");
@@ -682,7 +705,7 @@ export async function runWaiting(args: Parsed, env: Env): Promise<Output> {
 				? `Nothing is waiting${of ? ` on ${of}` : ""}.`
 				: [
 						`${plural(asks.length, "open ask")}${of ? ` of ${of}` : ""}, soonest due first:`,
-						...asks.map(askLine),
+						...asks.map((a) => askLine(a, api)),
 						'abso answer <ask> "..." answers one asked of you.',
 					].join("\n"),
 		json: { asks },
@@ -698,11 +721,21 @@ export async function runAnswer(args: Parsed, env: Env): Promise<Output> {
 		throw new UsageError('abso answer <ask> "<words>" | --option <N> [--note "..."] | --done [--note "..."]');
 	const { api } = openIssues(env);
 	const note = str(args, "note");
+	const attachments = await uploadAttachments(api, env.cwd, str(args, "attach"));
 	const r = await api.answer(id, {
 		...(words.length > 0 ? { words: words.join(" ") } : {}),
 		...(option !== undefined ? { option: /^\d+$/.test(option) ? Number(option) - 1 : option } : {}),
 		...(done ? { done: true } : {}),
 		...(note !== undefined ? { note } : {}),
+		...(attachments.length > 0 ? { attachments } : {}),
 	});
-	return { text: `Answered ask ${id}. ${r.ask.by} hears it.`, json: { ask: r.ask } };
+	const lost = notKept(
+		attachments,
+		r.ask.answer?.attachments?.map((a) => a.id),
+		`your answer to ask ${id}`,
+	);
+	return {
+		text: `Answered ask ${id}${withFiles(attachments)}. ${r.ask.by} hears it.${lost ? ` ${lost}` : ""}`,
+		json: { ask: r.ask, ...(lost ? { notKept: lost } : {}) },
+	};
 }

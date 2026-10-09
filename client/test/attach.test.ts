@@ -43,6 +43,32 @@ before(async () => {
 				});
 			if (req.url!.endsWith("/issue")) return json({ id: 7 });
 			if (/\/issue\/\d+\/comment$/.test(req.url!)) return json({ id: 3 });
+			// An older Issues server keeps no files on asks: it answers without them (project "keepless").
+			const older = req.url!.includes("/p/keepless/");
+			if (req.url!.endsWith("/ask")) {
+				const sent = (JSON.parse(body.toString()) as { attachments?: string[] }).attachments;
+				return json({ id: 9, ...(sent && !older ? { attachments: sent } : {}) });
+			}
+			if (/\/answer\/\d+$/.test(req.url!)) {
+				const sent = (JSON.parse(body.toString()) as { attachments?: string[] }).attachments ?? [];
+				const files = older ? [] : sent.map((id) => ({ id, name: "x", type: "image/png", size: 1 }));
+				return json({ ask: { by: "bob", answer: { by: "ann", words: "w", at: 0, attachments: files } } });
+			}
+			// Issue 9's ask carries a file on its question and one on its answer.
+			if (req.method === "GET" && /\/issue\/9$/.test(req.url!))
+				return json({
+					issue: { id: 9 },
+					comments: [],
+					edits: [],
+					asks: [
+						{
+							attachments: [{ id: "a00000000000d", name: "question.png", type: "image/png", size: 13 }],
+							answer: { attachments: [{ id: "a00000000000e", name: "answer.png", type: "image/png", size: 13 }] },
+						},
+					],
+					claims: [],
+					children: [],
+				});
 			// Issue 8 carries an svg-drawn image on itself and again on a comment, plus one more on the comment.
 			const logo = { id: "a00000000000b", name: "../shot one.png", type: "image/png", size: 13 };
 			if (req.method === "GET" && /\/issue\/8$/.test(req.url!))
@@ -179,6 +205,65 @@ describe("--attach (abso issue 171)", () => {
 		assert.match(mixed.out, /--save-attachments goes alone/);
 	});
 
+	it("goes on an ask and on an answer, and not on a withdrawal", async () => {
+		const dir = await folder();
+		let from = seen.length;
+		const asked = await avcs(dir, [
+			"ask",
+			"bob",
+			"Which looks right?",
+			"--issue",
+			"7",
+			"--attach",
+			"shot.png,after.png",
+		]);
+		assert.equal(asked.exit, 0, asked.out);
+		assert.deepEqual(
+			seen.slice(from).map((c) => `${c.method} ${c.url.replace(/^\/p\/[^/]+/, "")}`),
+			["POST /a/ann/attachments", "POST /a/ann/attachments", "POST /a/ann/ask"],
+		);
+		const ask = JSON.parse(seen.at(-1)!.body.toString()) as { question: string; attachments: string[] };
+		assert.equal(ask.question, "Which looks right?");
+		assert.equal(ask.attachments.length, 2);
+		assert.deepEqual((asked.json as { attachments: string[] }).attachments, ask.attachments);
+		from = seen.length;
+		const answered = await avcs(dir, ["answer", "9", "This one", "--attach", "after.png"]);
+		assert.equal(answered.exit, 0, answered.out);
+		const answer = JSON.parse(seen.at(-1)!.body.toString()) as { words: string; attachments: string[] };
+		assert.equal(answer.words, "This one");
+		assert.equal(answer.attachments.length, 1);
+		assert.equal(seen.length - from, 2);
+		from = seen.length;
+		const withdrawn = await avcs(dir, ["ask", "--withdraw", "9", "--attach", "shot.png"]);
+		assert.equal(withdrawn.exit, 1);
+		assert.equal(seen.length, from, "nothing was sent");
+	});
+
+	it("says so when an older Issues server keeps an ask's words but not its files", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "abso-attach-"));
+		dirs.push(dir);
+		const init = await avcs(dir, ["init", "--server", fake.url, "--project", "keepless", "--agent", "ann"]);
+		assert.equal(init.exit, 0, init.out);
+		writeFileSync(join(dir, "shot.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 1]));
+		const asked = await avcs(dir, ["ask", "bob", "Which?", "--attach", "shot.png"]);
+		assert.equal(asked.exit, 0, asked.out);
+		assert.match(asked.out, /didn't keep the file on ask 9: it is older than this client/);
+		const answered = await avcs(dir, ["answer", "9", "This", "--attach", "shot.png"]);
+		assert.match(answered.out, /didn't keep the file on your answer to ask 9/);
+		// A server that keeps them says nothing of the kind.
+		const kept = await avcs(await folder(), ["ask", "bob", "Which?", "--attach", "shot.png"]);
+		assert.doesNotMatch(kept.out, /didn't keep/);
+	});
+
+	it("--save-attachments takes the files on an issue's asks and answers too", async () => {
+		const dir = await folder();
+		const out = mkdtempSync(join(tmpdir(), "abso-saved-"));
+		dirs.push(out);
+		const r = await avcs(dir, ["issue", "9", "--save-attachments", out]);
+		assert.equal(r.exit, 0, r.out);
+		assert.deepEqual(readdirSync(out).sort(), ["a00000000000d-question.png", "a00000000000e-answer.png"]);
+	});
+
 	it("an issue's page lists its attachments and each comment's, with links", () => {
 		const page = {
 			issue: {
@@ -237,6 +322,35 @@ describe("--attach (abso issue 171)", () => {
 		assert.match(
 			text,
 			/\n {4}attached a0000000000aa: "logo.png", 4 KB, \S+\/a0000000000aa\n {6}drawn from "logo.svg", 512 B, https:\/\/issues.example\/p\/x\/attachments\/a0000000000aa\/source/,
+		);
+		// An ask lists its question's files under it, and its answer's under the answer.
+		const file = (id: string, name: string) => ({ id, name, type: "image/png", size: 1024 });
+		const asked = {
+			...page,
+			asks: [
+				{
+					id: 4,
+					issue: 7,
+					by: "ann",
+					of: "bob",
+					kind: "question",
+					question: "Which?",
+					attachments: [file("a00000000000d", "a.png")],
+					review: false,
+					due: null,
+					recommendation: null,
+					options: [],
+					blocks: [],
+					at: 0,
+					answer: { by: "bob", words: "This", at: 0, attachments: [file("a00000000000e", "b.png")] },
+					seen: null,
+				},
+			],
+		} as unknown as IssuePage;
+		const asks = issuePage(asked, { attachmentUrl: (id: string) => `https://i.example/${id}` }).join("\n");
+		assert.match(
+			asks,
+			/ask 4: .*"Which\?"\n {4}attached a00000000000d: "a.png", 1 KB, https:\/\/i.example\/a00000000000d\n {4}answer: "This"\n {6}attached a00000000000e: "b.png", 1 KB/,
 		);
 	});
 });

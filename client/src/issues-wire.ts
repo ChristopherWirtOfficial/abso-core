@@ -68,6 +68,8 @@ export interface Ask {
 	of: string;
 	kind: "question" | "task";
 	question: string;
+	/** Files the question carries; absent when none, and from older servers. */
+	attachments?: Attachment[];
 	review: boolean;
 	due: string | null;
 	recommendation: { text: string; by: string } | null;
@@ -76,7 +78,7 @@ export interface Ask {
 	blocks: number[];
 	at: number;
 	/** Its answer; for a withdrawn ask, the asker's note on why, with the asker as `by`. */
-	answer: { by: string; words: string; at: number } | null;
+	answer: { by: string; words: string; at: number; attachments?: Attachment[] } | null;
 	/** When waiting first listed it to the one it's asked of; null until then (abso issue 124). */
 	seen: number | null;
 	/** "withdrawn" when the asker took it back; absent for an open or answered ask, and from older servers. */

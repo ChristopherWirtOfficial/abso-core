@@ -613,13 +613,14 @@ export class Api {
 		due?: string;
 		blocks?: number[];
 		options?: string[];
-	}): Promise<{ id: number; news?: IssueNews }> {
+		attachments?: string[];
+	}): Promise<{ id: number; news?: IssueNews; attachments?: string[] }> {
 		return this.#issues("POST", this.agentPath("ask"), body);
 	}
 
 	answer(
 		id: number,
-		body: { words?: string; option?: number | string; note?: string; done?: boolean },
+		body: { words?: string; option?: number | string; note?: string; done?: boolean; attachments?: string[] },
 	): Promise<{ ask: Ask; news?: IssueNews }> {
 		return this.#issues("POST", this.agentPath(`answer/${id}`), body);
 	}

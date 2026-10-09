@@ -437,11 +437,12 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 			options: "string",
 			withdraw: "string",
 			note: "string",
+			attach: "string",
 		},
 		usage:
-			'abso ask <who> "<question>" [--issue <N>] [--review | --task] [--due <YYYY-MM-DD>] [--blocks <N,N>] [--options "A|B|C"] | abso ask --withdraw <ask> [--note "why"]',
+			'abso ask <who> "<question>" [--issue <N>] [--review | --task] [--due <YYYY-MM-DD>] [--blocks <N,N>] [--options "A|B|C"] [--attach <file,file>] | abso ask --withdraw <ask> [--note "why"]',
 		about:
-			"Ask an agent, or a person (person:<id>), something; they hear it. On an issue, it holds the issue at Blocked (In review for --review) until answered. --task asks for something done instead of an answer; --options gives the choices; --blocks names the issues waiting on it. --withdraw takes back an ask you made that no longer needs an answer: it leaves their waiting list, stops holding the issue, keeps your --note as why, and they hear it.",
+			"Ask an agent, or a person (person:<id>), something; they hear it. On an issue, it holds the issue at Blocked (In review for --review) until answered. --task asks for something done instead of an answer; --options gives the choices; --blocks names the issues waiting on it. --attach sends files with the question, as on an issue. --withdraw takes back an ask you made that no longer needs an answer: it leaves their waiting list, stops holding the issue, keeps your --note as why, and they hear it.",
 		run: runAsk,
 	},
 	search: {
@@ -458,11 +459,11 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		run: runWaiting,
 	},
 	answer: {
-		flags: { option: "string", note: "string", done: "boolean" },
+		flags: { option: "string", note: "string", done: "boolean", attach: "string" },
 		usage:
-			'abso answer <ask> "<words>" | abso answer <ask> --option <N> [--note "..."] | abso answer <ask> --done [--note "..."]',
+			'abso answer <ask> "<words>" | abso answer <ask> --option <N> [--note "..."] | abso answer <ask> --done [--note "..."], each with [--attach <file,file>]',
 		about:
-			"Answer an ask of you, in your own words, by picking an option (by number or text), or, for a task, with --done. The asker hears it.",
+			"Answer an ask of you, in your own words, by picking an option (by number or text), or, for a task, with --done. --attach sends files with the answer. The asker hears it.",
 		run: runAnswer,
 	},
 	unqueue: {
