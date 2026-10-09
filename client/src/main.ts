@@ -37,6 +37,7 @@ import {
 	takeNews,
 } from "./commands.ts";
 import { configPath, findRoot, installKey, readConfig, readToken } from "./config.ts";
+import { TOKEN_SERVERS } from "./core.ts";
 import { runDraftSync, runLand, runSwitch } from "./drafts.ts";
 import { runExport } from "./export.ts";
 import { runBlame, runWhere, runWho, runWhy } from "./history.ts";
@@ -56,12 +57,12 @@ interface CommandDef {
 	readonly run: (args: Parsed, env: Env) => Promise<Output>;
 }
 
-/** The server login, box and logout act on: --server, or the folder's. */
-function boxServer(args: Parsed, env: Env): string {
+/** The server login, box and logout act on: --server, the folder's, or outside a folder abso.dev's (TOKEN_SERVERS[0]). */
+export function boxServer(args: Parsed, env: Pick<Env, "cwd">): string {
 	const flag = str(args, "server");
 	if (flag) return flag;
 	const root = findRoot(env.cwd);
-	if (!root) throw new UsageError("give --server <url>, or run this inside an agent's folder");
+	if (!root) return TOKEN_SERVERS[0]!;
 	return (JSON.parse(readFileSync(configPath(root), "utf8")) as { server: string }).server;
 }
 
@@ -166,7 +167,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { server: "string" },
 		usage: "abso login [--server <url>]",
 		about:
-			"Sign this box in once (abso issue 108): it shows a code and a link, and waits while a person approves the code on the website, choosing the projects, the highest role and how many agents. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. Without --server, the folder's server.",
+			"Sign this box in once (abso issue 108): it shows a code and a link, and waits while a person approves the code on the website, choosing the projects, the highest role and how many agents. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. Without --server, the folder's server, or https://api.abso.dev outside a folder.",
 		run: async (args, env) => {
 			const server = boxServer(args, env);
 			const record = await login(server, { say: (line) => process.stderr.write(`${line}\n`) });

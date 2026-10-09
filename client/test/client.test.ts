@@ -48,8 +48,8 @@ import { unifiedDiff } from "../src/diff.ts";
 import { absolute, writeFileAtomic } from "../src/folder.ts";
 import { runHook } from "../src/hook.ts";
 import { tryFolderLock } from "../src/lock.ts";
-import { commandTable, main } from "../src/main.ts";
-import { argvFor } from "../src/mcp.ts";
+import { boxServer, commandTable, main } from "../src/main.ts";
+import { argvFor, confineCall, mcpTools } from "../src/mcp.ts";
 import { pulledText } from "../src/queue.ts";
 import { noteText, titleLine } from "../src/review.ts";
 import { screenAnswer, throughLink, unsafeLink, unsafePath } from "../src/safety.ts";
@@ -2639,6 +2639,56 @@ describe("abso mcp (#44): the commands as MCP tools", () => {
 		const parsed = parseArgs("publish", argv.slice(1), commandTable().publish!.flags);
 		assert.equal(parsed.flags.get("message"), "--server=x");
 		assert.deepEqual(parsed.positionals, ["--server=x"]);
+	});
+
+	it("keeps a tool call's folder and --attach files inside the folder the server started in (Security on 233)", async () => {
+		const { folders } = await project({ "a.txt": "one\n" }, "alice");
+		const start = folders.alice!;
+		const refused = (input: Record<string, unknown>) => {
+			const r = confineCall(start, input);
+			return "refused" in r ? r.refused : "";
+		};
+		assert.deepEqual(confineCall(start, {}), { folder: start });
+		assert.deepEqual(confineCall(start, { folder: "sub" }), { folder: join(start, "sub") });
+		assert.deepEqual(confineCall(start, { attach: "a.txt, sub/b.png" }), { folder: start });
+		assert.match(refused({ folder: ".." }), /^folder "\.\." is outside .*, the folder this server started in/);
+		assert.match(refused({ folder: dirname(start) }), /is outside/);
+		assert.match(refused({ folder: "sub/../.." }), /is outside/);
+		assert.match(refused({ attach: "a.txt,../x.png" }), /^--attach \.\.\/x\.png is outside/);
+		assert.match(refused({ attach: join(tmpdir(), "x.png") }), /is outside/);
+		assert.match(refused({ folder: "sub", attach: "../../x.png" }), /is outside/);
+		assert.deepEqual(confineCall(start, { folder: "sub", attach: "../a.txt" }), { folder: join(start, "sub") });
+		const server = mcp(start);
+		try {
+			const up = await server.call("tools/call", { name: "status", arguments: { folder: ".." } });
+			assert.equal(up.result.isError, true);
+			assert.match(up.result.content[0].text, /is outside/);
+			const attach = await server.call("tools/call", {
+				name: "issue",
+				arguments: { args: ["1"], comment: "see", attach: "../../secret.png" },
+			});
+			assert.equal(attach.result.isError, true);
+			assert.match(attach.result.content[0].text, /^--attach \.\.\/\.\.\/secret\.png is outside/);
+		} finally {
+			server.close();
+		}
+	});
+
+	it("serves no -file twin, so no tool reads its text from a file", () => {
+		for (const tool of mcpTools())
+			for (const key of Object.keys(tool.inputSchema.properties as object))
+				assert.ok(!key.endsWith("-file") && key !== "file", `${tool.name} takes ${key}`);
+	});
+
+	it("abso login, box and logout outside a folder act on https://api.abso.dev", () => {
+		const outside = mkdtempSync(join(tmpdir(), "abso-login-"));
+		try {
+			assert.equal(boxServer(parseArgs("login", [], { server: "string" }), { cwd: outside }), "https://api.abso.dev");
+			const given = parseArgs("login", ["--server", "https://example.test"], { server: "string" });
+			assert.equal(boxServer(given, { cwd: outside }), "https://example.test");
+		} finally {
+			rmSync(outside, { recursive: true, force: true });
+		}
 	});
 
 	it("publish --done takes the start note back once it is published", async () => {

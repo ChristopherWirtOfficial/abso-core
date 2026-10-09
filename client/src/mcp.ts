@@ -9,7 +9,8 @@
 // The protocol is JSON-RPC 2.0, one message per line, with no library: the
 // client uses nothing outside Node.
 
-import { resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { clientVersion } from "./client-version.ts";
 import { commandTable, main } from "./main.ts";
 
@@ -92,7 +93,8 @@ export function mcpTools(): Tool[] {
 					},
 					folder: {
 						type: "string",
-						description: "The abso folder to run in (default: the folder this server started in).",
+						description:
+							"The abso folder to run in: the folder this server started in (the default), or one inside it.",
 					},
 					json: { type: "boolean", description: "Answer with the command's JSON (as --json) instead of its text." },
 					...flags,
@@ -101,6 +103,50 @@ export function mcpTools(): Tool[] {
 			},
 		};
 	});
+}
+
+/** A path as it really is (through links), or as given when it doesn't exist. */
+function real(path: string): string {
+	try {
+		return realpathSync.native(path);
+	} catch {
+		return path;
+	}
+}
+
+/** Whether `path` is `start` or inside it, after links are followed. */
+function inside(start: string, path: string): boolean {
+	const rel = relative(real(start), real(path));
+	return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+/**
+ * Where a tool call runs, and what it may read (Security on 233): its folder and
+ * every --attach file stay inside the folder the server started in. A relative
+ * path that climbs out (..), an absolute one elsewhere, or a link out is
+ * refused, so no tool reads a file outside the project. Answers the folder, or
+ * why the call is refused.
+ */
+export function confineCall(
+	start: string,
+	input: Readonly<Record<string, unknown>>,
+): { folder: string } | { refused: string } {
+	const named = typeof input.folder === "string" && input.folder !== "" ? input.folder : undefined;
+	const folder = named === undefined ? start : resolve(start, named);
+	if (!inside(start, folder))
+		return {
+			refused: `folder ${JSON.stringify(named)} is outside ${start}, the folder this server started in; tools run there or below`,
+		};
+	if (typeof input.attach === "string")
+		for (const p of input.attach
+			.split(",")
+			.map((x) => x.trim())
+			.filter((x) => x !== ""))
+			if (!inside(start, resolve(folder, p)))
+				return {
+					refused: `--attach ${p} is outside ${start}, the folder this server started in; a tool attaches files from there or below`,
+				};
+	return { folder };
 }
 
 /** The command line a tool call stands for: flags as --name=value, then the words after --. */
@@ -158,7 +204,9 @@ export async function serveMcp(
 				const command = MCP_COMMANDS.find((c) => toolName(c) === name);
 				if (command === undefined) return fail(id, -32602, `no tool ${JSON.stringify(name)}; tools/list names them`);
 				const args = (params.arguments ?? {}) as Record<string, unknown>;
-				const folder = typeof args.folder === "string" && args.folder !== "" ? resolve(cwd, args.folder) : cwd;
+				const where = confineCall(cwd, args);
+				if ("refused" in where) return reply(id, { content: [{ type: "text", text: where.refused }], isError: true });
+				const folder = where.folder;
 				let streamed = "";
 				const result = await main(argvFor(command, args), {
 					cwd: folder,
