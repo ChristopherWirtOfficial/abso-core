@@ -120,12 +120,15 @@ function inside(start: string, path: string): boolean {
 	return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
+/** The tool inputs that name files on this machine to read, comma-separated: each is confined like the folder. */
+export const FILE_INPUTS = ["attach", "clean"] as const;
+
 /**
  * Where a tool call runs, and what it may read: its folder and
- * every --attach file stay inside the folder the server started in. A relative
- * path that climbs out (..), an absolute one elsewhere, or a link out is
- * refused, so no tool reads a file outside the project. Answers the folder, or
- * why the call is refused.
+ * every file a FILE_INPUTS input names stay inside the folder the server
+ * started in. A relative path that climbs out (..), an absolute one elsewhere,
+ * or a link out is refused, so no tool reads a file outside the project.
+ * Answers the folder, or why the call is refused.
  */
 export function confineCall(
 	start: string,
@@ -137,15 +140,18 @@ export function confineCall(
 		return {
 			refused: `folder ${JSON.stringify(named)} is outside ${start}, the folder this server started in; tools run there or below`,
 		};
-	if (typeof input.attach === "string")
-		for (const p of input.attach
+	for (const flag of FILE_INPUTS) {
+		const value = input[flag];
+		if (typeof value !== "string") continue;
+		for (const p of value
 			.split(",")
 			.map((x) => x.trim())
 			.filter((x) => x !== ""))
 			if (!inside(start, resolve(folder, p)))
 				return {
-					refused: `--attach ${p} is outside ${start}, the folder this server started in; a tool attaches files from there or below`,
+					refused: `--${flag} ${p} is outside ${start}, the folder this server started in; a tool reads files from there or below`,
 				};
+	}
 	return { folder };
 }
 

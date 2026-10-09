@@ -2657,6 +2657,8 @@ describe("abso mcp (#44): the commands as MCP tools", () => {
 		assert.match(refused({ attach: "a.txt,../x.png" }), /^--attach \.\.\/x\.png is outside/);
 		assert.match(refused({ attach: join(tmpdir(), "x.png") }), /is outside/);
 		assert.match(refused({ folder: "sub", attach: "../../x.png" }), /is outside/);
+		assert.match(refused({ clean: "../clean.json" }), /^--clean \.\.\/clean\.json is outside/);
+		assert.deepEqual(confineCall(start, { clean: "clean.json" }), { folder: start });
 		assert.deepEqual(confineCall(start, { folder: "sub", attach: "../a.txt" }), { folder: join(start, "sub") });
 		const server = mcp(start);
 		try {

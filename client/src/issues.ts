@@ -7,7 +7,19 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import type { Api, Ask, Attachment, Draft, DraftBody, IssuePage, IssueRow, IssueSearchHit } from "./api.ts";
+import {
+	type Api,
+	ApiError,
+	type Ask,
+	type Attachment,
+	type CopyAnswer,
+	type CopyBody,
+	type Draft,
+	type DraftBody,
+	type IssuePage,
+	type IssueRow,
+	type IssueSearchHit,
+} from "./api.ts";
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { type Env, type Output, open, plural } from "./commands.ts";
 import { type Config, readMachineServers, trustedServers } from "./config.ts";
@@ -325,6 +337,76 @@ async function runDraft(api: Api, args: Parsed, words: string[]): Promise<Output
 	};
 }
 
+/** The flags --copy-to goes with: anything else on the same command is refused, so a copy is never half an edit. */
+const COPY_FLAGS = new Set(["copy-to", "clean", "dry-run"]);
+
+/** abso issue <N> --copy-to <project>: the server reads the issue and writes the copy. */
+async function runCopy(api: Api, id: number, to: string, args: Parsed, env: Env): Promise<Output> {
+	const other = [...args.flags.keys()].filter((f) => !COPY_FLAGS.has(f) && f !== "json");
+	if (other.length > 0)
+		throw new UsageError(`--copy-to goes alone (with --clean and --dry-run), not with --${other[0]}`);
+	if (to === api.config.project)
+		throw new UsageError(`issue ${id} is already in ${to}; --copy-to names another project`);
+	const clean = str(args, "clean");
+	const texts = clean === undefined ? {} : readClean(resolve(env.cwd, clean), clean);
+	const dryRun = bool(args, "dry-run");
+	const from = api.config.project;
+	let answer: CopyAnswer;
+	try {
+		answer = await api.issueCopy(to, { ...texts, from, issue: id, ...(dryRun ? { dryRun: true } : {}) });
+	} catch (e) {
+		if (e instanceof ApiError && e.status === 403 && !dryRun)
+			throw new ApiError(`${e.message}. --dry-run still shows what would go.`, e.status);
+		throw e;
+	}
+	if ("dryRun" in answer) {
+		const p = answer.plan;
+		const edited = (list: { edited: boolean }[]) => list.filter((x) => x.edited).length;
+		const lines = [
+			`A dry run: nothing was written. Copying ${from} issue ${id} into ${to} would make:`,
+			`  ${q(p.title)}${p.closed ? `, ${p.closed.how}` : ""}${p.edited.length > 0 ? ` (${p.edited.join(" and ")} edited when copied)` : ""}`,
+			`  ${plural(p.comments.length, "comment")}${edited(p.comments) > 0 ? ` (${edited(p.comments)} edited)` : ""}, ${plural(p.asks.length, "answered ask")}${edited(p.asks) > 0 ? ` (${edited(p.asks)} edited)` : ""}${p.labels.length > 0 ? `, labelled ${p.labels.join(", ")}` : ""}`,
+			...skippedLines(p.skipped),
+			`Run it again without --dry-run to copy it.`,
+		];
+		return { text: lines.join("\n"), json: answer };
+	}
+	return {
+		text: [
+			`Copied ${from} issue ${id} to ${to} issue ${answer.id}. Its comments and asks keep their authors and times, and issue ${id} has a comment saying where it went.`,
+			...skippedLines(answer.skipped),
+		].join("\n"),
+		json: answer,
+	};
+}
+
+function skippedLines(skipped: { comments: number[]; asks: number[] }): string[] {
+	const parts = [
+		...(skipped.comments.length > 0 ? [`comments ${skipped.comments.join(", ")}`] : []),
+		...(skipped.asks.length > 0 ? [`asks ${skipped.asks.join(", ")}`] : []),
+	];
+	return parts.length > 0 ? [`  not copied: ${parts.join("; ")} (open asks, and what --clean left out)`] : [];
+}
+
+/** --clean's file: cleaned texts by source id. The server checks each id against the issue it reads. */
+function readClean(path: string, given: string): Omit<CopyBody, "from" | "issue"> {
+	let raw: unknown;
+	try {
+		raw = JSON.parse(readFileSync(path, "utf8"));
+	} catch (e) {
+		throw new UsageError(
+			`--clean ${given}: ${(e as NodeJS.ErrnoException).code === "ENOENT" ? "no such file" : "not JSON"}`,
+		);
+	}
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+		throw new UsageError(`--clean ${given}: a JSON object with title, description, comments or asks`);
+	const known = new Set(["title", "description", "comments", "asks"]);
+	const unknown = Object.keys(raw).filter((k) => !known.has(k));
+	if (unknown.length > 0)
+		throw new UsageError(`--clean ${given}: ${unknown[0]} isn't one of title, description, comments, asks`);
+	return raw as Omit<CopyBody, "from" | "issue">;
+}
+
 export async function runIssue(args: Parsed, env: Env): Promise<Output> {
 	const [first, ...rest] = args.positionals;
 	const { api } = openIssues(env);
@@ -347,6 +429,10 @@ export async function runIssue(args: Parsed, env: Env): Promise<Output> {
 			'abso issue <N> [--comment "..." | --object "..." | --drop | --reopen | --done [--done-by <version>] | an edit], or abso issue new "<title>"',
 		);
 	const id = issueNumber(first);
+	const copyTo = str(args, "copy-to");
+	if (copyTo !== undefined) return runCopy(api, id, copyTo, args, env);
+	if (str(args, "clean") !== undefined || bool(args, "dry-run"))
+		throw new UsageError("--clean and --dry-run go with --copy-to <project>");
 	const comment = str(args, "comment");
 	const object = str(args, "object");
 	const doneBy = str(args, "done-by");

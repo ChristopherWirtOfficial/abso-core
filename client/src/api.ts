@@ -97,6 +97,32 @@ export function newsLines(news: News): string[] {
 	return (typeof news === "string" ? [news] : [...news]).filter((s) => typeof s === "string" && s.trim() !== "");
 }
 
+/** An issue copy's request: the source, and any texts given cleaned, by their source ids. */
+export interface CopyBody {
+	from: string;
+	issue: number;
+	title?: string;
+	description?: string;
+	comments?: { id: number; text?: string }[];
+	asks?: { id: number; question?: string; answer?: string }[];
+}
+
+/** What a copy writes, as a dry run answers it. */
+export interface CopyPlan {
+	from: { project: string; issue: number };
+	title: string;
+	edited: ("title" | "description")[];
+	labels: string[];
+	closed: { how: "done" | "dropped" } | null;
+	comments: { edited: boolean }[];
+	asks: { edited: boolean }[];
+	skipped: { comments: number[]; asks: number[] };
+}
+
+export type CopyAnswer =
+	| { dryRun: true; plan: CopyPlan }
+	| { ok: true; id: number; from: { project: string; issue: number }; skipped: { comments: number[]; asks: number[] } };
+
 export class Api {
 	readonly config: Config;
 	readonly timeoutMs: number;
@@ -450,6 +476,17 @@ export class Api {
 			);
 		if (!res.ok) throw new ApiError(`uploading ${name} answered ${res.status}: ${errorSentence(text)}`, res.status);
 		return JSON.parse(text) as Attachment;
+	}
+
+	/**
+	 * Copies issue `body.issue` of this project into project `to`, keeping
+	 * authors and times: the Issues server reads the source itself, and only
+	 * texts may be given cleaned. A dry run answers the plan and writes nothing.
+	 */
+	issueCopy(to: string, body: CopyBody & { dryRun?: boolean }): Promise<CopyAnswer> {
+		const there = new Api({ ...this.config, project: to }, this.timeoutMs);
+		there.issuesServer = this.issuesServer;
+		return there.#issues("POST", there.agentPath("copy"), body);
 	}
 
 	/** Where an attachment is served. */
