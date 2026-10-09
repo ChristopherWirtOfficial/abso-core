@@ -36,14 +36,14 @@ test("with no key, the shared token is unchanged", () => {
 	assert.deepEqual(credentialLabel(root, "https://abso.example", env), { kind: "shared token", id: null });
 });
 
-test("install writes .abso/key and does not leave the key in the returned value", () => {
+test("install writes .avcs/key and does not leave the key in the returned value", () => {
 	const root = folder();
 	const installed = installKey(root, JSON.stringify({ key: KEY, id: ID }));
 	assert.deepEqual(installed, { id: ID });
-	const stored = readFileSync(join(root, ".abso", "key"), "utf8");
+	const stored = readFileSync(join(root, ".avcs", "key"), "utf8");
 	assert.equal(stored.includes(KEY), true);
 	assert.equal(JSON.stringify(installed).includes(KEY), false);
-	writeFileSync(join(root, ".abso", "key"), stored);
+	writeFileSync(join(root, ".avcs", "key"), stored);
 });
 
 test("a key installed with --server before join is the one join's folder sends", () => {

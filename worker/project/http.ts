@@ -66,10 +66,12 @@ const NOT_FOR_READERS: Record<string, "answer" | "refuse"> = {
 };
 
 /** A path the project won't hold: .avcs/ is each folder's own settings. */
+/** A path under a folder's state folder (.abso/, or .avcs/ from before the rename), which never leaves it. */
 function localPath(paths: string[]): string | undefined {
-	return paths.find((p) => p === ".avcs" || p.startsWith(".avcs/") || p.startsWith("./.avcs/"));
+	return paths.find((p) => [".abso", ".avcs"].some((d) => p === d || p.startsWith(`${d}/`) || p.startsWith(`./${d}/`)));
 }
-const LOCAL = (p: string) => fail(400, `${p} is under .avcs/, which stays in the agent's folder`);
+const LOCAL = (p: string) =>
+	fail(400, `${p} is under ${p.replace(/^\.\//, "").split("/")[0]}/, which stays in the agent's folder`);
 
 /**
  * The reader rules (#37, Reporter), for one agent call: the answer to

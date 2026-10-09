@@ -99,7 +99,7 @@ export interface Fake {
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
 
 function isLocal(path: string): boolean {
-	return path === ".abso" || path.startsWith(".abso/") || path.startsWith("./.abso/");
+	return [".abso", ".avcs"].some((d) => path === d || path.startsWith(`${d}/`) || path.startsWith(`./${d}/`));
 }
 
 async function readBody(req: IncomingMessage): Promise<Buffer> {

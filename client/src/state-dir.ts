@@ -1,6 +1,8 @@
-// Where abso keeps its state (the rename from avcs). A new folder keeps it in .abso/ and the user's in ~/.abso/.
-// Folders and machines from before keep working on .avcs/ and ~/.avcs/, untouched: a folder is never half-moved,
-// so an older client or installed mod still finds it. A later `abso migrate` moves a folder once its mods are updated.
+// Where abso keeps its state (the rename from avcs). Reading takes .abso/ first, then .avcs/, so a folder in
+// either works. A new folder is still made with .avcs/ for now: an edit mod or Cursor hook installed before the
+// rename looks only for .avcs/config.json, and would stop recording a .abso/ folder's edits without a word.
+// New folders move to .abso/ once installs can say which mods know it; `abso migrate` will move old ones. The
+// user's files are written to ~/.abso/ (an older client that can't find them says so: it isn't silent).
 // No imports from the rest of the client, so any module can use this.
 
 import { existsSync } from "node:fs";
@@ -10,12 +12,15 @@ export const STATE_DIR = ".abso";
 export const OLD_STATE_DIR = ".avcs";
 const STATE_DIRS = [STATE_DIR, OLD_STATE_DIR] as const;
 
-/** A folder's state folder: whichever has a config.json (.abso first), else whichever exists, else .abso for a folder not made yet. */
+/** A folder's state folder: whichever has a config.json (.abso first), else whichever exists, else .avcs for a folder not made yet (see above). */
 export function stateDir(root: string): string {
 	for (const name of STATE_DIRS) if (existsSync(join(root, name, "config.json"))) return join(root, name);
 	for (const name of STATE_DIRS) if (existsSync(join(root, name))) return join(root, name);
-	return join(root, STATE_DIR);
+	return join(root, NEW_FOLDER_DIR);
 }
+
+/** What a new folder is made with: .avcs until installed mods can be relied on to know .abso. */
+export const NEW_FOLDER_DIR: string = OLD_STATE_DIR;
 
 /** A file under the user's home to read: ~/.abso/<parts>, else the old ~/.avcs/<parts> when only that exists, else the new place. */
 export function homeFile(home: string, ...parts: string[]): string {

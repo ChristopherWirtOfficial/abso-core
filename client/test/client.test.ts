@@ -179,7 +179,7 @@ describe("init and join", () => {
 		const { name, folders } = await project({ "src/a.ts": "one\ntwo\n", "README.md": "# hi\n" }, "alice", "bob");
 		assert.equal(read(folders.bob!, "src/a.ts"), "one\ntwo\n");
 		assert.equal(read(folders.bob!, "README.md"), "# hi\n");
-		const config = JSON.parse(read(folders.bob!, ".abso/config.json"));
+		const config = JSON.parse(read(folders.bob!, ".avcs/config.json"));
 		assert.deepEqual(config, { server: fake.url, project: name, agent: "bob" });
 		const status = await avcs(folders.alice!, "status");
 		assert.equal(status.json.version, 0);
@@ -288,17 +288,17 @@ describe("init and join", () => {
 		assert.equal((await avcs(dir, "record")).json.sent, 0);
 	});
 
-	it("keeps .abso/ out of git through .git/info/exclude", async () => {
+	it("keeps .avcs/ out of git through .git/info/exclude", async () => {
 		const dir = temp();
 		write(dir, { "a.txt": "a\n", ".git/HEAD": "ref: refs/heads/main\n" });
 		const r = await avcs(dir, "init", "--server", fake.url, "--project", `p${++projects}`, "--agent", "alice");
 		assert.equal(r.exit, 0, r.out);
-		assert.match(read(dir, ".git/info/exclude"), /^\/\.abso\/$/m);
+		assert.match(read(dir, ".git/info/exclude"), /^\/\.avcs\/$/m);
 	});
 
 	it("never writes the token into the folder", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice", "bob");
-		assert.ok(!read(folders.bob!, ".abso/config.json").includes(TOKEN));
+		assert.ok(!read(folders.bob!, ".avcs/config.json").includes(TOKEN));
 	});
 
 	it("says plainly when the token is wrong", async () => {
@@ -403,13 +403,13 @@ describe("the hook", () => {
 	it("logs and exits quietly when the server is down, and record catches up", async () => {
 		const { name, folders } = await project({ "a.txt": "one\n" }, "alice");
 		const root = folders.alice!;
-		const config = JSON.parse(read(root, ".abso/config.json"));
-		writeFileSync(join(root, ".abso", "config.json"), JSON.stringify({ ...config, server: "http://127.0.0.1:9" }));
+		const config = JSON.parse(read(root, ".avcs/config.json"));
+		writeFileSync(join(root, ".avcs", "config.json"), JSON.stringify({ ...config, server: "http://127.0.0.1:9" }));
 		const r = await edit(root, "a.txt", "one\n", "ONE\n");
 		assert.match(r.outcome, /^error: could not reach/);
 		assert.equal(r.stdout, "");
-		assert.match(read(root, ".abso/hook.log"), /\tEdit\ta\.txt\terror: could not reach/);
-		writeFileSync(join(root, ".abso", "config.json"), JSON.stringify(config));
+		assert.match(read(root, ".avcs/hook.log"), /\tEdit\ta\.txt\terror: could not reach/);
+		writeFileSync(join(root, ".avcs", "config.json"), JSON.stringify(config));
 		assert.equal((await avcs(root, "record")).json.sent, 1);
 		assert.equal((await avcs(root, "publish", "-m", "caps")).exit, 0);
 		assert.equal(shared(name)["a.txt"], "ONE\n");
@@ -440,7 +440,7 @@ describe("the hook", () => {
 		const p = await spawnHook(input);
 		assert.equal(p.status, 0, p.stderr);
 		assert.equal(p.stdout, "");
-		assert.match(read(folders.alice!, ".abso/hook.log"), /\tEdit\ta\.txt\tsent edit\t/);
+		assert.match(read(folders.alice!, ".avcs/hook.log"), /\tEdit\ta\.txt\tsent edit\t/);
 		const bad = await spawnHook("not json");
 		assert.equal(bad.status, 0);
 	});
@@ -716,7 +716,7 @@ describe("announcements", () => {
 		const bob = await avcs(folders.bob!, "news");
 		assert.deepEqual(bob.json.news, ["Announcement from lead (as claimed): Stop publishing until v12 lands"]);
 		assert.match(
-			read(folders.bob!, ".abso/news.log"),
+			read(folders.bob!, ".avcs/news.log"),
 			/\tAnnouncement from lead \(as claimed\): Stop publishing until v12 lands\n$/,
 		);
 		assert.deepEqual((await avcs(folders.bob!, "news")).json.news, [], "each item comes once");
@@ -883,7 +883,7 @@ describe("drop, pluck, amend, labels and follow (#10, #27)", () => {
 		assert.equal(follow.exit, 0, follow.stderr);
 		assert.match(follow.stdout, /now follows label stable: .* It is on version 1\./);
 		assert.equal(read(bob, "a.txt"), "a1\n");
-		assert.equal(JSON.parse(read(bob, ".abso/config.json")).follow, "stable");
+		assert.equal(JSON.parse(read(bob, ".avcs/config.json")).follow, "stable");
 		assert.match((await text(bob, "status")).stdout, /It follows label stable/);
 		assert.match((await text(bob, "labels")).stdout, /stable: 1 {3}\(this folder follows it\)/);
 
@@ -897,7 +897,7 @@ describe("drop, pluck, amend, labels and follow (#10, #27)", () => {
 		const none = await avcs(bob, "follow", "--none");
 		assert.equal(none.exit, 0, none.out);
 		assert.equal(none.json.version, 2);
-		assert.equal("follow" in JSON.parse(read(bob, ".abso/config.json")), false);
+		assert.equal("follow" in JSON.parse(read(bob, ".avcs/config.json")), false);
 	});
 
 	it("plucks some versions of a named draft into shared", async () => {
@@ -1084,7 +1084,7 @@ describe("abso run starts again when the connection fails before any answer (tri
 		);
 		assert.ok(tries[0]!.key && tries.every((t) => t.key === tries[0]!.key), "one key for every try");
 		assert.match(
-			read(alice, ".abso/run.log"),
+			read(alice, ".avcs/run.log"),
 			/starting again \(try 2\), no answer came: node hi\.js\t.+\n.*starting again \(try 3\)/,
 		);
 	});
@@ -1115,7 +1115,7 @@ describe("abso run starts again when the connection fails before any answer (tri
 			[false, true],
 		);
 		assert.match(
-			read(folders.alice!, ".abso/run.log"),
+			read(folders.alice!, ".avcs/run.log"),
 			/starting again \(try 2\), no answer came: node hi\.js\trun answered 502: bad gateway/,
 		);
 	});
@@ -1580,8 +1580,8 @@ describe("the token goes only to abso servers (Security, #30)", () => {
 	it("refuses a folder whose config names another server, before any call", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice");
 		const alice = folders.alice!;
-		const config = JSON.parse(read(alice, ".abso/config.json"));
-		writeFileSync(join(alice, ".abso", "config.json"), JSON.stringify({ ...config, server: "https://evil.example" }));
+		const config = JSON.parse(read(alice, ".avcs/config.json"));
+		writeFileSync(join(alice, ".avcs", "config.json"), JSON.stringify({ ...config, server: "https://evil.example" }));
 		const r = await main(["status"], { cwd: alice, env: ENV, write: () => {} });
 		assert.equal(r.exit, 1);
 		assert.match(
@@ -2029,7 +2029,7 @@ describe("a folder missing files its view has (#37, Artist 1)", () => {
 		// What a partial join leaves: neither the file nor avcs's copy of it.
 		for (const rel of ["src/state.ts", "vite.config.ts"]) {
 			rmSync(join(bob, ...rel.split("/")));
-			rmSync(join(bob, ".abso", "known", ...rel.split("/")));
+			rmSync(join(bob, ".avcs", "known", ...rel.split("/")));
 		}
 		const status = await main(["status"], { cwd: bob, env: ENV, write: () => {} });
 		assert.match(
@@ -2277,7 +2277,7 @@ describe("one writer at a time for a folder's records (#51)", () => {
 	it("a command waits, then says who holds the lock; the hook skips; a lock left behind is taken over", async () => {
 		const { folders } = await project({ "a.txt": "one\n" }, "alice");
 		const root = folders.alice!;
-		const lock = join(root, ".abso", "lock");
+		const lock = join(root, ".avcs", "lock");
 		// Another process holding the lock, as a long sync would.
 		const holder = spawn(process.execPath, ["-e", "setTimeout(() => {}, 20000)"]);
 		try {
@@ -2290,13 +2290,13 @@ describe("one writer at a time for a folder's records (#51)", () => {
 			assert.match(
 				blocked.stderr,
 				new RegExp(
-					`another abso command \\(sync, process ${holder.pid}, since [0-9:]+ UTC\\) is changing this folder's records; run this again when it has finished\\. If none is running, delete \\.abso/lock\\.`,
+					`another abso command \\(sync, process ${holder.pid}, since [0-9:]+ UTC\\) is changing this folder's records; run this again when it has finished\\. If none is running, delete \\.avcs/lock\\.`,
 				),
 			);
 			const hooked = await hook(root, "Write", { file_path: join(root, "a.txt"), content: "two\n" });
 			assert.equal(hooked.outcome, "skipped: another abso command is changing this folder; abso record sends it");
 			assert.equal(
-				readFileSync(join(root, ".abso", "known", "a.txt"), "utf8"),
+				readFileSync(join(root, ".avcs", "known", "a.txt"), "utf8"),
 				"one\n",
 				"the known copy is left alone",
 			);
@@ -2309,7 +2309,7 @@ describe("one writer at a time for a folder's records (#51)", () => {
 		const after = await main(["record"], { cwd: root, env: ENV, write: () => {} });
 		assert.equal(after.exit, 0, after.stderr);
 		assert.equal(existsSync(lock), false, "no lock left behind");
-		assert.equal(readFileSync(join(root, ".abso", "known", "a.txt"), "utf8"), "two\n");
+		assert.equal(readFileSync(join(root, ".avcs", "known", "a.txt"), "utf8"), "two\n");
 	});
 
 	it("the mod's check: a lock renewed in the last 2 minutes is held, and so is one it can't read", () => {
@@ -2329,7 +2329,7 @@ describe("one writer at a time for a folder's records (#51)", () => {
 	it("two takers never both hold it: an unreadable lock is held until old, and one not renewed is taken over whatever its pid (AVCS - Git Lessons)", async () => {
 		const { folders } = await project({ "a.txt": "one\n" }, "alice");
 		const root = folders.alice!;
-		const lock = join(root, ".abso", "lock");
+		const lock = join(root, ".avcs", "lock");
 		// Empty, as one caught between creating and writing: held, not taken.
 		writeFileSync(lock, "");
 		assert.equal(tryFolderLock(root, "hook"), undefined);
@@ -2347,7 +2347,7 @@ describe("one writer at a time for a folder's records (#51)", () => {
 		assert.ok(again);
 		again();
 		assert.deepEqual(
-			readdirSync(join(root, ".abso")).filter((f) => f.startsWith("lock")),
+			readdirSync(join(root, ".avcs")).filter((f) => f.startsWith("lock")),
 			[],
 			"nothing left aside",
 		);
@@ -2365,7 +2365,7 @@ describe("files the server keeps whole (#46, found in the #56 import rehearsal)"
 		const { folders } = await project(files, "alice", "bob");
 		const status = await avcs(folders.alice!, "status");
 		assert.deepEqual(status.json.unrecorded, [], "nothing waits to be recorded right after init");
-		assert.match(readFileSync(join(folders.alice!, ".abso", "blobs.json"), "utf8"), /"package-lock\.json"/);
+		assert.match(readFileSync(join(folders.alice!, ".avcs", "blobs.json"), "utf8"), /"package-lock\.json"/);
 		assert.equal(readFileSync(join(folders.bob!, "package-lock.json"), "utf8"), '{\n  "v": 1\n}\n');
 		assert.deepEqual((await avcs(folders.bob!, "status")).json.unrecorded, []);
 
@@ -2693,7 +2693,7 @@ describe("a server that can't be reached (#37, GAME - UI/UX)", () => {
 		await new Promise<void>((ok) => listener.listen(0, "127.0.0.1", ok));
 		const port = (listener.address() as AddressInfo).port;
 		await new Promise<void>((ok) => listener.close(() => ok()));
-		const configPath = join(folders.alice!, ".abso", "config.json");
+		const configPath = join(folders.alice!, ".avcs", "config.json");
 		const config = JSON.parse(readFileSync(configPath, "utf8"));
 		writeFileSync(configPath, JSON.stringify({ ...config, server: `http://127.0.0.1:${port}` }));
 		const status = await main(["status"], { cwd: folders.alice!, env: ENV, write: () => {} });
@@ -3404,17 +3404,17 @@ describe("reader folders (#37, Reporter)", () => {
 			(await main(["status"], { cwd: dir, env: ENV, write: () => {} })).stdout,
 			/This folder is rep, a reader \(it records and publishes nothing\)/,
 		);
-		assert.match(read(dir, ".abso/hook.log"), /\tskipped: this folder is a reader\t/);
+		assert.match(read(dir, ".avcs/hook.log"), /\tskipped: this folder is a reader\t/);
 		// The server refuses too, whatever the folder says.
-		const config = JSON.parse(read(dir, ".abso/config.json"));
-		write(dir, { ".abso/config.json": JSON.stringify({ ...config, reader: undefined }) });
+		const config = JSON.parse(read(dir, ".avcs/config.json"));
+		write(dir, { ".avcs/config.json": JSON.stringify({ ...config, reader: undefined }) });
 		const forced = await main(["record"], { cwd: dir, env: ENV, write: () => {} });
 		assert.match(forced.stdout + forced.stderr, /agent rep is a reader: it records nothing/);
-		write(dir, { ".abso/config.json": JSON.stringify(config) });
+		write(dir, { ".avcs/config.json": JSON.stringify(config) });
 		// Back to a writer.
 		assert.equal((await avcs(dir, "restore", "--all")).exit, 0);
 		assert.equal((await avcs(dir, "reader", "off")).exit, 0);
-		assert.equal(JSON.parse(read(dir, ".abso/config.json")).reader, undefined);
+		assert.equal(JSON.parse(read(dir, ".avcs/config.json")).reader, undefined);
 		write(dir, { "notes.md": "now recorded\n" });
 		assert.equal((await avcs(dir, "publish", "-m", "rep writes")).exit, 0);
 	});
@@ -3425,7 +3425,7 @@ describe("reader folders (#37, Reporter)", () => {
 		assert.equal((await avcs(folders.alice!, "record")).exit, 0);
 		const on = await main(["reader", "on"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.equal(on.exit, 2);
-		assert.equal(JSON.parse(read(folders.alice!, ".abso/config.json")).reader, undefined);
+		assert.equal(JSON.parse(read(folders.alice!, ".avcs/config.json")).reader, undefined);
 	});
 });
 
@@ -3447,7 +3447,7 @@ describe("status warns when the last edit came from an older edit mod (#37, Repo
 				"424ms sending, 63ms queued (in process, async)",
 				...(version ? [version] : []),
 			].join("\t");
-		write(alice, { ".abso/hook.log": `${line()}\n` });
+		write(alice, { ".avcs/hook.log": `${line()}\n` });
 		install("0.1.0");
 		assert.doesNotMatch(await said(), /edit mod/, "an install without a commit: nothing to compare");
 		install("0.1.0+abc1234");
@@ -3455,9 +3455,9 @@ describe("status warns when the last edit came from an older edit mod (#37, Repo
 			await said(),
 			/\nThe last edit here \(at 22:50 UTC\) came from edit mod from before mods carried a version, but 0\.1\.0\+abc1234 is installed\. A chat keeps the mod it started with; restart the chat that edits this folder to load the installed one\.\n/,
 		);
-		write(alice, { ".abso/hook.log": `${line()}\n${line("avcs-mod/0.1.0+0ld0000")}\n` });
+		write(alice, { ".avcs/hook.log": `${line()}\n${line("avcs-mod/0.1.0+0ld0000")}\n` });
 		assert.match(await said(), /came from edit mod 0\.1\.0\+0ld0000, but 0\.1\.0\+abc1234 is installed/);
-		write(alice, { ".abso/hook.log": `${line("avcs-mod/0.1.0+abc1234")}\n` });
+		write(alice, { ".avcs/hook.log": `${line("avcs-mod/0.1.0+abc1234")}\n` });
 		assert.doesNotMatch(await said(), /edit mod/, "the installed mod sent it");
 	});
 });
@@ -3819,7 +3819,7 @@ describe("abso run when the connection drops", () => {
 		assert.equal(r.stderr, "");
 		assert.equal(r.streamed, "first\nsecond\n");
 		assert.equal(r.exit, 3);
-		assert.match(read(folders.alice!, ".abso/run.log"), /reconnecting \(try 1\) to: node slow\.js/);
+		assert.match(read(folders.alice!, ".avcs/run.log"), /reconnecting \(try 1\) to: node slow\.js/);
 	});
 
 	it("survives the reconnection dropping too", async () => {
@@ -3828,7 +3828,7 @@ describe("abso run when the connection drops", () => {
 		const r = await runWith(folders.alice!);
 		assert.equal(r.streamed, "first\nsecond\n");
 		assert.equal(r.exit, 3);
-		assert.equal(read(folders.alice!, ".abso/run.log").trim().split("\n").length, 2);
+		assert.equal(read(folders.alice!, ".avcs/run.log").trim().split("\n").length, 2);
 	});
 
 	it("reattaches when the server ends the stream with retry (a deploy), and copes with non-ASCII output", async () => {
@@ -3911,7 +3911,7 @@ describe("the executable bit and links", () => {
 		const alice = folders.alice!;
 		const synced = await avcs(alice, "sync");
 		assert.equal(synced.exit, 0, synced.out);
-		assert.deepEqual(JSON.parse(read(alice, ".abso/modes.json")), { "run.sh": { exec: true } });
+		assert.deepEqual(JSON.parse(read(alice, ".avcs/modes.json")), { "run.sh": { exec: true } });
 		if (process.platform !== "win32")
 			assert.ok((statSync(join(alice, "run.sh")).mode & 0o100) !== 0, "the bit is set on disk");
 		assert.equal((await avcs(alice, "record")).json.sent, 0, "nothing to send back");
@@ -4387,19 +4387,20 @@ describe("paths too long for Windows", () => {
 });
 
 describe("the state folder after the rename to abso", () => {
-	it("keeps new folders in .abso, and folders from before in .avcs, untouched", async () => {
+	it("makes new folders with .avcs for now, and works in a .abso folder too, never half-moving either", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice");
 		const dir = folders.alice!;
-		assert.equal(existsSync(join(dir, ".abso", "config.json")), true, "a new folder keeps its state in .abso");
-		assert.equal(existsSync(join(dir, ".avcs")), false, "and makes no .avcs");
-		// A folder from before: only .avcs. It keeps working, and never gets a second state folder.
-		renameSync(join(dir, ".abso"), join(dir, ".avcs"));
+		// An edit mod installed before the rename finds only .avcs/config.json: a .abso folder's edits would go unrecorded.
+		assert.equal(existsSync(join(dir, ".avcs", "config.json")), true, "a new folder keeps its state in .avcs for now");
+		assert.equal(existsSync(join(dir, ".abso")), false, "and makes no .abso");
+		// A folder moved to .abso (by hand, or a later abso migrate) works the same, and gets no second state folder.
+		renameSync(join(dir, ".avcs"), join(dir, ".abso"));
 		writeFileSync(join(dir, "a.txt"), "a\nb\n");
 		const rec = await avcs(dir, "record");
 		assert.equal(rec.exit, 0, rec.out);
 		assert.equal(rec.json.sent, 1);
-		assert.equal(existsSync(join(dir, ".abso")), false, "an older folder is never half-moved");
-		assert.equal(stateDir(dir), join(dir, ".avcs"));
+		assert.equal(existsSync(join(dir, ".avcs")), false, "a moved folder is never half-moved back");
+		assert.equal(stateDir(dir), join(dir, ".abso"));
 	});
 
 	it("reads ~/.abso before ~/.avcs and writes only ~/.abso, leaving the old file as it is", () => {
