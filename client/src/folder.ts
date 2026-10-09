@@ -26,8 +26,9 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { blobOf, keptWholeAs, readKnownBlobs } from "./blobs.ts";
+import type { CleanFiles } from "./clean-files.ts";
 import { type GitHome, gitIgnoreSetup, type Ignore, isLocalOnly, makeIgnore, normalize, readAllSync } from "./core.ts";
-import { type Mode, modeChange, onDisk, PLAIN, readKnownModes } from "./modes.ts";
+import { FILE_MODE, type Mode, modeChange, onDisk, PLAIN, readKnownModes } from "./modes.ts";
 import { stateDir } from "./state-dir.ts";
 
 export { type Ignore, isLocalOnly, normalize, withEndingsOf } from "./core.ts";
@@ -279,12 +280,13 @@ export function isPaused(root: string): boolean {
 
 // --- the known copy ---
 
-function knownPath(root: string, rel: string): string {
-	return join(stateDir(root), KNOWN, ...insideParts(rel));
+/** `state` is the folder's stateDir, for a caller that looks up many files: finding it checks the disk each time. */
+export function knownPath(root: string, rel: string, state: string = stateDir(root)): string {
+	return join(state, KNOWN, ...insideParts(rel));
 }
 
-export function readKnown(root: string, rel: string): string | undefined {
-	return readText(knownPath(root, rel));
+export function readKnown(root: string, rel: string, state?: string): string | undefined {
+	return readText(knownPath(root, rel, state));
 }
 
 export function writeKnown(root: string, rel: string, text: string): void {
@@ -321,11 +323,15 @@ export function clearKnown(root: string): void {
  * server's form), known files that are gone (null), and the modes that differ
  * from the known modes. An empty file is a file like any other (""); a link's
  * text is "".
+ *
+ * `clean` lets status skip reading the files it found unchanged last time
+ * (clean-files.ts). record never passes it, so it always reads every file.
  */
 export function unrecorded(
 	root: string,
 	all = false,
 	meantBinary: ReadonlySet<string> = new Set(),
+	clean?: CleanFiles,
 ): {
 	files: Map<string, string | null>;
 	blobs: Map<string, BlobToSend>;
@@ -342,10 +348,23 @@ export function unrecorded(
 	const turnedBinary: TurnedBinary[] = [];
 	// Exact names: on a case-insensitive disk, known/a.ts would also answer for A.ts, hiding a rename that changes only case.
 	const knownPaths = new Set(listKnown(root));
+	const state = stateDir(root);
 	const knownBlobs = readKnownBlobs(root);
 	const knownModes = readKnownModes(root);
+	const trusted = all ? undefined : clean;
 	for (const rel of walk(root, ignore)) {
 		const was = knownModes.get(rel) ?? PLAIN;
+		// Taken before the file is read, so an edit during the read changes the key.
+		const key =
+			trusted && knownPaths.has(rel) && was.link === null
+				? trusted.key(absolute(root, rel), knownPath(root, rel, state))
+				: undefined;
+		if (key && trusted!.check(rel, key)) {
+			present.add(rel);
+			const change = modeChange(was, { exec: FILE_MODE ? (key.mode & 0o111) !== 0 : was.exec, link: null });
+			if (change) modes[rel] = change;
+			continue;
+		}
 		const d = onDisk(absolute(root, rel), was);
 		if (d === undefined) continue;
 		if (d.text === undefined) {
@@ -367,11 +386,13 @@ export function unrecorded(
 			if (all || knownBlobs.get(rel) !== b.sha) blobs.set(rel, { sha: b.sha, bytes: b.bytes });
 		} else {
 			const text = normalize(d.text);
-			const known = knownPaths.has(rel) ? readKnown(root, rel) : undefined;
+			const known = knownPaths.has(rel) ? readKnown(root, rel, state) : undefined;
 			present.add(rel);
 			// A file the server keeps whole has no known copy, only its hash (#46).
 			if (all || (known !== text && !(known === undefined && keptWholeAs(text, knownBlobs.get(rel)))))
 				out.set(rel, text);
+			if (key && d.link === null && known === text) trusted!.mark(rel, key, d.text.includes("\r"));
+			else trusted?.drop(rel);
 		}
 		// --all sends every file's whole mode, as it sends every file's text.
 		const change = all ? { exec: d.exec, link: d.link } : modeChange(was, d);

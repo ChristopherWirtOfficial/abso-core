@@ -8,6 +8,7 @@ import type { OpenCollision } from "./api.ts";
 import { bool, type Parsed, UsageError } from "./args.ts";
 import { readKnownBlobs, writeKnownBlobs } from "./blobs.ts";
 import { ciText } from "./ci.ts";
+import { CleanFiles } from "./clean-files.ts";
 import { newerCommitNote } from "./client-version.ts";
 import { type Env, heard, type Output, open, plural } from "./command-env.ts";
 import {
@@ -26,6 +27,7 @@ import {
 	absolute,
 	forgetKnown,
 	isLocalOnly,
+	knownPath,
 	listKnown,
 	newFileEndings,
 	normalize,
@@ -68,13 +70,24 @@ export function missingHere(root: string, view: readonly string[], pending: Read
  * line endings (#37: Python's text mode on Windows writes CRLF).
  * abso records them, and abso run sends them, with LF; a tool run here sees
  * CRLF. Files git would check out with CRLF are left out of the list.
+ * With `clean` (status), a file found unchanged before is answered without reading it.
  */
-export function crlfOnly(root: string): string[] {
+export function crlfOnly(root: string, clean?: CleanFiles): string[] {
 	const out: string[] = [];
+	const state = stateDir(root);
 	for (const rel of listKnown(root)) {
+		const key = clean?.key(absolute(root, rel), knownPath(root, rel, state));
+		const was = key && clean!.check(rel, key);
+		if (was) {
+			if (was.cr) out.push(rel);
+			continue;
+		}
 		const disk = readText(absolute(root, rel));
 		if (disk === undefined || !disk.includes("\r")) continue;
-		if (normalize(disk) === readKnown(root, rel)) out.push(rel);
+		if (normalize(disk) === readKnown(root, rel, state)) {
+			out.push(rel);
+			if (key) clean!.mark(rel, key, true);
+		}
 	}
 	const git = newFileEndings(root, out);
 	return out.filter((rel) => git.get(rel) !== "crlf").sort();
@@ -269,9 +282,11 @@ export async function runStatus(args: Parsed, env: Env): Promise<Output> {
 	const { root, config, api } = open(env);
 	const short = bool(args, "short");
 	const { files: view, ...status } = short ? { ...(await api.status()), files: undefined } : await api.statusAndFiles();
-	const pending = unrecorded(root);
+	const clean = CleanFiles.load(root);
+	const pending = unrecorded(root, false, new Set(), clean);
 	const local = new Set([...pending.files.keys(), ...pending.blobs.keys(), ...Object.keys(pending.modes)]);
 	if (short) {
+		clean.save();
 		// One word to stamp a build with (#37): 214, coast@3, 214+unpublished.
 		const me = status.agents.find((a) => a.agent === config.agent);
 		const unpublished = local.size > 0 || (me?.draftChanges ?? 0) > 0;
@@ -281,7 +296,8 @@ export async function runStatus(args: Parsed, env: Env): Promise<Output> {
 	}
 	const missing = view === undefined ? [] : missingHere(root, view.files, local);
 	const unwritten = readUnwritten(root);
-	const crlf = crlfOnly(root);
+	const crlf = crlfOnly(root, clean);
+	clean.save();
 	// Files an earlier record added to the draft and that are gone again (#37: scratch files a run
 	// recorded, deleted after): nothing reached shared, and the next record takes them out of the draft.
 	const deleted = [...pending.files].filter(([, text]) => text === null).map(([rel]) => rel);

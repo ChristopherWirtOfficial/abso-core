@@ -337,7 +337,10 @@ describe("installing a mod", () => {
 		assert.equal(keptModCommit(spec, home), "fffffff", "a kept answer is used while nothing moved");
 
 		// A file changed in the same moment the answer was kept is never trusted, even when its size and time match.
+		// A time a minute ahead stays too new however long the run takes.
 		write(spec.from, "src/core.ts", "export const core = 2\n");
+		const soon = new Date(Date.now() + 60_000);
+		utimesSync(at(spec.from, "src/core.ts"), soon, soon);
 		assert.equal(keptModCommit(spec, home), `${mod}.dirty`);
 		plant();
 		assert.equal(keptModCommit(spec, home), `${mod}.dirty`, "too new to trust: git runs again");

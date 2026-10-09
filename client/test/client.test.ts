@@ -46,7 +46,7 @@ import {
 	uncomposedText,
 } from "../src/core.ts";
 import { unifiedDiff } from "../src/diff.ts";
-import { absolute, writeFileAtomic } from "../src/folder.ts";
+import { absolute, knownPath, unrecorded, writeFileAtomic } from "../src/folder.ts";
 import { runHook } from "../src/hook.ts";
 import { tryFolderLock } from "../src/lock.ts";
 import { boxServer, commandTable, main } from "../src/main.ts";
@@ -3493,6 +3493,72 @@ describe("wishlist: publish clarity, who, fix-eol, one-version hint (#37)", () =
 		const after = await avcs(folders.alice!, "status");
 		assert.deepEqual(after.json.crlf, []);
 		assert.deepEqual(after.json.unrecorded, []);
+	});
+
+	it("status skips reading files it found unchanged before, never trusts one changed too recently, and record still reads every file", async () => {
+		const { folders } = await project({ "a.txt": "a\n", "b.txt": "b\n", "c.txt": "c\r\n" }, "alice", "bob");
+		const root = folders.alice!;
+		const record = join(stateDir(root), "clean.json");
+		const old = new Date(Date.now() - 60_000);
+		// The file and its known copy a minute old, as after a quiet spell.
+		const age = (...rels: string[]) => {
+			for (const rel of rels) {
+				utimesSync(join(root, rel), old, old);
+				utimesSync(knownPath(root, rel), old, old);
+			}
+		};
+		// Changes a file without changing its size or time: only reading it can tell.
+		const swap = (rel: string, text: string) => {
+			const was = statSync(join(root, rel));
+			writeFileSync(join(root, rel), text);
+			utimesSync(join(root, rel), was.atime, was.mtime);
+		};
+		writeFileSync(join(root, "c.txt"), "c\r\n");
+
+		// Files too new to trust are read, and not kept: a swap is still caught. A time a minute ahead stays
+		// too new however long the run takes.
+		const soon = new Date(Date.now() + 60_000);
+		for (const rel of ["a.txt", "b.txt", "c.txt"]) utimesSync(join(root, rel), soon, soon);
+		assert.deepEqual((await avcs(root, "status")).json.unrecorded, []);
+		swap("a.txt", "A\n");
+		assert.deepEqual((await avcs(root, "status")).json.unrecorded, ["a.txt"]);
+		swap("a.txt", "a\n");
+
+		// Old files are kept after one status, and the next answers from the record without reading them.
+		age("a.txt", "b.txt", "c.txt");
+		const first = await avcs(root, "status");
+		assert.deepEqual(first.json.unrecorded, []);
+		assert.deepEqual(first.json.crlf, ["c.txt"]);
+		assert.deepEqual(Object.keys(JSON.parse(readFileSync(record, "utf8")).files).sort(), ["a.txt", "b.txt", "c.txt"]);
+		swap("b.txt", "B\n");
+		const second = await avcs(root, "status");
+		assert.deepEqual(second.json.unrecorded, [], "b.txt was answered from the record");
+		assert.deepEqual(second.json.crlf, ["c.txt"]);
+		// What record sends is read from every file, whatever the record says.
+		assert.deepEqual([...unrecorded(root).files.keys()], ["b.txt"]);
+
+		// A record of an unknown format, or one that doesn't parse, is not used.
+		const kept = JSON.parse(readFileSync(record, "utf8"));
+		writeFileSync(record, JSON.stringify({ ...kept, format: 2 }));
+		assert.deepEqual((await avcs(root, "status")).json.unrecorded, ["b.txt"]);
+		writeFileSync(record, "not json");
+		assert.deepEqual((await avcs(root, "status")).json.unrecorded, ["b.txt"]);
+
+		// An edit that changes the size or time is read at once.
+		swap("b.txt", "b\n");
+		age("b.txt");
+		assert.deepEqual((await avcs(root, "status")).json.unrecorded, []);
+		writeFileSync(join(root, "b.txt"), "bb\n");
+		assert.deepEqual((await avcs(root, "status")).json.unrecorded, ["b.txt"]);
+
+		// A sync writes the file and its known copy, so what was kept for them no longer holds.
+		writeFileSync(join(root, "b.txt"), "b\n");
+		write(folders.bob!, { "a.txt": "a2\n" });
+		assert.equal((await avcs(folders.bob!, "publish", "-m", "a2")).exit, 0);
+		assert.equal((await avcs(root, "sync")).exit, 0);
+		assert.equal(readFileSync(join(root, "a.txt"), "utf8"), "a2\n");
+		swap("a.txt", "a3\n");
+		assert.deepEqual((await avcs(root, "status")).json.unrecorded, ["a.txt"]);
 	});
 
 	it("several files marked against one version get one settle --theirs hint", () => {
