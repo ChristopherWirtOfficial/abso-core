@@ -37,7 +37,7 @@ import {
 	takeNews,
 } from "./commands.ts";
 import { configPath, findRoot, installKey, readConfig, readToken } from "./config.ts";
-import { TOKEN_SERVERS } from "./core.ts";
+import { newsBlockLines, newsShown, TOKEN_SERVERS } from "./core.ts";
 import { runDraftSync, runLand, runSwitch } from "./drafts.ts";
 import { runExport } from "./export.ts";
 import { runBlame, runWhere, runWho, runWhy } from "./history.ts";
@@ -746,7 +746,7 @@ export function commandTable(): Readonly<
 }
 
 function newsBlock(news: readonly string[]): string[] {
-	return news.length === 0 ? [] : ["News:", ...news.map((n) => `  ${n}`)];
+	return newsBlockLines(news.map((n) => newsShown(n)));
 }
 
 export async function main(argv: readonly string[], env: Env): Promise<MainResult> {

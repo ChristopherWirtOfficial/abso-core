@@ -21,15 +21,33 @@ test("news carries its time after the who", () => {
 	const at = Date.parse("2026-10-08T08:34:00Z");
 	assert.equal(
 		newsWithTime("Announcement from ann (as claimed): Split api.ts", at, now),
-		"Announcement from ann (as claimed), 08:34 UTC: Split api.ts",
+		"ann (as claimed) told you, 08:34 UTC:\nSplit api.ts",
 	);
 	assert.equal(
 		newsWithTime('Announcement from C (a person, signed in on the website, id cf-1): "hi"', at, now),
-		'Announcement from C (a person, signed in on the website, id cf-1), 08:34 UTC: "hi"',
+		"C (a person) told you, 08:34 UTC:\nhi",
+	);
+	assert.equal(
+		newsWithTime("Announcement from ann (as claimed): Split api.ts", null, now),
+		"ann (as claimed) told you:\nSplit api.ts",
 	);
 	assert.equal(
 		newsWithTime('w1 published "x" (version 3), which changes a.txt line 2', at, now),
 		'w1 published "x" (version 3), which changes a.txt line 2 (08:34 UTC)',
 	);
 	assert.equal(newsWithTime("from before times", null, now), "from before times");
+});
+
+test("a tell is shown as who told you and how sure that is, with what was said below", () => {
+	const shown = (text: string) => newsWithTime(text, null, now);
+	assert.equal(shown("Announcement from ann (key k_0123abcd): Go"), "ann (checked) told you:\nGo");
+	assert.equal(shown("Announcement from ann (key k_0123abcd, box b7): Go"), "ann (checked, box b7) told you:\nGo");
+	assert.equal(shown("Announcement from ann (shared token): Go"), "ann (as claimed) told you:\nGo");
+	// A person's words are unquoted, line breaks and all; their id is left out.
+	const person = shown(
+		`Announcement from Robin Ash (a person, signed in on the website, id cf-9): ${JSON.stringify('Two\nlines "here"')}`,
+	);
+	assert.equal(person, 'Robin Ash (a person) told you:\nTwo\nlines "here"');
+	// Anything else that starts the same way is other news, shown as it is.
+	assert.equal(shown("Announcement from ann (made up): Go"), "Announcement from ann (made up): Go");
 });

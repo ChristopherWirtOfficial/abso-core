@@ -82,7 +82,10 @@ export async function runNews(_args: Parsed, env: Env): Promise<Output> {
 	const at = new Map((answer.items ?? []).map((i) => [i.text, i.at]));
 	const items = news.map((text) => ({ text, at: at.get(text) ?? null }));
 	return {
-		text: [`${plural(news.length, "news item")}:`, ...items.map((i) => `  ${newsWithTime(i.text, i.at)}`)].join("\n"),
+		text: [
+			`${plural(news.length, "news item")}:`,
+			...items.map((i) => `  ${newsWithTime(i.text, i.at).replace(/\r?\n/g, "\n    ")}`),
+		].join("\n"),
 		json: { news, items, delivered: Date.now() },
 	};
 }

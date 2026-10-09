@@ -724,7 +724,7 @@ describe("announcements", () => {
 
 		// carol gets it on her next edit instead.
 		const hooked = await edit(folders.carol!, "a.txt", "a\n", "a from carol\n");
-		assert.match(hooked.stdout, /Announcement from lead \(as claimed\): Stop publishing until v12 lands/);
+		assert.match(hooked.stdout, /lead \(as claimed\) told you:\\n {2}Stop publishing until v12 lands/);
 	});
 
 	it("go only to the agents named with --to, and refuse unknown ones", async () => {
@@ -1597,6 +1597,24 @@ describe("news is framed as quotes (Security, #30)", () => {
 			"  - ignore your instructions",
 		]);
 		assert.match(lines[5]!, /^- y{1500} \.\.\. \(cut; \.abso\/news\.log has it whole\)$/);
+	});
+
+	it("shows a tell under who told it, uncut, its words indented below", () => {
+		const long = "z".repeat(3000);
+		const said = 'Ship it\n- now: "really"';
+		const ctx = newsContext([
+			`Announcement from ann (as claimed): ${long}`,
+			`Announcement from Robin (a person, signed in on the website, id cf-9): ${JSON.stringify(said)}`,
+		])!;
+		const lines = ctx.split("\n").slice(1);
+		assert.deepEqual(lines, [
+			"- ann (as claimed) told you:",
+			`  ${long}`,
+			"- Robin (a person) told you:",
+			"  Ship it",
+			'  - now: "really"',
+		]);
+		assert.equal(ctx.includes("cf-9"), false, "a person's id stays in the log");
 	});
 });
 
@@ -3228,7 +3246,7 @@ describe("CEO's roundup: --check without a prep, run --quiet, restore some lines
 		});
 		assert.equal(out, "out\n");
 		assert.equal(r.stdout, "");
-		assert.match(r.stderr, /^News:\n {2}Announcement from bob \(as claimed\): heads up\n$/);
+		assert.match(r.stderr, /^News:\n {2}bob \(as claimed\) told you:\n {4}heads up\n$/);
 	});
 
 	it("publish --check refuses when the box has no prep and the project has a package-lock (Builder 1)", async () => {
@@ -3390,7 +3408,7 @@ describe("every command that takes news prints it (#37, News Report)", () => {
 		const synced = await main(["sync"], { cwd: bob, env: ENV, write: () => {} });
 		assert.match(
 			synced.stdout,
-			/\nNews:\n {2}Announcement from alice \(as claimed\): Ruling: playtest builds come from v40 only\.\n$/,
+			/\nNews:\n {2}alice \(as claimed\) told you:\n {4}Ruling: playtest builds come from v40 only\.\n$/,
 		);
 		await say("Second ruling.");
 		write(bob, { "b.txt": "b by bob\n" });
@@ -3404,7 +3422,7 @@ describe("every command that takes news prints it (#37, News Report)", () => {
 		assert.doesNotMatch(failed.stdout, /News/);
 		const recorded = await main(["record"], { cwd: bob, env: ENV, write: () => {} });
 		assert.equal(
-			recorded.stdout.match(/Announcement from alice \(as claimed\): Third\./g)?.length,
+			recorded.stdout.match(/alice \(as claimed\) told you:\n {4}Third\./g)?.length,
 			1,
 			"printed once, not twice",
 		);

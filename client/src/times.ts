@@ -1,6 +1,8 @@
 // When something happened, short and the same everywhere it's shown (abso
 // issue 124): "08:34 UTC" today, "Oct 7 21:10 UTC" before that.
 
+import { newsShown } from "./core.ts";
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export function shortWhen(time: number, now: number = Date.now()): string {
@@ -16,13 +18,7 @@ export function seenText(seen: number | null, now: number = Date.now()): string 
 	return seen === null ? "new" : `seen ${shortWhen(seen, now)}`;
 }
 
-/**
- * A news sentence with its time after the who: an announcement's after
- * "Announcement from <who> (<how>)", any other at its end.
- */
+/** A news item as shown, with its time: a tell's after who told it, any other at its end. */
 export function newsWithTime(text: string, at: number | null, now: number = Date.now()): string {
-	if (at === null) return text;
-	const time = shortWhen(at, now);
-	const head = /^(Announcement from .+? \([^)]*\)): /.exec(text);
-	return head ? `${head[1]}, ${time}: ${text.slice(head[0].length)}` : `${text} (${time})`;
+	return newsShown(text, at === null ? undefined : shortWhen(at, now));
 }

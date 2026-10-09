@@ -3,6 +3,7 @@
 import { Api, type News, newsLines, type RunKind } from "./api.ts";
 import { UsageError } from "./args.ts";
 import { type Config, findRoot, readConfig } from "./config.ts";
+import { newsBlockLines, newsShown } from "./core.ts";
 import { logNews } from "./folder.ts";
 
 export const EXIT = { ok: 0, error: 1, refused: 2 } as const;
@@ -60,5 +61,5 @@ export function heard(root: string, news: News | undefined): void {
 
 export function newsText(news: News): string[] {
 	const lines = newsLines(news);
-	return lines.length === 0 ? [] : ["News:", ...lines.map((n) => `  ${n}`)];
+	return newsBlockLines(lines.map((n) => newsShown(n)));
 }
