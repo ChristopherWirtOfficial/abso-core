@@ -4,7 +4,15 @@
 
 import type { AtomId, Graph } from "../../src/engine/index.ts";
 import { ProjectError } from "./project-error.ts";
-import type { AgentState, ChangeRecord, Entry, NoteRecord, QueuedPublish, Refusal } from "./project-types.ts";
+import type {
+	AgentState,
+	ChangeRecord,
+	Entry,
+	NoteRecord,
+	QueuedPublish,
+	Refusal,
+	TellRecord,
+} from "./project-types.ts";
 import { SHARED, type Space } from "./spaces.ts";
 
 /** What applying one log entry needs from a project. */
@@ -17,6 +25,8 @@ export interface ApplyEntryHost {
 	readonly changes: Map<number, ChangeRecord>;
 	readonly labels: Map<string, number[]>;
 	readonly refusals: Refusal[];
+	/** The newest tells, by id in the order sent, at most TELLS_KEPT. */
+	readonly tells: Map<number, TellRecord>;
 	uncheck(id: number): void;
 	stamp(time: number | undefined): void;
 	applyMembership(entry: Entry, at: number): void;
@@ -173,10 +183,13 @@ export function applyEntry(host: ApplyEntryHost, entry: Entry, at: number, time:
 			const agent = host.agentOf(entry.agent);
 			agent.news.push(...entry.text);
 			agent.newsAt.push(...entry.text.map(() => time));
-			for (const p of entry.pairs) {
+			entry.pairs.forEach((p, i) => {
 				agent.told.add(p);
-				if (p.startsWith("announce ")) host.setAnnounced(Math.max(host.announced(), Number(p.slice(9)) || 0));
-			}
+				if (!p.startsWith("announce ")) return;
+				const id = Number(p.slice(9)) || 0;
+				host.setAnnounced(Math.max(host.announced(), id));
+				tellSent(host.tells, id, entry.text[i] ?? entry.text[0] ?? "", agent.name, time);
+			});
 			break;
 		}
 		case "discard": {
@@ -188,6 +201,10 @@ export function applyEntry(host: ApplyEntryHost, entry: Entry, at: number, time:
 		}
 		case "heard": {
 			const agent = host.agentOf(entry.agent);
+			// A sync's stale heard keeps announcements, so it hears no tell.
+			if (entry.stale !== true)
+				for (const tell of host.tells.values())
+					if (tell.heard.get(agent.name) === null) tell.heard.set(agent.name, { at: time });
 			const keep = agent.news.map((t) => entry.stale === true && t.startsWith("Announcement from "));
 			agent.news = agent.news.filter((_, i) => keep[i]);
 			agent.newsAt = agent.newsAt.filter((_, i) => keep[i]);
@@ -271,4 +288,27 @@ export function applyEntry(host: ApplyEntryHost, entry: Entry, at: number, time:
 			);
 		}
 	}
+}
+
+/** How many tells the project keeps who-heard-what for (status's tells). */
+export const TELLS_KEPT = 50;
+
+/** A tell's news reached one recipient's queue: the tell is kept, the oldest dropped past TELLS_KEPT. */
+function tellSent(
+	tells: Map<number, TellRecord>,
+	id: number,
+	text: string,
+	agent: string,
+	time: number | undefined,
+): void {
+	let tell = tells.get(id);
+	if (tell === undefined) {
+		tell = { id, text, at: time, heard: new Map() };
+		tells.set(id, tell);
+		for (const old of tells.keys()) {
+			if (tells.size <= TELLS_KEPT) break;
+			tells.delete(old);
+		}
+	}
+	if (!tell.heard.has(agent)) tell.heard.set(agent, null);
 }

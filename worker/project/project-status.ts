@@ -4,7 +4,16 @@
 import type { AtomId, View } from "../../src/engine/index.ts";
 import { ProjectError } from "./project-error.ts";
 import { countRefusals, type projectFileIn } from "./project-helpers.ts";
-import type { AgentState, AgentStatus, EditsVia, Refusal, Starting, StatusAnswer } from "./project-types.ts";
+import type {
+	AgentState,
+	AgentStatus,
+	EditsVia,
+	Refusal,
+	Starting,
+	StatusAnswer,
+	TellRecord,
+	TellStatus,
+} from "./project-types.ts";
 import { last, SHARED, type Space, sharedBaseOf } from "./spaces.ts";
 
 /** What the snapshot reads need from a project. */
@@ -14,6 +23,7 @@ export interface SnapshotHost {
 	queue(): readonly { readonly agent: string; readonly id: number }[];
 	readonly refusals: readonly Refusal[];
 	readonly labels: ReadonlyMap<string, readonly number[]>;
+	readonly tells: ReadonlyMap<number, TellRecord>;
 	needInit(): void;
 	shared(): Space;
 	draft(agent: AgentState): AtomId[];
@@ -145,6 +155,15 @@ export function status(host: SnapshotHost): StatusAnswer {
 		}
 	}
 	const announcements = [...waiting].map(([text, names]) => ({ text, waiting: names }));
+	// Who has heard each of the newest tells, and when (277): the news and heard entries' times.
+	const tells: TellStatus[] = [...host.tells.values()].toReversed().map((t) => ({
+		id: t.id,
+		text: t.text,
+		at: t.at ?? null,
+		to: [...t.heard]
+			.toSorted(([a], [b]) => (a < b ? -1 : 1))
+			.map(([agent, h]) => ({ agent, heard: h !== null, at: h?.at ?? null })),
+	}));
 	// Both project files in shared (224): say which one counts, never quietly.
 	const file = host.projectFile();
 	return {
@@ -153,6 +172,7 @@ export function status(host: SnapshotHost): StatusAnswer {
 		drafts,
 		refusals: countRefusals(host.refusals),
 		announcements,
+		tells,
 		...(file?.ignored ? { projectFile: { used: "abso.json" as const, ignored: file.ignored } } : {}),
 	};
 }

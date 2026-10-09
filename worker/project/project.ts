@@ -157,6 +157,7 @@ import type {
 	Starting,
 	SwitchAnswer,
 	Tail,
+	TellRecord,
 } from "./project-types.ts";
 import { publish as hostedPublish, publishDraft as hostedPublishDraft, type PublishHost } from "./publish.ts";
 import { publishOf as hostedPublishOf, type PublishOfHost } from "./publish-of.ts";
@@ -237,6 +238,8 @@ export class Project {
 	readonly #refusals: Refusal[] = [];
 	/** Labels on shared's versions: name -> versions, ascending. */
 	readonly #labels = new Map<string, number[]>();
+	/** The newest tells and who has heard each (apply-entry.ts). */
+	readonly #tells = new Map<number, TellRecord>();
 	/**
 	 * Entries applied but not stored yet, in order. Every applied entry is
 	 * stored at the next flush, even when the call that applied it threw
@@ -1738,6 +1741,7 @@ export class Project {
 			changes: this.#changes,
 			labels: this.#labels,
 			refusals: this.#refusals,
+			tells: this.#tells,
 			uncheck: (id) => {
 				this.#checking.delete(id);
 			},
@@ -2137,6 +2141,7 @@ export class Project {
 			queue: () => this.#queue,
 			refusals: this.#refusals,
 			labels: this.#labels,
+			tells: this.#tells,
 			needInit: () => this.#needInit(),
 			shared: () => this.#shared,
 			draft: (agent) => this.#draft(agent),

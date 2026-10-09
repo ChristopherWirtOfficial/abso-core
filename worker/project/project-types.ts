@@ -504,6 +504,22 @@ export interface DraftStatus {
 	changes: number;
 	agents: string[];
 }
+/**
+ * One tell as the log has it: the sentence its recipients get, when it was sent, and for each recipient when its
+ * client handed it over (a heard entry), null until then. A time is undefined for entries from before they had one.
+ */
+export interface TellRecord {
+	readonly id: number;
+	text: string;
+	at: number | undefined;
+	readonly heard: Map<string, { at: number | undefined } | null>;
+}
+export interface TellStatus {
+	id: number;
+	text: string;
+	at: number | null;
+	to: { agent: string; heard: boolean; at: number | null }[];
+}
 export type StatusAnswer = {
 	version: number;
 	agents: AgentStatus[];
@@ -511,6 +527,8 @@ export type StatusAnswer = {
 	refusals: RefusalCounts;
 	/** Announcements some agent hasn't received yet, oldest first. */
 	announcements: { text: string; waiting: string[] }[];
+	/** The newest tells (TELLS_KEPT), newest first: each recipient, and when it heard (null: not yet). */
+	tells: TellStatus[];
 	/** Only when shared has both abso.json and avcs.json (224): abso.json counts and avcs.json is ignored. */
 	projectFile?: { used: "abso.json"; ignored: "avcs.json" };
 };
