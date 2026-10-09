@@ -51,7 +51,7 @@ import { argvFor } from "../src/mcp.ts";
 import { pulledText } from "../src/queue.ts";
 import { noteText, titleLine } from "../src/review.ts";
 import { screenAnswer, throughLink, unsafeLink, unsafePath } from "../src/safety.ts";
-import { findBlocks, keepFrom, settleText } from "../src/settle.ts";
+import { findBlocks, gitMarkerLine, keepFrom, settleText } from "../src/settle.ts";
 import { tar } from "../src/tar.ts";
 import { type Fake, startFake, untar } from "./fake-server.ts";
 
@@ -4338,5 +4338,45 @@ describe("tar", () => {
 		const back = untar(tar([...files].map(([path, data]) => ({ path, data }))));
 		assert.deepEqual([...back.keys()], [...files.keys()]);
 		for (const [path, data] of files) assert.deepEqual(back.get(path), data);
+	});
+});
+
+describe("git conflict markers typed or left by hand", () => {
+	it("finds what looks like a git conflict, and not abso's own blocks or a lone marker", () => {
+		const git = "a\n<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> feature\nb\n";
+		assert.equal(gitMarkerLine(git), 2);
+		assert.equal(gitMarkerLine(git.replaceAll("\n", "\r\n")), 2, "CRLF files too");
+		assert.equal(gitMarkerLine("a\n=======\nb\n"), undefined, "a lone ======= is a heading underline");
+		assert.equal(gitMarkerLine("<<<<<<< HEAD\nmine\n"), undefined, "no middle and no close");
+		const mine =
+			'<<<<<<< yours (unpublished)\nx\n||||||| before (version 3)\ny\n=======\nz\n>>>>>>> theirs: bob, version 4 "m"\n';
+		assert.equal(gitMarkerLine(mine), undefined, "abso's own blocks are settled with abso settle");
+	});
+
+	it("record and publish say so, once, and still send the file", async () => {
+		const { folders } = await project({ "a.txt": "a\n" }, "alice");
+		const dir = folders.alice!;
+		writeFileSync(join(dir, "a.txt"), "a\n<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> feature\n");
+		const said = await main(["record"], { cwd: dir, env: ENV, write: () => {} });
+		assert.equal(said.exit, 0, said.stdout);
+		assert.match(said.stdout, /Note: a\.txt has lines that look like a git conflict \(from line 2\)/);
+		const again = await main(["record"], { cwd: dir, env: ENV, write: () => {} });
+		assert.doesNotMatch(again.stdout, /git conflict/, "nothing new was sent, so nothing to say");
+	});
+});
+
+describe("paths too long for Windows", () => {
+	it("notes a long path once, as it is sent, and sends the file", async () => {
+		const { folders } = await project({ "a.txt": "a\n" }, "alice");
+		const dir = folders.alice!;
+		const long = `${"d".repeat(80)}/${"e".repeat(80)}/f.txt`;
+		mkdirSync(join(dir, dirname(long)), { recursive: true });
+		writeFileSync(join(dir, long), "deep\n");
+		const said = await main(["record"], { cwd: dir, env: ENV, write: () => {} });
+		assert.equal(said.exit, 0, said.stdout);
+		assert.match(said.stdout, /Note: d{80}\/e{80}\/f\.txt is 167 characters inside the folder/);
+		assert.match(said.stdout, /Windows stops at 260/);
+		const again = await main(["record"], { cwd: dir, env: ENV, write: () => {} });
+		assert.doesNotMatch(again.stdout, /Windows stops at 260/, "nothing new was sent");
 	});
 });

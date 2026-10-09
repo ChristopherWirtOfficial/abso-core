@@ -75,6 +75,8 @@ export {
 	staleModText,
 } from "./status-commands.ts";
 
+import { gitMarkerLine } from "./settle.ts";
+
 // --- record ---
 
 interface Recorded {
@@ -91,6 +93,10 @@ interface Recorded {
 	readonly news: News;
 	readonly leftOut: readonly LeftOut[];
 	readonly turnedBinary: readonly TurnedBinary[];
+	/** Text files sent that hold what looks like a git conflict (a merge git left unfinished, or markers typed by hand). */
+	readonly gitMarkers?: readonly { path: string; line: number }[];
+	/** Sent files whose path is long enough to fail on Windows, here or in another agent's folder. */
+	readonly longPaths?: readonly { path: string; length: number }[];
 }
 
 /** The warning for text files that turned binary: what, where, and what to do. Empty when there are none. */
@@ -239,14 +245,63 @@ async function recordFolderLocked(
 		...(answer.spelling ?? []).map(spellingText),
 		...(answer.uncomposed ?? []).map(uncomposedText),
 	]);
-	return { sent, paths, deleted, added, changed: answer.changed, news: answer.news, leftOut, turnedBinary };
+	const longPaths = longPathsOf(
+		root,
+		[...files].filter(([, text]) => text !== null).map(([path]) => path),
+	);
+	const gitMarkers = [...files]
+		.flatMap(([path, text]) => {
+			const line = text === null ? undefined : gitMarkerLine(text);
+			return line === undefined ? [] : [{ path, line }];
+		})
+		.sort((a, b) => (a.path < b.path ? -1 : 1));
+	return {
+		sent,
+		paths,
+		deleted,
+		added,
+		changed: answer.changed,
+		news: answer.news,
+		leftOut,
+		turnedBinary,
+		gitMarkers,
+		longPaths,
+	};
+}
+
+/** A note per file that holds what looks like a git conflict: abso records it as it is, as text, and does not call it a collision. */
+export function gitMarkerText(list: readonly { path: string; line: number }[] | undefined): string[] {
+	return (list ?? []).map(
+		(m) =>
+			`Note: ${m.path} has lines that look like a git conflict (from line ${m.line}). abso records them as ordinary text and will publish them as they are. If a merge was left unfinished, fix the file first.`,
+	);
+}
+
+/** Windows stops at 260 characters for a whole path, and another agent's folder may sit deeper than this one. */
+const LONG_FULL_PATH = 240;
+const LONG_RELATIVE_PATH = 160;
+
+/** The sent files whose path will likely fail to write on Windows: the whole path is near its limit here, or the part inside the folder is already long. */
+export function longPathsOf(root: string, paths: Iterable<string>): { path: string; length: number }[] {
+	return [...paths]
+		.map((path) => ({ path, length: absolute(root, path).length }))
+		.filter((p) => p.length >= LONG_FULL_PATH || p.path.length >= LONG_RELATIVE_PATH)
+		.sort((a, b) => (a.path < b.path ? -1 : 1));
+}
+
+/** A note per long path: abso keeps it, but a Windows agent may not be able to write the file. */
+export function longPathText(list: readonly { path: string; length: number }[] | undefined): string[] {
+	return (list ?? []).map(
+		(p) =>
+			`Note: ${p.path} is ${p.path.length} characters inside the folder (${p.length} with this folder's location). Windows stops at 260 for a whole path, so an agent on Windows may be unable to write it. A shorter path avoids that.`,
+	);
 }
 
 /** "Recorded 3 files first: a, b, c." (names cut short past 8), or a word that the folder is paused. Empty when nothing was sent. */
 export function recordedFirst(r: Recorded): string[] {
 	if (r.paused) return ["Recording is paused (abso resume): your folder's changes were not sent first."];
 	if (r.sent === 0) return [];
-	return [`Recorded first: ${recordedList(r)}.`];
+	return [`Recorded first: ${recordedList(r)}.`, ...gitMarkerText(r.gitMarkers), ...longPathText(r.longPaths)];
 }
 
 /** "2 changed (a, b), 3 deleted (x, y, z)": deletions said as such (#37, Builder 2 read its rm'd files as edits). */
@@ -307,13 +362,21 @@ export async function runRecord(args: Parsed, env: Env): Promise<Output> {
 			: `Recorded ${recordedList(r)}${changed === undefined ? "" : `; ${changed} changed on the server`}.`;
 	return withLeftOut(
 		{
-			text: [...turnedBinaryText(r.turnedBinary), text, ...leftOutText(r.leftOut)].join("\n"),
+			text: [
+				...turnedBinaryText(r.turnedBinary),
+				text,
+				...gitMarkerText(r.gitMarkers),
+				...longPathText(r.longPaths),
+				...leftOutText(r.leftOut),
+			].join("\n"),
 			json: {
 				sent: r.sent,
 				changed: r.changed ?? null,
 				news: newsLines(r.news),
 				leftOut: r.leftOut,
 				turnedBinary: r.turnedBinary,
+				gitMarkers: r.gitMarkers ?? [],
+				longPaths: r.longPaths ?? [],
 			},
 		},
 		r.leftOut,

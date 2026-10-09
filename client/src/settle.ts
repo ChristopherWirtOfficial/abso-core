@@ -100,3 +100,22 @@ export function blocksIn(path: string): number {
 		return 0;
 	}
 }
+
+/**
+ * The first line (1-based) of what looks like a git conflict left in a text: a "<<<<<<< " line, then a "=======" line,
+ * then a ">>>>>>> " line. abso's own blocks are not these (their opening line is exact, and `abso settle` finds them);
+ * a merge done by git, or markers typed or pasted by hand, are plain text to abso, which would publish them as they are.
+ */
+export function gitMarkerLine(text: string): number | undefined {
+	const lines = text.split(/\r?\n/);
+	for (let i = 0; i < lines.length; i++) {
+		if (!lines[i]!.startsWith("<<<<<<< ") || lines[i] === OPEN) continue;
+		let mid = false;
+		for (let j = i + 1; j < lines.length; j++) {
+			if (lines[j]!.startsWith("<<<<<<< ")) break;
+			if (lines[j] === MID) mid = true;
+			else if (mid && lines[j]!.startsWith(">>>>>>> ")) return i + 1;
+		}
+	}
+	return undefined;
+}
