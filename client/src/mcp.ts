@@ -52,6 +52,8 @@ export const MCP_COMMANDS = [
 	"ask",
 	"waiting",
 	"answer",
+	"orgs",
+	"org",
 ] as const;
 
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];

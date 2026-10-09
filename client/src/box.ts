@@ -5,7 +5,8 @@
 //
 // The box credential lives in the user's config folder, one file per server,
 // never in a project folder. It is never printed, never an argument, and only
-// ever sent to the server that issued it, on /box/ routes.
+// ever sent to the server that issued it: on /box/ routes, and on the org reads,
+// which answer as the person who approved the box.
 
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -84,7 +85,7 @@ function scrub(text: string, secrets: readonly string[]): string {
 	return out;
 }
 
-interface Answer {
+export interface Answer {
 	readonly status: number;
 	readonly body: Record<string, unknown>;
 }
@@ -125,6 +126,32 @@ async function call(
 		throw new UsageError(scrub(`${originOf(server)} refused (${response.status}): ${said}`, secrets));
 	}
 	return { status: response.status, body: parsed };
+}
+
+/**
+ * A read that answers as the person who approved this box: the org reads (GET /orgs, /orgs/<name>). Answers the
+ * status and body as they came, refusals included, so the caller can say what each means; never the credential.
+ */
+export async function boxGet(record: BoxRecord, path: string, fetcher: typeof fetch = fetch): Promise<Answer> {
+	const secrets = [record.credential];
+	let response: Response;
+	try {
+		response = await fetcher(`${originOf(record.server)}${path}`, {
+			headers: { authorization: `Box ${record.credential}` },
+			signal: AbortSignal.timeout(30_000),
+		});
+	} catch (err) {
+		throw new UsageError(
+			`couldn't reach ${originOf(record.server)}: ${scrub(err instanceof Error ? err.message : String(err), secrets)}`,
+		);
+	}
+	const text = await response.text();
+	try {
+		const body = JSON.parse(text) as unknown;
+		if (typeof body === "object" && body !== null && !Array.isArray(body))
+			return { status: response.status, body: body as Record<string, unknown> };
+	} catch {}
+	return { status: response.status, body: { error: scrub(text.slice(0, 300), secrets) } };
 }
 
 /** This machine's name, as the server takes a box's name: 1-64 letters, digits, '.', '_' or '-'. */

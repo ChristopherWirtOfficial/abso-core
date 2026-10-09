@@ -43,6 +43,7 @@ import { runExport } from "./export.ts";
 import { runBlame, runWhere, runWho, runWhy } from "./history.ts";
 import { runAnswer, runAsk, runIssue, runIssues, runSearch, runWaiting } from "./issues.ts";
 import { adminToken, issuedPublic, keyList, keyListText, keyNew, keyRevoke } from "./key-admin.ts";
+import { initInOrg, runOrg, runOrgs } from "./orgs.ts";
 import { runUnqueue } from "./queue.ts";
 import { runNote, runNotes, runReview } from "./review.ts";
 import { installSkill, SKILL, skillPath } from "./skill.ts";
@@ -86,11 +87,14 @@ async function runKeyInstall(args: Parsed, env: Env): Promise<Output> {
 
 const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	init: {
-		flags: { server: "string", project: "string", agent: "string", "as-is": "boolean" },
-		usage: "abso init [folder] --server <url> --project <name> --agent <name> [--as-is]",
+		flags: { server: "string", project: "string", agent: "string", "as-is": "boolean", org: "string" },
+		usage: "abso init [folder] --server <url> --project <name> --agent <name> [--as-is] [--org <org>]",
 		about:
-			"Create a project on the server from a folder's text files. The folder becomes that agent's folder. It writes a starting .absoignore, and, when the folder has no avcs.json and package.json gives a check or a build to guess, an avcs.json (setup, check, build and out): what the server's CI runs on each new version of shared. Without one, CI runs what it can guess itself, or nothing. --as-is writes neither: the folder goes up exactly as it is (an import).",
-		run: runInit,
+			"Create a project on the server from a folder's text files. The folder becomes that agent's folder. It writes a starting .absoignore, and, when the folder has no avcs.json and package.json gives a check or a build to guess, an avcs.json (setup, check, build and out): what the server's CI runs on each new version of shared. Without one, CI runs what it can guess itself, or nothing. --as-is writes neither: the folder goes up exactly as it is (an import). --org <org> makes it an organization's project: for now that is done on the website, and abso says where.",
+		run: (args, env) => {
+			const org = str(args, "org");
+			return org === undefined ? runInit(args, env) : initInOrg(org, boxServer(args, env));
+		},
 	},
 	key: {
 		flags: {
@@ -206,6 +210,31 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 				json: { loggedOut: true, ended },
 			};
 		},
+	},
+	orgs: {
+		flags: { server: "string" },
+		usage: "abso orgs [--server <url>]",
+		about:
+			"Your organizations and your role in each, and invitations waiting for you. It reads as the person who approved this box's sign-in (abso login).",
+		run: (args, env) => runOrgs(boxServer(args, env)),
+	},
+	org: {
+		flags: {
+			server: "string",
+			name: "string",
+			invite: "string",
+			as: "string",
+			role: "string",
+			remove: "string",
+			leave: "boolean",
+			members: "string",
+			"projects-by": "string",
+		},
+		usage:
+			"abso org <name> [--invite <person>|link [--as owner] | --role <person>=owner|member | --remove <person> | --leave | --members read|write | --projects-by members|owners] | abso org new <name> [--name <shown name>]",
+		about:
+			"An organization: its projects, people, open invites and settings, as the person who approved this box's sign-in sees them (people and settings only to members). One change at a time. Changes and abso org new are made on the website for now, and abso says where.",
+		run: (args, env) => runOrg(args, boxServer(args, env)),
 	},
 	skill: {
 		flags: { dir: "string" },
