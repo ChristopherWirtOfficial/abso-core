@@ -649,10 +649,11 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		run: runCheckIgnore,
 	},
 	pipeline: {
-		flags: {},
-		usage: "abso pipeline check [file]",
+		flags: { on: "string", space: "string", pipeline: "string", every: "string" },
+		usage:
+			"abso pipeline check [file] [--on publish|draft|green|land|hand|schedule [--space <name>] [--pipeline <name>] [--every <when>]]",
 		about:
-			"Read the folder's pipeline file (abso.yml, abso.yaml or avcs.json, or the file named) and say what's wrong with it, place by place: a cycle in needs, a job that doesn't exist, secrets a draft could reach, a key it doesn't know. Exits 1 when it has problems. It reads only the file.",
+			"Read the folder's pipeline file (abso.yml, abso.yaml or avcs.json, or the file named) and say what's wrong with it, place by place: a cycle in needs, a job that doesn't exist, secrets a draft could reach, a key it doesn't know. Exits 1 when it has problems. With --on, it says which pipelines that event starts (in shared, or --space), with their jobs in waves that can run side by side, and why each other pipeline doesn't start. It reads only the file.",
 		// Loaded only here, so the yaml package it needs can't stop every other command
 		// when a checkout lacks it (abso issue 168).
 		run: async (args, env) => {

@@ -111,3 +111,50 @@ describe("the yaml package is loaded only by abso pipeline (abso issue 168)", ()
 		assert.match(main, /await import\("\.\/pipeline-commands\.ts"\)/);
 	});
 });
+
+describe("abso pipeline check --on (abso issue 176)", () => {
+	const FILE = `pipelines:
+  ci:
+    on: [publish, draft]
+    jobs:
+      setup: { run: npm ci }
+      lint: { needs: [setup], run: lint }
+      test: { needs: [setup], run: npm test }
+    required: [test]
+  release:
+    on: [green, hand]
+    only: shared
+    jobs:
+      site: { uses: deploy, worker: w, secrets: [CLOUDFLARE_API_TOKEN] }
+`;
+	it("says which pipelines a draft starts, in waves, and why the others don't", async () => {
+		const r = await run(folder({ "abso.yml": FILE }), "check", "--on", "draft");
+		assert.equal(r.exit, 0, r.stderr);
+		assert.equal(
+			r.stdout,
+			"On draft in shared, 1 pipeline from abso.yml starts; jobs on one line can run side by side.\n  ci starts:\n    1. setup\n    2. lint, test (required)\n  release doesn't start: doesn't run on draft\n",
+		);
+	});
+
+	it("takes the space, the pipeline started by hand, and answers --json", async () => {
+		const dir = folder({ "abso.yml": FILE });
+		assert.match(
+			(await run(dir, "check", "--on", "green", "--space", "rename-59")).stdout,
+			/^On green in rename-59, nothing in abso\.yml starts/,
+		);
+		const j = JSON.parse((await run(dir, "check", "--on", "hand", "--pipeline", "release", "--json")).stdout);
+		assert.equal(j.ok, true);
+		assert.deepEqual(j.event, { kind: "hand", pipeline: "release", space: "shared" });
+		assert.deepEqual(j.start, [{ name: "release", waves: [["site"]], required: [] }]);
+	});
+
+	it("refuses an event it doesn't know, or one missing what it needs", async () => {
+		const dir = folder({ "abso.yml": FILE });
+		assert.match(
+			(await run(dir, "check", "--on", "merge")).stderr,
+			/--on is one of publish, draft, green, land, hand, schedule/,
+		);
+		assert.match((await run(dir, "check", "--on", "hand")).stderr, /--on hand takes --pipeline <name>/);
+		assert.match((await run(dir, "check", "--on", "schedule")).stderr, /--on schedule takes --every/);
+	});
+});

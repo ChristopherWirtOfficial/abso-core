@@ -100,6 +100,7 @@ function tokenGoesTo(server: string, trusted: string | undefined): boolean {
 	if (o === undefined) return false;
 	const host = o.replace(/^https?:\/\//, "").replace(/:\d+$/, "");
 	if (host === "localhost" || host === "127.0.0.1" || host === "[::1]") return true;
+	if (!o.startsWith("https://")) return false;
 	return [...TOKEN_SERVERS, ...(trusted ?? "").split(",")].some((t) => t.trim() !== "" && origin(t) === o);
 }
 

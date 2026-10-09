@@ -161,6 +161,8 @@ export function tokenGoesTo(server: string, trusted?: string): boolean {
 	if (o === undefined) return false;
 	const host = o.replace(/^https?:\/\//, "").replace(/:\d+$/, "");
 	if (host === "localhost" || host === "127.0.0.1" || host === "[::1]") return true;
+	// Off this machine only https: a token over plain http goes in clear text (Security, 608).
+	if (!o.startsWith("https://")) return false;
 	return [...TOKEN_SERVERS, ...(trusted ?? "").split(",")].some((t) => t.trim() !== "" && origin(t) === o);
 }
 

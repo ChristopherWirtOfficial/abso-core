@@ -1528,6 +1528,10 @@ describe("the token goes only to abso servers (Security, #30)", () => {
 			assert.equal(tokenGoesTo(bad), false, bad);
 		}
 		assert.equal(tokenGoesTo("https://mine.example", "https://other.example, https://mine.example"), true);
+		// Off this machine only https: plain http would carry the token in clear text, trusted or not.
+		assert.equal(tokenGoesTo("http://example.com", "http://example.com"), false);
+		assert.equal(tokenGoesTo("http://localhost:8787"), true);
+		assert.equal(tokenGoesTo("http://127.0.0.1:8787"), true);
 	});
 
 	it("trusts the servers this machine's servers.json names, and their Issues Workers, and nothing malformed", () => {

@@ -28,6 +28,9 @@ refused before any call. To use a server you run, or a test one, name it in
 
 `AVCS_TRUSTED_SERVERS` (comma-separated) adds servers for one shell, and
 `AVCS_ISSUES_SERVER` names the Issues Worker. The mods follow the same rule.
+Off this machine only `https://` servers count. A server you trust gets your
+token: the same token goes to every server named, so name only servers you
+would hand it to.
 
 Every path a sync, switch, join or restore answer names is checked before
 the client touches the disk: nothing is written outside the folder, into
@@ -89,7 +92,7 @@ Here `abso` means `node <repo>/client/abso.ts` (`client/avcs.ts` is the same cli
 | `abso label <name> [--version n] [--remove]` / `abso labels` | Puts a label on a version of shared (the newest by default) or takes it off, like a git tag; `labels` lists them all. |
 | `abso follow <label>` / `abso follow --none` | Makes this folder follow a label: every sync takes it to the newest version of shared with that label. `--none` goes back to shared's newest. Saved in `.avcs/config.json`. |
 | `abso check-ignore <path...>` | Whether abso leaves each path out, and which line of which ignore file decided (see "What is left out"). |
-| `abso pipeline check [file]` | Reads the folder's pipeline file (abso.yml, abso.yaml or avcs.json, or the file named) and lists each problem as `<path>: <message>`: a cycle in needs, a job or pipeline that doesn't exist, secrets in a pipeline a draft can start, keys it doesn't know. Exits 1 on problems; otherwise lists each pipeline's jobs in the order they run. Reads only the file. The shape is still a draft (abso issue 138). |
+| `abso pipeline check [file] [--on <event>]` | Reads the folder's pipeline file (abso.yml, abso.yaml or avcs.json, or the file named) and lists each problem as `<path>: <message>`: a cycle in needs, a job or pipeline that doesn't exist, secrets in a pipeline a draft can start, keys it doesn't know. Exits 1 on problems; otherwise lists each pipeline's jobs in the order they run. With `--on publish|draft|green|land|hand|schedule` (and `--space`, `--pipeline` or `--every`), says which pipelines that event starts, with their jobs in waves that can run side by side, and why the others don't. Reads only the file. The shape is still a draft (abso issue 138). |
 | `abso issues [--open] [--status <s>] [--agent <a>] [--parent <N>] [--label <l,l>]` | The project's issues (#54), most recently updated first. Statuses come from the work: `abso start --issue N` puts an issue In progress, an open ask makes it Blocked (In review for a review), and `publish --done` closes it. `--label friction` keeps the issues with every label named: a ready list of work to pick up. `abso issues --labels` lists the labels in use, with how many issues are open under each. |
 | `abso issue new "<title>" --label <l,l>` / `abso issue <N> --label <l,l> --unlabel <l,l>` | Labels an issue, or changes its labels. A label is 1-40 lower-case letters, digits and `- _ . :` (`friction`, `area:client`); what you type is lower-cased. An edit that only changes labels tells nobody unless `--notify` names people. Tool friction goes in its own issue, labeled `friction`. |
 | `abso issue draft "<title>"` / `abso issues --drafts` | A draft of an issue: yours alone, with no number and no news. Takes the same fields as `issue new`. `abso issue draft <D> [fields]` changes one, `--open` opens it as an issue (with any fields given over the draft's), `--delete` deletes it. |
