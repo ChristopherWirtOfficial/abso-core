@@ -4,7 +4,7 @@
 // one set of words. The folder and the token come from where the server runs,
 // as for the CLI: .avcs/config.json, and ABSO_TOKEN or ~/.abso/token.
 //
-//   claude mcp add avcs -- node <repo>/client/avcs.ts mcp
+//   claude mcp add abso -- abso mcp
 //
 // The protocol is JSON-RPC 2.0, one message per line, with no library: the
 // client uses nothing outside Node.

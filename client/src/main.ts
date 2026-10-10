@@ -173,7 +173,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { server: "string", "no-browser": "boolean" },
 		usage: "abso login [--server <url>] [--no-browser]",
 		about:
-			"Sign this box in once (abso issue 108): it opens the approve page in your browser with the code filled in, prints the link and the code too, and waits while a person approves the code on the website, choosing the projects, the highest role and how many agents. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. Without --server, the folder's server, or https://api.abso.dev outside a folder. No browser opens with --no-browser or ABSO_NO_BROWSER, over SSH, under CI, or on Linux without a display.",
+			"Sign this box in once: it opens the approve page in your browser with the code filled in, prints the link and the code too, and waits while a person approves the code on the website, choosing the projects, the highest role and how many agents. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. Without --server, the folder's server, or https://api.abso.dev outside a folder. No browser opens with --no-browser or ABSO_NO_BROWSER, over SSH, under CI, or on Linux without a display.",
 		run: async (args, env) => {
 			const server = boxServer(args, env);
 			const open =
@@ -357,7 +357,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { since: "string" },
 		usage: "abso review [<id> | v<version> | <agent>] [--since <position|2h>]",
 		about:
-			"Review is reading what landed (#44). With no change: the changes with anything new since you last looked, newest first (a change is one start note's work, a named draft's, or a lone publish), and the mark moves on; --since 2h (or a log position) looks further back without moving it. With a change id, v<version> (the change holding that version of shared) or an agent (its newest change): that change's page, with what it set out to do, its versions, what it settled, its reviewers and its notes.",
+			"Review is reading what landed. With no change: the changes with anything new since you last looked, newest first (a change is one start note's work, a named draft's, or a lone publish), and the mark moves on; --since 2h (or a log position) looks further back without moving it. With a change id, v<version> (the change holding that version of shared) or an agent (its newest change): that change's page, with what it set out to do, its versions, what it settled, its reviewers and its notes.",
 		run: runReview,
 	},
 	note: {
@@ -374,7 +374,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		usage:
 			'abso note <file>:<line>[-<line>] "<text>" [--object | --read] [--draft <agent> | --at <version>] | abso note --reply <id> "<text>" | abso note --close <id> --resolved|--withdrawn',
 		about:
-			"A note on lines (#44): it sits on those lines and follows them as the file changes. The lines' authors and the change's agent hear it as news. The line numbers are as your folder shows the file (it records first); --draft <agent> notes their unpublished work as their draft shows it, --at <version> a version of shared. --object asks for a fix (it shows as addressed once all its lines change); --read says you read it, telling nobody. --reply answers a note; --close closes one of yours.",
+			"A note on lines: it sits on those lines and follows them as the file changes. The lines' authors and the change's agent hear it as news. The line numbers are as your folder shows the file (it records first); --draft <agent> notes their unpublished work as their draft shows it, --at <version> a version of shared. --object asks for a fix (it shows as addressed once all its lines change); --read says you read it, telling nobody. --reply answers a note; --close closes one of yours.",
 		run: runNote,
 	},
 	notes: {
@@ -397,7 +397,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		usage:
 			"abso issues [--open] [--status <status>] [--agent <agent>] [--parent <N>] [--label <l,l>] | abso issues --labels",
 		about:
-			"The project's issues (#54), most recently updated first, each with its status, agents, labels, versions and who it waits on. --label keeps the issues with every label named (friction, say); --labels lists the labels in use, with how many issues are open under each; --drafts lists your drafts. A status comes from the work: abso start --issue N puts an issue In progress, an open ask makes it Blocked (or In review, for a review), and publish --done closes it.",
+			"The project's issues, most recently updated first, each with its status, agents, labels, versions and who it waits on. --label keeps the issues with every label named (friction, say); --labels lists the labels in use, with how many issues are open under each; --drafts lists your drafts. A status comes from the work: abso start --issue N puts an issue In progress, an open ask makes it Blocked (or In review, for a review), and publish --done closes it.",
 		run: runIssues,
 	},
 	issue: {
@@ -490,7 +490,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { yes: "boolean" },
 		usage: "abso visibility [public|private] [--yes]",
 		about:
-			"Whether the project is public (abso issue 152). With no word, says which. public, with --yes, lets anyone read it, signed in or not: files, versions, drafts, notes, Issues, people's names, CI as pass or fail; never keys, CI logs, preview links or boxes. private makes it members-only again. Switching takes the project owner's key (on staging, the shared token works too).",
+			"Whether the project is public. With no word, says which. public, with --yes, lets anyone read it, signed in or not: files, versions, drafts, notes, Issues, people's names, CI as pass or fail; never keys, CI logs, preview links or boxes. private makes it members-only again. Switching takes the project owner's key (on staging, the shared token works too).",
 		run: runVisibility,
 	},
 	ci: {
@@ -765,7 +765,7 @@ function help(): string {
 		"  abso hook",
 		"      The Claude Code PostToolUse hook. Reads the hook JSON on stdin; never fails.",
 		"  abso mcp",
-		"      An MCP server on stdin and stdout: the reading commands and the everyday writing ones as tools, answering with the same text as here. Add it with claude mcp add abso -- node <repo>/client/abso.ts mcp.",
+		"      An MCP server on stdin and stdout: the reading commands and the everyday writing ones as tools, answering with the same text as here. Add it with claude mcp add abso -- abso mcp (on Windows, claude mcp add abso -- cmd /c abso mcp).",
 		"  abso --version",
 		"      This client's version and commit, and the abso mods installed on this machine.",
 		"",
@@ -823,7 +823,7 @@ export async function main(argv: readonly string[], env: Env): Promise<MainResul
 		const def = COMMANDS[command];
 		if (!def)
 			throw new UsageError(
-				`unknown command ${JSON.stringify(command)}; the commands are ${Object.keys(COMMANDS).join(", ")}, hook`,
+				`unknown command ${JSON.stringify(command)}; the commands are ${Object.keys(COMMANDS).join(", ")}, hook, mcp`,
 			);
 		const parsed = parseArgs(command, argv.slice(1), withBodyFiles(command, def.flags), def.rest);
 		if (bool(parsed, "help")) {
