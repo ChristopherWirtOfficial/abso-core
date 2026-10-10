@@ -525,7 +525,7 @@ describe("record, publish and sync", () => {
 		git("init", "-q");
 		git("config", "core.autocrlf", "false");
 		write(bob, { ".gitattributes": "*.txt eol=crlf\n*.bin -text\n" });
-		assert.equal((await avcs(bob, "join", name, "--agent", "bob", "--server", fake.url)).exit, 0);
+		assert.equal((await avcs(bob, "join", name, "--agent", "bob", "--server", fake.url, "--dir", ".")).exit, 0);
 		write(folders.alice!, { "a.txt": "one\ntwo\n", "b.md": "one\ntwo\n", "c.bin": "x\ny\n" });
 		assert.equal((await avcs(folders.alice!, "publish", "-m", "three files")).exit, 0);
 		assert.equal((await avcs(bob, "sync")).exit, 0);
@@ -2540,6 +2540,29 @@ describe("review and notes (#44)", () => {
 			write: () => {},
 		});
 		assert.doesNotMatch(without.stdout, /Nothing is installed/);
+	});
+
+	it("join writes here when this folder is empty, else into ./<project>, never over someone's files (abso issue 351)", async () => {
+		const { name } = await project({ "a.ts": "one\n" }, "alice");
+		const run = (cwd: string, agent: string) =>
+			main(["join", name, "--agent", agent, "--server", fake.url], { cwd, env: ENV, write: () => {} });
+		const empty = temp();
+		const here = await run(empty, "bob");
+		assert.equal(here.exit, 0, here.stderr);
+		assert.equal(read(empty, "a.ts"), "one\n", "an empty folder: here");
+		assert.doesNotMatch(here.stdout, /^cd /m);
+		const busy = temp();
+		write(busy, { "notes.md": "mine\n" });
+		const sub = await run(busy, "carol");
+		assert.equal(sub.exit, 0, sub.stderr);
+		assert.equal(read(join(busy, name), "a.ts"), "one\n", "a folder with files in it: ./<project>");
+		assert.equal(read(busy, "notes.md"), "mine\n");
+		assert.match(sub.stdout, new RegExp(`^cd ${name}$`, "m"));
+		const taken = temp();
+		write(taken, { "notes.md": "mine\n", [`${name}/other.md`]: "theirs\n" });
+		const refused = await run(taken, "dave");
+		assert.notEqual(refused.exit, 0);
+		assert.match(refused.stderr, /already has files in it: say where to join with --dir <folder>/);
 	});
 
 	it("gives a call more time by what it sends: 1 s per 100 KB over the base (abso issue 34)", () => {

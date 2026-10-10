@@ -262,9 +262,9 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	},
 	join: {
 		flags: { server: "string", agent: "string", dir: "string", reader: "boolean" },
-		usage: "abso join <project> --agent <name> [--server <url>] [--dir <folder>] [--reader]",
+		usage: "abso join <project> [--agent <name>] [--dir <folder>] [--server <url>] [--reader]",
 		about:
-			"Join a project as a new agent and write its shared files into the folder (default: here). The server is --server, else ABSO_SERVER, else the one this box signed in to with abso login, else https://api.abso.dev. --reader joins as a reader: it reads everything and records nothing, and the server refuses its edits, records and publishes.",
+			"Join a project as a new agent and write its shared files into a folder: --dir, else here when this folder is empty, else ./<project> (which has to be new or empty). Without --agent the agent is named after this box (the name abso login gave it, lower-cased), or the next free <name>-2, <name>-3; that needs the box signed in with abso login. The server is --server, else ABSO_SERVER, else the one this box signed in to with abso login, else https://api.abso.dev. --reader joins as a reader: it reads everything and records nothing, and the server refuses its edits, records and publishes.",
 		run: runJoin,
 	},
 	record: {

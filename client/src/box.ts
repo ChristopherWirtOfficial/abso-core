@@ -277,6 +277,50 @@ export async function mintKey(
 	return { key, id };
 }
 
+/** The agent name abso join takes when none is given (abso issue 351): the box's name, lower-cased. */
+export function defaultAgentName(): string {
+	return boxName().toLowerCase();
+}
+
+/**
+ * abso join with no --agent (abso issue 351): mints a key under `base`, else `base`-2, -3 and so on. Names this
+ * box already holds in the project are skipped without asking, since minting one again would replace that agent's
+ * key and cut off its folder. A name the server says is taken (409) moves on to the next; any other refusal, the
+ * box's agent limit among them, is said as it is.
+ */
+export async function mintFreeName(
+	record: BoxRecord,
+	project: string,
+	base: string,
+	fetcher: typeof fetch = fetch,
+	tries = 20,
+): Promise<{ key: string; id: string; agent: string }> {
+	const box = await boxGet(record, "/box", fetcher);
+	if (box.status !== 200)
+		throw new UsageError(
+			`${originOf(record.server)} refused (${box.status}): ${String(box.body.error ?? "no reason given")}`,
+		);
+	const agents = Array.isArray(box.body.agents) ? (box.body.agents as { project?: unknown; agent?: unknown }[]) : [];
+	const held = new Set(agents.filter((a) => a.project === project).map((a) => String(a.agent)));
+	for (let n = 1; n <= tries; n++) {
+		const agent = n === 1 ? base : `${base}-${n}`;
+		if (held.has(agent)) continue;
+		try {
+			return { ...(await mintKey(record, project, agent, fetcher)), agent };
+		} catch (err) {
+			if (err instanceof UsageError && /refused \(409\): that agent name/.test(err.message)) continue;
+			if (err instanceof UsageError && /refused \(409\): this box is at its agent limit/.test(err.message))
+				throw new UsageError(
+					`this box is at its agent limit (${record.grant.max_agents}): abso box shows its grant, and an agent can be revoked on the website's Boxes page`,
+				);
+			throw err;
+		}
+	}
+	throw new UsageError(
+		`${base} through ${base}-${tries} are all taken in ${project}: give this agent a name with --agent <name>`,
+	);
+}
+
 /** Ends the box on the server, then forgets it here. Forgets it even when the server can't be reached. */
 export async function logout(record: BoxRecord, fetcher: typeof fetch = fetch, home = homedir()): Promise<boolean> {
 	let ended = true;

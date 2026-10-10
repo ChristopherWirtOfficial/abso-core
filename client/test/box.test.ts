@@ -13,6 +13,7 @@ import {
 	forgetBox,
 	login,
 	logout,
+	mintFreeName,
 	mintKey,
 	readBox,
 	signedInServers,
@@ -304,4 +305,36 @@ test("join and init pick the server: --server, ABSO_SERVER, the box's sign-in, t
 		/signed in to https:\/\/other\.abso\.example and https:\/\/staging\.abso\.example: say which with --server/,
 	);
 	assert.equal(serverFrom(args(SERVER), none, h), SERVER, "--server settles it");
+});
+
+test("join with no --agent takes the box's name, skips names this box holds, and moves past a taken one (abso issue 351)", async () => {
+	const seen: Seen = [];
+	const fetcher = server(
+		[
+			[200, { box_id: record.id, agents: [{ project: "abso", agent: "snow", key_id: "k_0" }] }],
+			[409, { error: "that agent name is already in use in this project; pick a new one" }],
+			[200, { key: "abso_sk_new", id: "k_3" }],
+		],
+		seen,
+	);
+	const got = await mintFreeName(record, "abso", "snow", fetcher);
+	assert.deepEqual(got, { key: "abso_sk_new", id: "k_3", agent: "snow-3" });
+	assert.deepEqual(
+		seen.map((s) => [new URL(s.url).pathname, (s.body as { agent?: string } | null)?.agent ?? null]),
+		[
+			["/box", null],
+			["/box/agent-key", "snow-2"],
+			["/box/agent-key", "snow-3"],
+		],
+		"snow is this box's already: never minted again, which would replace its key",
+	);
+
+	const limit = server(
+		[
+			[200, { box_id: record.id, agents: [] }],
+			[409, { error: "this box is at its agent limit" }],
+		],
+		[],
+	);
+	await assert.rejects(mintFreeName(record, "abso", "snow", limit), /this box is at its agent limit \(5\)/);
 });

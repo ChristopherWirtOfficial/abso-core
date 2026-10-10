@@ -1,11 +1,11 @@
 // abso init and abso join: start a project from a folder, or join one into a folder.
 
-import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { Api, ApiError } from "./api.ts";
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { writeKnownBlobs } from "./blobs.ts";
-import { mintKey, readBox, signedInServers } from "./box.ts";
+import { defaultAgentName, mintFreeName, mintKey, readBox, signedInServers } from "./box.ts";
 import { STARTING_ABSOIGNORE } from "./check-ignore.ts";
 import { CLIENT_DIR } from "./client-version.ts";
 import { type Env, type Output, plural } from "./command-env.ts";
@@ -33,10 +33,12 @@ export function serverFrom(args: Parsed, env: Pick<Env, "env">, home?: string): 
 	return signedIn[0] ?? TOKEN_SERVERS[0]!;
 }
 
+const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
 function agentFrom(args: Parsed): string {
 	const agent = str(args, "agent");
 	if (!agent) throw new UsageError("give this folder's agent name with --agent <name>");
-	if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(agent))
+	if (!NAME.test(agent))
 		throw new UsageError(`agent names are letters, digits, dot, dash and underscore (got ${JSON.stringify(agent)})`);
 	return agent;
 }
@@ -103,18 +105,49 @@ export async function runInit(args: Parsed, env: Env): Promise<Output> {
 	};
 }
 
+/**
+ * Where abso join writes (abso issue 351): --dir, else here when this folder is empty, else ./<project>, which has
+ * to be new or empty so nobody's files are written over.
+ */
+function joinFolder(args: Parsed, env: Env, project: string): string {
+	const dir = str(args, "dir");
+	if (dir !== undefined) return resolve(env.cwd, dir);
+	const empty = (path: string) => readdirSync(path).length === 0;
+	if (empty(env.cwd)) return resolve(env.cwd);
+	const sub = resolve(env.cwd, project);
+	if (existsSync(sub) && (!statSync(sub).isDirectory() || !empty(sub)))
+		throw new UsageError(`${sub} already has files in it: say where to join with --dir <folder>`);
+	return sub;
+}
+
 export async function runJoin(args: Parsed, env: Env): Promise<Output> {
-	if (args.positionals.length !== 1)
-		throw new UsageError("join takes the project name: abso join <project> --agent <name>");
+	if (args.positionals.length !== 1) throw new UsageError("join takes the project name: abso join <project>");
 	const project = args.positionals[0]!;
-	const root = resolve(env.cwd, str(args, "dir") ?? ".");
+	if (!NAME.test(project))
+		throw new UsageError(
+			`project names are letters, digits, dot, dash and underscore (got ${JSON.stringify(project)})`,
+		);
+	const root = joinFolder(args, env, project);
 	mkdirSync(root, { recursive: true });
 	if (findRoot(root) === root) throw new UsageError(`${root} already has .abso/config.json`);
 	const reader = bool(args, "reader");
-	const config = { ...makeSettings(args, env, project), ...(reader ? { reader: true } : {}) };
-	const box = readBox(config.server);
-	const minted =
-		box && !existsSync(join(stateDir(root), "key")) ? await mintKey(box, project, config.agent) : undefined;
+	const server = serverFrom(args, env);
+	const box = readBox(server);
+	const hasKey = existsSync(join(stateDir(root), "key"));
+	let agent: string;
+	let minted: { key: string; id: string } | undefined;
+	if (str(args, "agent") !== undefined) {
+		agent = agentFrom(args);
+		minted = box && !hasKey ? await mintKey(box, project, agent) : undefined;
+	} else {
+		// abso issue 351: no --agent takes the box's name, or the next free -2, -3.
+		if (!box) throw new UsageError("abso login signs this box in first (or give --agent <name>)");
+		if (hasKey) throw new UsageError(`${root} already has a key: give its agent's name with --agent <name>`);
+		const free = await mintFreeName(box, project, defaultAgentName());
+		agent = free.agent;
+		minted = { key: free.key, id: free.id };
+	}
+	const config = { server, project, agent, ...(reader ? { reader: true } : {}) };
 	writeConfig(root, config);
 	clearKnown(root);
 	if (minted) installKey(root, JSON.stringify(minted));
@@ -142,6 +175,7 @@ export async function runJoin(args: Parsed, env: Env): Promise<Output> {
 				: []),
 			...setupHint(root),
 			hookHint(env.env),
+			...(root === resolve(env.cwd) ? [] : [`cd ${relative(env.cwd, root) || root}`]),
 		].join("\n"),
 		json: {
 			project,
