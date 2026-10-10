@@ -391,10 +391,21 @@ export class Project {
 		return [...this.#agents.keys()].sort();
 	}
 
-	/** An agent's unpublished changes, oldest first, and its view (its space at its base plus its changes). Read only. */
-	draftOf(agentName: string): { atoms: AtomId[]; view: View } | undefined {
+	/**
+	 * An agent's unpublished changes, oldest first, and its view (its space at its base plus its changes). Read only.
+	 * The view is laid out on first use: where asks every agent, most have no changes, and a big project has more
+	 * agents than the view cache holds, so building every view cost each call about 0.7 s.
+	 */
+	draftOf(agentName: string): { atoms: AtomId[]; readonly view: View } | undefined {
 		const agent = this.#agents.get(agentName);
-		return agent && { atoms: this.#draft(agent), view: this.#agentView(agent) };
+		if (!agent) return undefined;
+		const view = () => this.#agentView(agent);
+		return {
+			atoms: this.#draft(agent),
+			get view() {
+				return view();
+			},
+		};
 	}
 
 	/** The shared version an atom was published in, or undefined while it's only in a draft. */
