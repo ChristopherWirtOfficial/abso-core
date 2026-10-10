@@ -25,6 +25,9 @@ before(async () => {
 			.writeHead(200, { "content-type": "application/json" })
 			.end(JSON.stringify({ name: "@abso-cli/abso", version: latest }));
 	});
+	// As fake-server.ts: never close an idle kept-alive connection, or under load the client can reuse one as it closes
+	// and fail with ECONNRESET (abso 410).
+	registry.keepAliveTimeout = 0;
 	await new Promise<void>((done) => registry.listen(0, "127.0.0.1", done));
 	registryUrl = `http://127.0.0.1:${(registry.address() as AddressInfo).port}/@abso-cli/abso/latest`;
 });

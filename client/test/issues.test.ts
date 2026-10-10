@@ -131,6 +131,9 @@ before(async () => {
 			});
 		send(500, { error: "a stand-in" });
 	});
+	// As fake-server.ts: never close an idle kept-alive connection, or under load the client can reuse one as it closes
+	// and fail with ECONNRESET (abso 410).
+	issues.keepAliveTimeout = 0;
 	await new Promise<void>((ok) => issues.listen(0, "127.0.0.1", ok));
 	issuesUrl = `http://127.0.0.1:${(issues.address() as AddressInfo).port}`;
 });
