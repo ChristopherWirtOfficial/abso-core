@@ -43,6 +43,7 @@ import { runExport } from "./export.ts";
 import { runBlame, runWhere, runWho, runWhy } from "./history.ts";
 import { runAck, runAnswer, runAsk, runIssue, runIssues, runSearch, runWaiting } from "./issues.ts";
 import { adminToken, issuedPublic, keyList, keyListText, keyNew, keyRevoke } from "./key-admin.ts";
+import { browserSkip, openInBrowser } from "./open-browser.ts";
 import { initInOrg, runOrg, runOrgs } from "./orgs.ts";
 import { runUnqueue } from "./queue.ts";
 import { runNote, runNotes, runReview } from "./review.ts";
@@ -169,13 +170,17 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		},
 	},
 	login: {
-		flags: { server: "string" },
-		usage: "abso login [--server <url>]",
+		flags: { server: "string", "no-browser": "boolean" },
+		usage: "abso login [--server <url>] [--no-browser]",
 		about:
-			"Sign this box in once (abso issue 108): it shows a code and a link, and waits while a person approves the code on the website, choosing the projects, the highest role and how many agents. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. Without --server, the folder's server, or https://api.abso.dev outside a folder.",
+			"Sign this box in once (abso issue 108): it opens the approve page in your browser with the code filled in, prints the link and the code too, and waits while a person approves the code on the website, choosing the projects, the highest role and how many agents. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. Without --server, the folder's server, or https://api.abso.dev outside a folder. No browser opens with --no-browser or ABSO_NO_BROWSER, over SSH, under CI, or on Linux without a display.",
 		run: async (args, env) => {
 			const server = boxServer(args, env);
-			const record = await login(server, { say: (line) => process.stderr.write(`${line}\n`) });
+			const open =
+				bool(args, "no-browser") || browserSkip(env.env, process.platform) !== null
+					? undefined
+					: (url: string) => openInBrowser(url);
+			const record = await login(server, { say: (line) => process.stderr.write(`${line}\n`), open });
 			return {
 				text: `This box is signed in. ${boxText(record, server).split("\n").slice(1).join(" ")}`,
 				json: { box: boxPublic(record) },

@@ -185,6 +185,8 @@ export interface LoginIo {
 	readonly now?: () => number;
 	/** Where the code and link go while login waits: stderr, so stdout stays quiet. */
 	readonly say: (line: string) => void;
+	/** Opens the approve page in a browser, answering whether it tried. None where it shouldn't (--no-browser, SSH, CI). */
+	readonly open?: (url: string) => boolean;
 }
 
 /**
@@ -202,6 +204,8 @@ export async function login(server: string, io: LoginIo, home = homedir()): Prom
 	const expiresIn = Math.min(Number(start.body.expires_in) || 900, MAX_LOGIN_WAIT_S);
 	if (typeof code !== "string" || typeof link !== "string" || typeof device !== "string")
 		throw new UsageError(`${originOf(server)} didn't give a code to approve`);
+	// The page opens with the code in it, so nobody copies a link by hand. The link and code are printed all the same.
+	if (io.open?.(link)) io.say("Opening the approve page in your browser.");
 	io.say(`To sign this box in, open ${link} and approve the code ${code}.`);
 	io.say("Waiting for approval. Ctrl-C stops waiting, and abso stops by itself when the code runs out.");
 	const until = now() + expiresIn * 1000;

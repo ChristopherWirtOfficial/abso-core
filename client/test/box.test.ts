@@ -102,6 +102,64 @@ test("login shows the code, waits while it's pending, and keeps the credential i
 	assert.equal(JSON.stringify(boxPublic(got)).includes(CREDENTIAL), false);
 });
 
+test("login opens the approve page with the code in it, and prints the link and code all the same", async () => {
+	const said: string[] = [];
+	const opened: string[] = [];
+	const c = clock();
+	await login(
+		SERVER,
+		{
+			fetch: server(
+				[
+					[200, started],
+					[200, { box_id: "b_0123abcd", box_token: CREDENTIAL, expires_at: EXPIRES, grant }],
+				],
+				[],
+			),
+			sleep: c.sleep,
+			now: c.now,
+			say: (line) => said.push(line),
+			open: (url) => (opened.push(url), true),
+		},
+		home(),
+	);
+	assert.deepEqual(opened, ["https://abso.dev/login/box?code=WXYZ-BCDF"]);
+	assert.deepEqual(said.slice(0, 2), [
+		"Opening the approve page in your browser.",
+		"To sign this box in, open https://abso.dev/login/box?code=WXYZ-BCDF and approve the code WXYZ-BCDF.",
+	]);
+});
+
+test("an open that doesn't start says nothing about a browser, and the printed link stands", async () => {
+	const said: string[] = [];
+	const c = clock();
+	await login(
+		SERVER,
+		{
+			fetch: server(
+				[
+					[200, started],
+					[200, { box_id: "b_0123abcd", box_token: CREDENTIAL, expires_at: EXPIRES, grant }],
+				],
+				[],
+			),
+			sleep: c.sleep,
+			now: c.now,
+			say: (line) => said.push(line),
+			open: () => false,
+		},
+		home(),
+	);
+	assert.equal(
+		said[0],
+		"To sign this box in, open https://abso.dev/login/box?code=WXYZ-BCDF and approve the code WXYZ-BCDF.",
+	);
+	assert.equal(
+		said.some((l) => l.includes("browser")),
+		false,
+	);
+});
+
 test("a code that's turned down or runs out says so and keeps nothing", async () => {
 	const h = home();
 	const c = clock();
