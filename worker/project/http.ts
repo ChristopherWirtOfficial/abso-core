@@ -1,6 +1,8 @@
 // The JSON routes of the contract (docs/v2-slice1.md), as a pure function of
 // the project calls, so they can be tested in Node without a Worker.
+
 import type { EditBody, ProjectCalls, ProjectHistory } from "./project-api.ts";
+import { unseenError } from "./unseen.ts";
 
 export interface Answer {
 	status: number;
@@ -429,6 +431,8 @@ export function answer(
 			case "publish": {
 				const message = (body as { message?: string })?.message;
 				if (typeof message !== "string" || !message.trim()) return fail(400, "publish needs {message} saying why");
+				const unseen = unseenError("the message", message);
+				if (unseen) return fail(400, unseen);
 				// asIs (#37): publish even with collided lines untouched since the sync, both sides kept.
 				return { status: 200, body: project.publish(agent, message, (body as { asIs?: unknown }).asIs === true) };
 			}
@@ -466,6 +470,8 @@ export function answer(
 			case "land": {
 				const message = (body as { message?: string })?.message;
 				if (typeof message !== "string" || !message.trim()) return fail(400, "land needs {message} saying why");
+				const unseen = unseenError("the message", message);
+				if (unseen) return fail(400, unseen);
 				return { status: 200, body: project.land(agent, message) };
 			}
 			case "draft-sync":
@@ -491,6 +497,8 @@ export function answer(
 				if (!history.amend) return fail(501, "amend needs the engine");
 				const message = (body as { message?: unknown } | undefined)?.message;
 				if (typeof message !== "string" || !message.trim()) return fail(400, "amend needs {message}");
+				const unseen = unseenError("the message", message);
+				if (unseen) return fail(400, unseen);
 				return { status: 200, body: history.amend(agent, message) };
 			}
 			// Pluck (#27): take some versions of a named draft into shared.
@@ -507,6 +515,8 @@ export function answer(
 				if (!Array.isArray(b.versions) || b.versions.length === 0 || !b.versions.every((v) => Number.isInteger(v)))
 					return fail(400, "pluck needs {versions: [number]}");
 				if (typeof b.message !== "string" || !b.message.trim()) return fail(400, "pluck needs {message} saying why");
+				const unseen = unseenError("the message", b.message);
+				if (unseen) return fail(400, unseen);
 				return {
 					status: 200,
 					body: history.pluck(agent, b.draft, b.versions as number[], b.message, b.withDependencies === true),
@@ -520,6 +530,8 @@ export function answer(
 				if (!Array.isArray(b.versions) || b.versions.length === 0 || !b.versions.every((v) => Number.isInteger(v)))
 					return fail(400, "drop needs {versions: [number], message}");
 				if (typeof b.message !== "string" || !b.message.trim()) return fail(400, "drop needs {message} saying why");
+				const unseen = unseenError("the message", b.message);
+				if (unseen) return fail(400, unseen);
 				return { status: 200, body: history.drop(agent, b.versions as number[], b.message, b.withDependents === true) };
 			}
 			// Announcements, and news without an edit.
@@ -537,6 +549,8 @@ export function answer(
 				if (!history.note || !history.closeNote) return fail(501, `${op} needs the engine`);
 				const b = (body ?? {}) as Record<string, unknown>;
 				if (op === "note-close") return { status: 200, body: history.closeNote(agent, b.id as number, b.how) };
+				const unseen = unseenError("the note", b.text);
+				if (unseen) return fail(400, unseen);
 				return { status: 200, body: history.note(agent, b) };
 			}
 			case "announce":
@@ -546,6 +560,8 @@ export function answer(
 				if (op === "news") return { status: 200, body: history.news(agent) };
 				const b = (body ?? {}) as { text?: unknown; to?: unknown };
 				if (typeof b.text !== "string" || !b.text.trim()) return fail(400, "announce needs {text}");
+				const unseen = unseenError("the text", b.text);
+				if (unseen) return fail(400, unseen);
 				if (b.to !== undefined && (!Array.isArray(b.to) || !b.to.every((a) => typeof a === "string")))
 					return fail(400, "to must be a list of agent names");
 				return { status: 200, body: history.announce(agent, b.text, b.to as string[] | undefined, how) };
@@ -557,6 +573,8 @@ export function answer(
 				const b = (body ?? {}) as { text?: unknown; files?: unknown; issue?: unknown; done?: unknown };
 				if (b.text !== null && (typeof b.text !== "string" || !b.text.trim()))
 					return fail(400, "starting needs {text}, or {text: null} to take it back");
+				const unseen = unseenError("the note", b.text);
+				if (unseen) return fail(400, unseen);
 				if (b.files !== undefined && (!Array.isArray(b.files) || !b.files.every((f) => typeof f === "string")))
 					return fail(400, "files must be a list of paths");
 				// issue (#54): the issue the note works on; done: a take-back because the work is finished, closing it.
