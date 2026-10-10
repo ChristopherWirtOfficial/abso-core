@@ -9,9 +9,10 @@
 		"node": ">=24"
 	},
 	"scripts": {
-		"test": "node --import ./client/test/setup.ts --test \"src/**/*.test.ts\" \"worker/project/**/*.test.ts\" \"client/test/**/*.test.ts\"",
+		"test": "node --import ./client/test/setup.ts --test \"src/**/*.test.ts\" \"worker/project/**/*.test.ts\" \"client/test/**/*.test.ts\" \"scripts/**/*.test.ts\"",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"check": "npm run typecheck && npm test",
+		"check:changed": "node scripts/check-changed.mjs",
 		"format": "biome check --write .",
 		"lint": "biome ci ."
 	},

@@ -140,6 +140,14 @@ npm ci
 npm run check
 ```
 
+Before a publish, `npm run check:changed` is enough: it runs the tests that
+import what you changed, the typecheck when it reaches it, and biome on your
+files (`--list` shows the plan; name files after `--` to pick them yourself).
+The merge queue runs the full check on every publish, so running it by hand
+too only adds minutes. check:changed runs the full check itself when you
+change setup (package.json, the lockfile, tsconfig.json, abso.json,
+biome.json).
+
 ## History
 
 abso-core starts from a fresh first version: the tool as it stood when it

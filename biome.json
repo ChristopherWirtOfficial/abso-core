@@ -5,6 +5,7 @@
 			"client/**",
 			"src/**",
 			"worker/project/**",
+			"scripts/**",
 			"*.json",
 			"!**/node_modules",
 			"!**/.abso",
