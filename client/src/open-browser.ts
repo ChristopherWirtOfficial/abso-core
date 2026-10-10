@@ -41,7 +41,8 @@ export function isWebLink(url: string): boolean {
  */
 export function openInBrowser(url: string, platform: string = process.platform, run: typeof spawn = spawn): boolean {
 	if (!isWebLink(url)) return false;
-	const [command, args] = openCommand(url, platform);
+	// The link as the check parsed it, so what opens is exactly what was checked.
+	const [command, args] = openCommand(new URL(url).href, platform);
 	try {
 		const child = run(command, args, { detached: true, stdio: "ignore", windowsHide: true });
 		child.on("error", () => {});
