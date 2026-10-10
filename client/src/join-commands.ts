@@ -16,6 +16,7 @@ import { fromEnv } from "./env-names.ts";
 import { clearKnown, loadIgnore, readFolder, writeKnown } from "./folder.ts";
 import { modInstalled } from "./install.ts";
 import { type FullMode, foldModes, writeKnownModes } from "./modes.ts";
+import { siteOf } from "./orgs.ts";
 import { projectFileName, readProjectFile, startingProjectFileText, writeStartingProjectFile } from "./project-file.ts";
 import { refusedText } from "./safety.ts";
 import { OLD_STATE_DIR, STATE_DIR, stateDir } from "./state-dir.ts";
@@ -123,6 +124,22 @@ export function joinFolder(args: Parsed, env: Pick<Env, "cwd">, project: string)
 	return sub;
 }
 
+/**
+ * Why a join failed signed out. The client reads only as an agent, which needs a
+ * sign-in; a public project is read signed out on the website. Whether the
+ * project is public is asked of the server with no credentials.
+ */
+async function signedOut(server: string, project: string): Promise<string> {
+	let open = false;
+	try {
+		const response = await fetch(new URL(`/p/${project}/status`, server), { signal: AbortSignal.timeout(3000) });
+		open = response.ok;
+	} catch {}
+	return open
+		? `${project} is public: read it at ${siteOf(server)}/p/${project} (every page is also JSON). The client needs a sign-in, even to read: abso login.`
+		: `This box isn't signed in to ${server}. abso login signs it in.`;
+}
+
 export async function runJoin(args: Parsed, env: Env): Promise<Output> {
 	if (args.positionals.length !== 1) throw new UsageError("join takes the project name: abso join <project>");
 	const project = args.positionals[0]!;
@@ -144,7 +161,10 @@ export async function runJoin(args: Parsed, env: Env): Promise<Output> {
 		minted = box && !hasKey ? await mintKey(box, project, agent) : undefined;
 	} else {
 		// No --agent: the box's name, or the next free -2, -3.
-		if (!box) throw new UsageError("abso login signs this box in first (or give --agent <name>)");
+		if (!box)
+			throw new UsageError(
+				`${await signedOut(server, project)} (A folder that already has a key joins with --agent <name>.)`,
+			);
 		if (hasKey) throw new UsageError(`${root} already has a key: give its agent's name with --agent <name>`);
 		const free = await mintFreeName(box, project, defaultAgentName());
 		agent = free.agent;
@@ -165,7 +185,7 @@ export async function runJoin(args: Parsed, env: Env): Promise<Output> {
 	} catch (error) {
 		if (!(error instanceof ApiError && error.status === 401 && !box && !settings.token)) throw error;
 		rmSync(stateDir(root), { recursive: true, force: true });
-		throw new UsageError(`This box isn't signed in to ${config.server}. abso login signs it in.`);
+		throw new UsageError(await signedOut(config.server, project));
 	}
 	return {
 		text: [
