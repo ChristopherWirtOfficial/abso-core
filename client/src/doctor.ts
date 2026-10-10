@@ -3,9 +3,12 @@
 // when one fails. Neither prints a credential. plainError words the commonest failures the same way.
 
 import { ApiError } from "./api-error.ts";
-import { type Answer, type BoxRecord, boxGet, boxText, originOf, readBox } from "./box.ts";
+import { UsageError } from "./args.ts";
+import { type Answer, type BoxRecord, boxGet, boxText, originOf, readBox, signedInServers } from "./box.ts";
 import { builtCopy } from "./client-version.ts";
 import { type Config, credentialLabel, findRoot, readConfig } from "./config.ts";
+import { TOKEN_SERVERS } from "./core.ts";
+import { fromEnv } from "./env-names.ts";
 
 /** The lowest Node major each kind of copy runs on: the npm package is built for 20, a checkout runs its .ts as is. */
 export function nodeNeeded(built: boolean): number {
@@ -37,6 +40,28 @@ function folderOf(
 	} catch (err) {
 		return { root, problem: err instanceof Error ? err.message : String(err) };
 	}
+}
+
+/**
+ * The server whoami and doctor look at, in the order join picks one: --server, then ABSO_SERVER, then this
+ * folder's server, then the one this box signed in to with abso login, then https://api.abso.dev. A box signed
+ * in to more than one server has to say which.
+ */
+export function checkServer(
+	flag: string | undefined,
+	cwd: string,
+	env: Readonly<Record<string, string | undefined>>,
+	home?: string,
+	now = Date.now(),
+): string {
+	const named = flag ?? fromEnv(env, "SERVER");
+	if (named) return named;
+	const folder = folderOf(cwd, env)?.config?.server;
+	if (folder) return folder;
+	const signedIn = signedInServers(home, now);
+	if (signedIn.length > 1)
+		throw new UsageError(`this box is signed in to ${signedIn.join(" and ")}: say which with --server <url>`);
+	return signedIn[0] ?? TOKEN_SERVERS[0]!;
 }
 
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace("T", " ");

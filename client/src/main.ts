@@ -39,7 +39,7 @@ import {
 } from "./commands.ts";
 import { configPath, findRoot, installKey, readConfig, readToken } from "./config.ts";
 import { newsBlockLines, newsShown, TOKEN_SERVERS } from "./core.ts";
-import { doctor, doctorText, plainError, realProbe, whoami } from "./doctor.ts";
+import { checkServer, doctor, doctorText, plainError, realProbe, whoami } from "./doctor.ts";
 import { runDraftSync, runLand, runSwitch } from "./drafts.ts";
 import { runExport } from "./export.ts";
 import { runBlame, runWhere, runWho, runWhy } from "./history.ts";
@@ -208,9 +208,9 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { server: "string" },
 		usage: "abso whoami [--server <url>]",
 		about:
-			"Who and where you're signed in: this box's sign-in, as the server sees it (so a revoked one shows), its projects, roles and expiry, and this folder's project, agent and kind of key. Never a credential.",
+			"Who and where you're signed in: this box's sign-in, as the server sees it (so a revoked one shows), its projects, roles and expiry, and this folder's project, agent and kind of key. Never a credential. The server is --server, else ABSO_SERVER, else this folder's, else the one this box signed in to with abso login, else https://api.abso.dev.",
 		run: async (args, env) => {
-			const out = await whoami(boxServer(args, env), env.cwd, env.env, realProbe());
+			const out = await whoami(checkServer(str(args, "server"), env.cwd, env.env), env.cwd, env.env, realProbe());
 			return { text: out.text, json: out.json };
 		},
 	},
@@ -218,9 +218,9 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { server: "string" },
 		usage: "abso doctor [--server <url>]",
 		about:
-			"Checks what commands need, one line each: Node's version, that the server answers, this box's sign-in (present, unexpired, accepted), and this folder's key against its project. A failed check says what to do next, and the exit is 1. Never prints a credential.",
+			"Checks what commands need, one line each: Node's version, that the server answers, this box's sign-in (present, unexpired, accepted), and this folder's key against its project. A failed check says what to do next, and the exit is 1. Never prints a credential. It picks the server as whoami does.",
 		run: async (args, env) => {
-			const checks = await doctor(boxServer(args, env), env.cwd, env.env, realProbe());
+			const checks = await doctor(checkServer(str(args, "server"), env.cwd, env.env), env.cwd, env.env, realProbe());
 			const failed = checks.some((c) => c.result === "fail");
 			return { text: doctorText(checks), json: { checks }, ...(failed ? { exit: EXIT.error } : {}) };
 		},
@@ -768,11 +768,11 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		run: runCheckIgnore,
 	},
 	pipeline: {
-		flags: { on: "string", space: "string", pipeline: "string", every: "string" },
+		flags: { on: "string", space: "string", pipeline: "string", every: "string", log: "string" },
 		usage:
-			"abso pipeline check [file] [--on publish|draft|green|land|hand|schedule [--space <name>] [--pipeline <name>] [--every <when>]]",
+			"abso pipeline check [file] [--on publish|draft|green|land|hand|schedule [--space <name>] [--pipeline <name>] [--every <when>]] | abso pipeline runs [<run>] [--log <pipeline.job>]",
 		about:
-			"Read the folder's pipeline file (abso.yml, abso.yaml or avcs.json, or the file named) and say what's wrong with it, place by place: a cycle in needs, a job that doesn't exist, secrets a draft could reach, a key it doesn't know. Exits 1 when it has problems. With --on, it says which pipelines that event starts (in shared, or --space), with their jobs in waves that can run side by side, and why each other pipeline doesn't start. It reads only the file.",
+			"Read the folder's pipeline file (abso.yml, abso.yaml or avcs.json, or the file named) and say what's wrong with it, place by place: a cycle in needs, a job that doesn't exist, secrets a draft could reach, a key it doesn't know. Exits 1 when it has problems. With --on, it says which pipelines that event starts (in shared, or --space), with their jobs in waves that can run side by side, and why each other pipeline doesn't start. It reads only the file. abso pipeline runs asks the server what the project's pipelines did: the runs, newest first; with a run's number, its jobs (state, why, exit, time, an npm or deploy job's phase); with --log <pipeline.job>, that job's output.",
 		// Loaded only here, so the yaml package it needs can't stop every other command
 		// when a checkout lacks it (abso issue 168).
 		run: async (args, env) => {

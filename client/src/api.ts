@@ -759,6 +759,11 @@ export class Api {
 		return this.json("GET", version === undefined ? "/ci" : `/ci?${query({ version })}`);
 	}
 
+	/** The project's pipeline runs, newest first; one run with its jobs; or one job's log (`log` is pipeline.job). */
+	pipelineRuns(run?: number, log?: string): Promise<unknown> {
+		return this.json("GET", run === undefined ? "/pipelines" : `/pipelines?${query({ run, log })}`);
+	}
+
 	/** Ends every /latest link handed out so far; answers CI's state with the new link. */
 	ciRevoke(): Promise<CiStatus> {
 		return this.json("POST", "/ci/revoke", {});

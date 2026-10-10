@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { main } from "../src/main.ts";
+import { runsText, runText } from "../src/pipeline-commands.ts";
 
 const base = mkdtempSync(join(tmpdir(), "abso-pipeline-"));
 after(() => rmSync(base, { recursive: true, force: true }));
@@ -156,5 +157,74 @@ describe("abso pipeline check --on (abso issue 176)", () => {
 		);
 		assert.match((await run(dir, "check", "--on", "hand")).stderr, /--on hand takes --pipeline <name>/);
 		assert.match((await run(dir, "check", "--on", "schedule")).stderr, /--on schedule takes --every/);
+	});
+});
+
+describe("abso pipeline runs", () => {
+	const now = Date.parse("2026-10-10T07:00:00Z");
+	const t = (hm: string) => Date.parse(`2026-10-10T${hm}:00Z`);
+	const summary = {
+		id: 4,
+		version: 4,
+		event: "green",
+		file: "abso.yml",
+		started: t("06:45"),
+		ended: t("06:46"),
+		state: "planned",
+		pipelines: [{ name: "npm", state: "planned" }],
+	};
+
+	it("lists the runs, newest first, one line each", () => {
+		assert.equal(
+			runsText([summary], now),
+			"  run 4: version 4 (green, abso.yml), planned, 06:45 UTC to 06:46 UTC: npm planned\nabso pipeline runs <run> shows its jobs.\n",
+		);
+		assert.equal(runsText([], now), "No pipeline runs yet.\n");
+	});
+
+	it("shows a run's jobs with why each one stopped, and where a log is", () => {
+		const text = runText(
+			{
+				...summary,
+				jobs: [
+					{ pipeline: "npm", job: "pack", needs: [], run: "npm pack", state: "passed", exit: 0, seconds: 5, log: true },
+					{
+						pipeline: "npm",
+						job: "publish",
+						needs: ["pack"],
+						uses: "npm-publish",
+						state: "planned",
+						why: "not bound here",
+					},
+					{
+						pipeline: "npm",
+						job: "wait",
+						needs: [],
+						uses: "npm-publish",
+						state: "running",
+						npm: { phase: "wait" },
+						since: t("06:50"),
+					},
+				],
+			},
+			now,
+		);
+		assert.equal(
+			text,
+			[
+				"Run 4: version 4 (green, abso.yml), planned, 06:45 UTC to 06:46 UTC.",
+				"  npm.pack (npm pack): passed, exit 0, 5 s",
+				"      log: abso pipeline runs 4 --log npm.pack",
+				"  npm.publish (uses npm-publish): planned, not bound here",
+				"  npm.wait (uses npm-publish): running, npm wait, since 06:50 UTC",
+				"",
+			].join("\n"),
+		);
+	});
+
+	it("takes a run number, and --log only with one", async () => {
+		const dir = folder({});
+		assert.match((await run(dir, "runs", "x")).stderr, /a run is a number/);
+		assert.match((await run(dir, "runs", "--log", "npm.pack")).stderr, /--log needs a run/);
 	});
 });
