@@ -3615,7 +3615,9 @@ describe("wishlist: publish clarity, who, fix-eol, one-version hint (#37)", () =
 		const first = await avcs(root, "status");
 		assert.deepEqual(first.json.unrecorded, []);
 		assert.deepEqual(first.json.crlf, ["c.txt"]);
-		assert.deepEqual(Object.keys(JSON.parse(readFileSync(record, "utf8")).files).sort(), ["a.txt", "b.txt", "c.txt"]);
+		// .absoignore, written at init and never aged here, is kept too once the run so far took longer than RACY_MS.
+		const keptNames = Object.keys(JSON.parse(readFileSync(record, "utf8")).files).filter((k) => k !== ".absoignore");
+		assert.deepEqual(keptNames.sort(), ["a.txt", "b.txt", "c.txt"]);
 		swap("b.txt", "B\n");
 		const second = await avcs(root, "status");
 		assert.deepEqual(second.json.unrecorded, [], "b.txt was answered from the record");
