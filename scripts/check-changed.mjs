@@ -15,10 +15,10 @@
 // A change to setup (package.json, the lockfile, tsconfig.json, abso.json, biome.json) runs the full check.
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { availableParallelism } from "node:os";
 import { dirname, extname, join, matchesGlob, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -118,6 +118,20 @@ function draftFiles() {
 	return [...files].filter(Boolean);
 }
 
+/**
+ * A tsconfig's JSON. Plain JSON is read as it is; one with comments goes through TypeScript's reader, loaded
+ * only then, since loading TypeScript takes seconds on a busy machine.
+ */
+function readTsconfig(path) {
+	const text = readFileSync(path, "utf8");
+	try {
+		return JSON.parse(text);
+	} catch {
+		const ts = createRequire(join(root, "package.json"))("typescript");
+		return ts.parseConfigFileTextToJson(path, text).config ?? {};
+	}
+}
+
 /** What the changed files reach: test files to run per test group, tsconfigs to check, files for biome. */
 export function plan(changed, files = allFiles()) {
 	const known = new Set(files);
@@ -146,7 +160,7 @@ export function plan(changed, files = allFiles()) {
 		if (t) t.files.push(t.cwd === "." ? f : f.slice(t.cwd.length + 1));
 	}
 	const typechecks = TYPECHECKS.filter((c) => {
-		const cfg = ts.readConfigFile(join(root, c.tsconfig), (p) => readFileSync(p, "utf8")).config ?? {};
+		const cfg = readTsconfig(join(root, c.tsconfig));
 		const dir = posix(dirname(c.tsconfig));
 		const inc = (cfg.include ?? ["**/*"]).map((g) => posix(join(dir, g)));
 		const exc = (cfg.exclude ?? []).map((g) => posix(join(dir, g)));
