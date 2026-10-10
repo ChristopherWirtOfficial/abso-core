@@ -604,11 +604,27 @@ export async function runIssue(args: Parsed, env: Env): Promise<Output> {
 	if (str(args, "attach") !== undefined && comment === undefined && object === undefined)
 		throw new UsageError("--attach goes with abso issue new or --comment (or --object)");
 	if (comment !== undefined || object !== undefined) {
+		// Refused before anything goes up: an objection is one comment, and a part of one would read as a whole.
+		if (object !== undefined && object.length > COMMENT_MAX)
+			throw new UsageError(
+				`an objection holds up to ${COMMENT_MAX} characters, and this one has ${object.length}: say it shorter, and put the rest in a --comment`,
+			);
+		const parts = object !== undefined ? [object] : commentParts(comment!);
 		const attachments = await uploadAttachments(api, env.cwd, str(args, "attach"));
-		const r = await api.issueComment(id, (comment ?? object)!, object !== undefined, attachments);
+		const ids: number[] = [];
+		for (const [i, part] of parts.entries()) {
+			// The attachments go on the first part, which the rest follow.
+			ids.push((await api.issueComment(id, part, object !== undefined, i === 0 ? attachments : [])).id);
+		}
+		const inParts = parts.length > 1 ? ` in ${parts.length} parts (comments ${ids.join(", ")})` : "";
 		return {
-			text: `${object !== undefined ? "Objected" : "Commented"} on issue ${id}${attachments.length > 0 ? ` with ${plural(attachments.length, "attachment")} (${attachments.join(", ")})` : ""}. Its agents hear it.`,
-			json: { id: r.id, issue: id, ...(attachments.length > 0 ? { attachments } : {}) },
+			text: `${object !== undefined ? "Objected" : "Commented"} on issue ${id}${inParts}${attachments.length > 0 ? ` with ${plural(attachments.length, "attachment")} (${attachments.join(", ")})` : ""}. Its agents hear it.`,
+			json: {
+				id: ids[0],
+				issue: id,
+				...(parts.length > 1 ? { parts: ids } : {}),
+				...(attachments.length > 0 ? { attachments } : {}),
+			},
 		};
 	}
 	if (bool(args, "drop")) {
@@ -876,4 +892,67 @@ export async function runAnswer(args: Parsed, env: Env): Promise<Output> {
 		text: `Answered ask ${id}${withFiles(attachments)}. ${r.ask.by} hears it.${lost ? ` ${lost}` : ""}`,
 		json: { ask: r.ask, ...(lost ? { notKept: lost } : {}) },
 	};
+}
+
+/** What the Issues Worker takes in one comment (its LIMITS.text). */
+export const COMMENT_MAX = 4000;
+
+/** Room a part keeps for its "(i/n)" line and blank line, and for closing a code block it ends inside. */
+const PART_MARK = 12;
+const FENCE_CLOSE = 5;
+
+/**
+ * A comment too long for one, as parts that each fit, each starting with "(i/n)". A part ends at the last
+ * paragraph break that fits, else the last line break, else the last space, else at the limit. A part that
+ * would end inside a fenced code block closes it, and the next part opens it again with the same fence line.
+ */
+export function commentParts(text: string, max = COMMENT_MAX): string[] {
+	if (text.length <= max) return [text];
+	const bodies: string[] = [];
+	let rest = text;
+	let reopen = "";
+	while (rest !== "") {
+		const room = max - PART_MARK - FENCE_CLOSE - reopen.length;
+		let body: string;
+		if (reopen.length + rest.length <= max - PART_MARK) {
+			body = rest;
+			rest = "";
+		} else {
+			const cut = cutAt(rest, room);
+			body = rest.slice(0, cut).trimEnd();
+			// A space cut at goes with neither part; the line breaks between paragraphs go too.
+			rest = rest.slice(rest[cut] === " " ? cut + 1 : cut).replace(/^\n+/, "");
+			if (rest.trim() === "") rest = "";
+		}
+		let part = reopen + body;
+		const fence = openFence(part);
+		if (fence && rest !== "") {
+			part += `\n${fence.marker}`;
+			reopen = `${fence.line}\n`;
+		} else reopen = "";
+		bodies.push(part);
+	}
+	return bodies.map((b, i) => `(${i + 1}/${bodies.length})\n\n${b}`);
+}
+
+/** Where to end a part of at most `room` characters of `text`: a paragraph break, a line break, a space, or the limit. */
+function cutAt(text: string, room: number): number {
+	const head = text.slice(0, room);
+	const floor = room / 4;
+	for (const at of [head.lastIndexOf("\n\n"), head.lastIndexOf("\n"), head.lastIndexOf(" ")]) if (at > floor) return at;
+	// Not between the two halves of a character outside the Basic Multilingual Plane.
+	const code = text.charCodeAt(room - 1);
+	return code >= 0xd800 && code <= 0xdbff ? room - 1 : room;
+}
+
+/** The fence line of a code block still open at the end of `text`, and the marker that closes it, or undefined. */
+function openFence(text: string): { line: string; marker: string } | undefined {
+	let open: { line: string; marker: string } | undefined;
+	for (const line of text.split("\n")) {
+		const m = /^\s*(`{3,}|~{3,})/.exec(line);
+		if (!m) continue;
+		if (!open) open = { line, marker: m[1]! };
+		else if (m[1]!.startsWith(open.marker) && line.trim() === m[1]) open = undefined;
+	}
+	return open;
 }
