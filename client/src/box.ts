@@ -9,11 +9,11 @@
 // which answer as the person who approved the box.
 
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { UsageError } from "./args.ts";
-import { homeFile, homeWritePath, OLD_STATE_DIR } from "./state-dir.ts";
+import { homeFile, homeWritePath, OLD_STATE_DIR, STATE_DIR } from "./state-dir.ts";
 
 /** What the person who approved the code allowed: each project with the highest role its agents get there, and how many agents. */
 export interface Grant {
@@ -57,6 +57,31 @@ export function readBox(server: string, home = homedir()): BoxRecord | undefined
 	} catch {
 		return undefined;
 	}
+}
+
+/** The servers this box is signed in to and whose sign-in hasn't expired, from ~/.abso/boxes (and an older ~/.avcs/boxes). */
+export function signedInServers(home = homedir(), now = Date.now()): string[] {
+	const servers = new Set<string>();
+	for (const dir of [STATE_DIR, OLD_STATE_DIR]) {
+		let names: string[];
+		try {
+			names = readdirSync(join(home, dir, "boxes"));
+		} catch {
+			continue;
+		}
+		for (const name of names) {
+			try {
+				const server = (JSON.parse(readFileSync(join(home, dir, "boxes", name), "utf8")) as { server?: unknown })
+					.server;
+				if (typeof server !== "string") continue;
+				const record = readBox(server, home);
+				if (record && record.expiresAt > now) servers.add(originOf(record.server));
+			} catch {
+				// Not a sign-in this client wrote: left alone.
+			}
+		}
+	}
+	return [...servers].sort();
 }
 
 export function writeBox(record: BoxRecord, home = homedir()): void {

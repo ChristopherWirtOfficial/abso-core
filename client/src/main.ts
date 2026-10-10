@@ -89,9 +89,9 @@ async function runKeyInstall(args: Parsed, env: Env): Promise<Output> {
 const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	init: {
 		flags: { server: "string", project: "string", agent: "string", "as-is": "boolean", org: "string" },
-		usage: "abso init [folder] --server <url> --project <name> --agent <name> [--as-is] [--org <org>]",
+		usage: "abso init [folder] [--server <url>] --project <name> --agent <name> [--as-is] [--org <org>]",
 		about:
-			"Create a project on the server from a folder's text files. The folder becomes that agent's folder. It writes a starting .absoignore, and, when the folder has no avcs.json and package.json gives a check or a build to guess, an avcs.json (setup, check, build and out): what the server's CI runs on each new version of shared. Without one, CI runs what it can guess itself, or nothing. --as-is writes neither: the folder goes up exactly as it is (an import). --org <org> makes it an organization's project: for now that is done on the website, and abso says where.",
+			"Create a project on the server from a folder's text files (the server is chosen as abso join chooses it). The folder becomes that agent's folder. It writes a starting .absoignore, and, when the folder has no avcs.json and package.json gives a check or a build to guess, an avcs.json (setup, check, build and out): what the server's CI runs on each new version of shared. Without one, CI runs what it can guess itself, or nothing. --as-is writes neither: the folder goes up exactly as it is (an import). --org <org> makes it an organization's project: for now that is done on the website, and abso says where.",
 		run: (args, env) => {
 			const org = str(args, "org");
 			return org === undefined ? runInit(args, env) : initInOrg(org, boxServer(args, env));
@@ -262,9 +262,9 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	},
 	join: {
 		flags: { server: "string", agent: "string", dir: "string", reader: "boolean" },
-		usage: "abso join <project> --agent <name> --server <url> [--dir <folder>] [--reader]",
+		usage: "abso join <project> --agent <name> [--server <url>] [--dir <folder>] [--reader]",
 		about:
-			"Join a project as a new agent and write its shared files into the folder (default: here). --reader joins as a reader: it reads everything and records nothing, and the server refuses its edits, records and publishes.",
+			"Join a project as a new agent and write its shared files into the folder (default: here). The server is --server, else ABSO_SERVER, else the one this box signed in to with abso login, else https://api.abso.dev. --reader joins as a reader: it reads everything and records nothing, and the server refuses its edits, records and publishes.",
 		run: runJoin,
 	},
 	record: {

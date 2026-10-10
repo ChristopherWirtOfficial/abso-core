@@ -5,12 +5,13 @@ import { join, resolve } from "node:path";
 import { Api, ApiError } from "./api.ts";
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { writeKnownBlobs } from "./blobs.ts";
-import { mintKey, readBox } from "./box.ts";
+import { mintKey, readBox, signedInServers } from "./box.ts";
 import { STARTING_ABSOIGNORE } from "./check-ignore.ts";
 import { CLIENT_DIR } from "./client-version.ts";
 import { type Env, type Output, plural } from "./command-env.ts";
 import { leftOutText, syncFolder, uploadBlobs } from "./commands.ts";
 import { findRoot, installKey, readConfig, type Settings, tokenFor, writeConfig } from "./config.ts";
+import { TOKEN_SERVERS } from "./core.ts";
 import { fromEnv } from "./env-names.ts";
 import { clearKnown, loadIgnore, readFolder, writeKnown } from "./folder.ts";
 import { modInstalled } from "./install.ts";
@@ -19,10 +20,17 @@ import { projectFileName, readProjectFile, startingProjectFileText, writeStartin
 import { refusedText } from "./safety.ts";
 import { stateDir } from "./state-dir.ts";
 
-function serverFrom(args: Parsed, env: Env): string {
-	const server = str(args, "server") ?? fromEnv(env.env, "SERVER");
-	if (!server) throw new UsageError("give the server with --server <url> (or ABSO_SERVER)");
-	return server;
+/**
+ * The server to join or start on (abso issue 349): --server, then ABSO_SERVER, then the server this box is signed in
+ * to (abso login wrote it), then https://api.abso.dev. A box signed in to more than one server has to say which.
+ */
+export function serverFrom(args: Parsed, env: Pick<Env, "env">, home?: string): string {
+	const named = str(args, "server") ?? fromEnv(env.env, "SERVER");
+	if (named) return named;
+	const signedIn = signedInServers(home);
+	if (signedIn.length > 1)
+		throw new UsageError(`this box is signed in to ${signedIn.join(" and ")}: say which with --server <url>`);
+	return signedIn[0] ?? TOKEN_SERVERS[0]!;
 }
 
 function agentFrom(args: Parsed): string {

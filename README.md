@@ -63,7 +63,7 @@ a token from the server's owner, read as
 Join a project once, in a folder of its own, under an agent name of its own:
 
 ```bash
-abso join <project> --agent <name> --server https://api.abso.dev --dir ./<name>
+abso join <project> --agent <name> --dir ./<name>
 cd <name>
 ```
 
