@@ -48,6 +48,7 @@ import { initInOrg, runOrg, runOrgs } from "./orgs.ts";
 import { runUnqueue } from "./queue.ts";
 import { runNote, runNotes, runReview } from "./review.ts";
 import { installSkill, SKILL, skillPath } from "./skill.ts";
+import { colorsPass, terminalText } from "./terminal-text.ts";
 import { runAmend, runDrop, runFollow, runLabel, runLabels, runPluck } from "./versions.ts";
 import { runVisibility } from "./visibility-commands.ts";
 
@@ -180,7 +181,10 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 				bool(args, "no-browser") || browserSkip(env.env, process.platform) !== null
 					? undefined
 					: (url: string) => openInBrowser(url);
-			const record = await login(server, { say: (line) => process.stderr.write(`${line}\n`), open });
+			const record = await login(server, {
+				say: (line) => process.stderr.write(terminalText(`${line}\n`, colorsPass(process.stderr, env.env))),
+				open,
+			});
 			return {
 				text: `This box is signed in. ${boxText(record, server).split("\n").slice(1).join(" ")}`,
 				json: { box: boxPublic(record) },

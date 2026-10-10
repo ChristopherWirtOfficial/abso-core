@@ -26,13 +26,12 @@ if (argv[0] === "hook") {
 	await serveMcp(process.stdin, (line) => process.stdout.write(`${line}\n`), process.cwd(), process.env);
 } else {
 	const { main } = await import("./src/main.ts");
-	const result = await main(argv, {
-		cwd: process.cwd(),
-		env: process.env,
-		write: (text) => process.stdout.write(text),
-		writeErr: (text) => process.stderr.write(text),
-	});
-	if (result.stdout) process.stdout.write(result.stdout);
-	if (result.stderr) process.stderr.write(result.stderr);
+	// Everything printed goes through terminalText: most of it is a server's text (abso-core's terminal-text.ts).
+	const { colorsPass, terminalText } = await import("./src/terminal-text.ts");
+	const out = (text: string) => process.stdout.write(terminalText(text, colorsPass(process.stdout, process.env)));
+	const err = (text: string) => process.stderr.write(terminalText(text, colorsPass(process.stderr, process.env)));
+	const result = await main(argv, { cwd: process.cwd(), env: process.env, write: out, writeErr: err });
+	if (result.stdout) out(result.stdout);
+	if (result.stderr) err(result.stderr);
 	process.exitCode = result.exit;
 }
