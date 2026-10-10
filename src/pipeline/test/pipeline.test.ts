@@ -245,6 +245,29 @@ describe("refusing", () => {
 		has(ps, "pipelines.p.jobs.c.packages[2]", /isn't an npm package name/);
 	});
 
+	it("npm-publish: an optional dist-tag", () => {
+		const pack = { run: "npm pack --pack-destination out", keep: ["out"] };
+		const read = checkPipelines(
+			one({ pack, publish: { uses: "npm-publish", from: "p.pack", packages: ["tool"], tag: "next" } }),
+		);
+		ok(read);
+		const job = read.ok ? read.file.pipelines[0]!.jobs.find((j) => j.name === "publish") : undefined;
+		assert.deepEqual(job?.with, { packages: ["tool"], tag: "next" });
+		const ps = problems(
+			checkPipelines(
+				one({
+					pack,
+					a: { uses: "npm-publish", from: "p.pack", packages: ["tool"], tag: "1.2.0" },
+					b: { uses: "npm-publish", from: "p.pack", packages: ["tool"], tag: "Next" },
+					c: { uses: "npm-publish", from: "p.pack", packages: ["tool"], tag: 7 },
+				}),
+			),
+		);
+		has(ps, "pipelines.p.jobs.a.tag", /isn't an npm dist-tag/);
+		has(ps, "pipelines.p.jobs.b.tag", /isn't an npm dist-tag/);
+		has(ps, "pipelines.p.jobs.c.tag", /isn't an npm dist-tag/);
+	});
+
 	it("keys it doesn't know, at every level", () => {
 		const ps = problems(
 			checkPipelines({

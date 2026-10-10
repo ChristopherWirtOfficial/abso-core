@@ -76,9 +76,12 @@ const BUILT_IN_SETTINGS: Readonly<Record<BuiltIn, readonly string[]>> = {
 	deploy: ["worker", "staging", "live"],
 	preview: [],
 	notify: ["to"],
-	// The npm packages it may publish, from the .tgz files its from: job kept.
-	"npm-publish": ["packages"],
+	// The npm packages it may publish, from the .tgz files its from: job kept, and the dist-tag (latest if none).
+	"npm-publish": ["packages", "tag"],
 };
+
+/** An npm dist-tag: npm refuses one that reads as a version, so it starts with a letter. */
+const DIST_TAG = /^[a-z][a-z0-9_-]{0,31}$/;
 
 /** An npm package name: lower case, URL-safe, optionally under a @scope/. */
 const NPM_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
@@ -293,6 +296,8 @@ function job(name: string, j: unknown, at: string, say: Say): Job | undefined {
 				if (typeof p !== "string" || p.length > 214 || !NPM_NAME.test(p))
 					say(`${at}.packages[${i}]`, `${q(p)} isn't an npm package name`);
 			});
+		if (j.tag !== undefined && (typeof j.tag !== "string" || !DIST_TAG.test(j.tag)))
+			say(`${at}.tag`, `${q(j.tag)} isn't an npm dist-tag (a lower-case name such as next, not a version)`);
 	}
 	return {
 		name,
