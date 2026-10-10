@@ -25,9 +25,10 @@ const UNSEEN: [number, number, string][] = [
  * \n and \t pass, and so does \r before \n, since a message file written on Windows ends its lines that way.
  */
 export function unseenIn(text: string): string | null {
-	for (const [i, ch] of [...text].entries()) {
+	const chars = [...text];
+	for (const [i, ch] of chars.entries()) {
 		const c = ch.codePointAt(0)!;
-		if (c === 0x0d && text[i + 1] === "\n") continue;
+		if (c === 0x0d && chars[i + 1] === "\n") continue;
 		const hit = UNSEEN.find(([lo, hi]) => c >= lo && c <= hi);
 		if (hit) return `${hit[2]} at character ${i + 1}`;
 	}

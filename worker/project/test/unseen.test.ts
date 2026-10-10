@@ -21,6 +21,8 @@ test("unseenIn: ESC, C1, BEL and bidi overrides are found; newline, tab and CRLF
 	assert.equal(unseenIn(`a${CR}b`), "a control character at character 2");
 	assert.match(unseenIn(`abc${RLO}def`)!, /bidirectional embedding or override/);
 	assert.equal(unseenIn(`emoji 🎉 counts as one character ${ESC}`), "a control character at character 33");
+	assert.equal(unseenIn(`😀😀😀\nB${CR}X`), "a control character at character 6", "a lone CR after emoji is found");
+	assert.equal(unseenIn(`😀😀😀${CR}\nB`), null, "CRLF after emoji passes");
 });
 
 test("publish, amend, land, starting notes and announcements refuse unseen characters before the engine sees them", () => {
