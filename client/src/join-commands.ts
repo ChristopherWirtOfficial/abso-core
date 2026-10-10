@@ -36,8 +36,8 @@ export function serverFrom(args: Parsed, env: Pick<Env, "env">, home?: string): 
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-function agentFrom(args: Parsed): string {
-	const agent = str(args, "agent");
+function agentFrom(args: Parsed, named?: string): string {
+	const agent = named ?? str(args, "agent");
 	if (!agent) throw new UsageError("give this folder's agent name with --agent <name>");
 	if (!NAME.test(agent))
 		throw new UsageError(`agent names are letters, digits, dot, dash and underscore (got ${JSON.stringify(agent)})`);
@@ -193,7 +193,13 @@ export async function runJoin(args: Parsed, env: Env): Promise<Output> {
 	let minted: { key: string; id: string } | undefined;
 	if (str(args, "agent") !== undefined) {
 		agent = agentFrom(args);
-		minted = box && !hasKey ? await mintKey(box, project, agent) : undefined;
+		minted = box && !hasKey && !fromEnv(env.env, "KEY_FILE") ? await mintKey(box, project, agent) : undefined;
+	} else if (fromEnv(env.env, "KEY_FILE")) {
+		// A pipeline run's key (ABSO_KEY_FILE) belongs to one agent, which the runner names in ABSO_AGENT.
+		const named = fromEnv(env.env, "AGENT");
+		if (!named)
+			throw new UsageError("a pipeline run's key joins as its own agent: give it with --agent <name> or ABSO_AGENT");
+		agent = agentFrom(args, named);
 	} else {
 		// No --agent: the box's name, or the next free -2, -3. Not signed in, --reader reads a public project signed out.
 		if (!box && reader && !hasKey && (await isPublic(server, project)))

@@ -2,7 +2,8 @@
 // them, and the token.
 //
 // The token is never in the folder: it comes from the ABSO_TOKEN environment
-// variable, or else from ~/.avcs/token, outside every repo.
+// variable, or else from ~/.avcs/token, outside every repo. A pipeline run's
+// key comes from the file ABSO_KEY_FILE names, and is only ever held in memory.
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -97,12 +98,14 @@ export function credentialLabel(
 	root: string,
 	server: string,
 	env: Readonly<Record<string, string | undefined>> = process.env,
-): { kind: "agent key" | "shared token" | "none"; id: string | null } {
+): { kind: "agent key" | "shared token" | "pipeline run key" | "none"; id: string | null } {
 	const key = readKeyFile(root);
 	if (key) {
 		if (originOf(key.server) !== originOf(server)) return { kind: "none", id: null };
 		return { kind: "agent key", id: key.id };
 	}
+	if (fromEnv(env, "TOKEN")) return { kind: "shared token", id: null };
+	if (fromEnv(env, "KEY_FILE")) return { kind: "pipeline run key", id: null };
 	return { kind: readToken(env) ? "shared token" : "none", id: null };
 }
 
@@ -184,7 +187,7 @@ export function tokenFor(
 			return key.key;
 		}
 	}
-	const token = readToken(env);
+	const token = fromEnv(env, "TOKEN")?.trim() || runKey(env) || readToken(env);
 	const trusted = trustedServers(env);
 	if (token === undefined || tokenGoesTo(server, trusted)) return token;
 	throw new UsageError(
@@ -211,6 +214,25 @@ const readOr = (path: string): string | undefined => {
 /** The servers the token may go to beyond abso's own: ABSO_TRUSTED_SERVERS, then this machine's servers.json. */
 export function trustedServers(env: Readonly<Record<string, string | undefined>> = process.env): string {
 	return trustedList(fromEnv(env, "TRUSTED_SERVERS"), readMachineServers(env));
+}
+
+/**
+ * A pipeline run's key, from the file ABSO_KEY_FILE names (the runner writes it, mode 600, holding the bare key).
+ * Read each time and kept in memory only; nothing abso writes or prints holds it, errors included.
+ */
+export function runKey(env: Readonly<Record<string, string | undefined>> = process.env): string | undefined {
+	const path = fromEnv(env, "KEY_FILE");
+	if (!path) return undefined;
+	let text: string;
+	try {
+		text = readFileSync(path, "utf8");
+	} catch {
+		throw new UsageError(`ABSO_KEY_FILE names ${path}, which abso can't read`);
+	}
+	const key = text.trim();
+	if (!/^abso_sk_[A-Za-z0-9_-]+$/.test(key))
+		throw new UsageError(`ABSO_KEY_FILE names ${path}, which doesn't hold an abso key`);
+	return key;
 }
 
 /** ABSO_TOKEN if set, else ~/.abso/token, else ~/.avcs/token, else none. */

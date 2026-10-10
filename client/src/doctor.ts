@@ -83,7 +83,13 @@ function timed(fetcher: typeof fetch, ms: number): typeof fetch {
 
 function credentialWords(root: string, server: string, env: Readonly<Record<string, string | undefined>>): string {
 	const c = credentialLabel(root, server, env);
-	return c.kind === "agent key" ? `the agent key ${c.id}` : c.kind === "shared token" ? "the shared token" : "no key";
+	return c.kind === "agent key"
+		? `the agent key ${c.id}`
+		: c.kind === "shared token"
+			? "the shared token"
+			: c.kind === "pipeline run key"
+				? "a pipeline run's key"
+				: "no key";
 }
 
 export async function whoami(
