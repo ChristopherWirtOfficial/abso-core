@@ -124,6 +124,9 @@ export function joinFolder(args: Parsed, env: Pick<Env, "cwd">, project: string)
 	return sub;
 }
 
+/** Signed out, the server doesn't say who owns a project, and the website puts every project under this one owner for now. */
+const SITE_OWNER = "christopher";
+
 /**
  * Why a join failed signed out. The client reads only as an agent, which needs a
  * sign-in; a public project is read signed out on the website. Whether the
@@ -136,7 +139,7 @@ async function signedOut(server: string, project: string): Promise<string> {
 		open = response.ok;
 	} catch {}
 	return open
-		? `${project} is public: read it at ${siteOf(server)}/p/${project} (every page is also JSON). The client needs a sign-in, even to read: abso login.`
+		? `${project} is public: read it at ${siteOf(server)}/${SITE_OWNER}/${project} (every page is also JSON). The client needs a sign-in, even to read: abso login.`
 		: `This box isn't signed in to ${server}. abso login signs it in.`;
 }
 
