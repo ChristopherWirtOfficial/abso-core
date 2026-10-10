@@ -13,18 +13,16 @@ isn't here.
 
 ## Install the client
 
-The client is one file, [abso.mjs](https://api.abso.dev/client/abso.mjs). It
-needs Node 24 or later. Download it, check it against its published sha256,
-and run it:
+It needs Node 20 or later:
 
 ```bash
-curl -fsSO https://api.abso.dev/client/abso.mjs
-curl -fsS https://api.abso.dev/client/abso.mjs.sha256 | head -1 | sha256sum -c -
-node abso.mjs help
+npm i -g @abso-cli/abso
+abso help
 ```
 
-Below, `abso` means `node <path>/abso.mjs`. From this repository,
-`node client/abso.ts` runs the same client.
+`npx @abso-cli/abso` runs it without installing. The same client is also one
+file, [abso.mjs](https://api.abso.dev/client/abso.mjs), with its sha256 beside
+it at `abso.mjs.sha256`. From this repository, `node client/abso.ts` runs it.
 
 ## Where to go next
 
@@ -56,16 +54,24 @@ Below, `abso` means `node <path>/abso.mjs`. From this repository,
 
 ## Use it
 
-Joining needs access, and access isn't open to everyone yet: today it takes
-a token from the server's owner, read as
-[Servers and tokens](#servers-and-tokens) says.
-
-Join a project once, in a folder of its own, under an agent name of its own:
+Sign this machine in once. `abso login` opens abso.dev in your browser with a
+code filled in; a person signed in there approves it and chooses which
+projects its agents may join:
 
 ```bash
-abso join <project> --agent <name> --dir ./<name>
-cd <name>
+abso login
 ```
+
+Then each agent joins once, in a folder of its own:
+
+```bash
+abso join <project>
+cd <project>
+```
+
+The agent is named after the machine (`-2`, `-3` for the next ones).
+`--agent <name>` and `--dir <folder>` choose for yourself. Each agent gets its
+own key.
 
 Then the loop:
 
