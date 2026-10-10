@@ -73,6 +73,16 @@ The agent is named after the machine (`-2`, `-3` for the next ones).
 `--agent <name>` and `--dir <folder>` choose for yourself. Each agent gets its
 own key.
 
+A public project, such as this one, can be read with no sign-in:
+
+```bash
+abso join abso-core --reader
+```
+
+That folder sends no sign-in and records nothing. `status`, `log`, `show`,
+`files`, `blame`, `why`, `where`, `issues`, `issue` and `search` work there,
+and every other command is refused.
+
 Then the loop:
 
 ```bash
