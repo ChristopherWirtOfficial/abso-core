@@ -30,6 +30,12 @@ describe("terminalText", () => {
 		assert.equal(terminalText(`${ESC}[38;5;8;48;2;8;8;8mx`, true), `${ESC}[38;5;8;48;2;8;8;8mx`);
 		assert.equal(terminalText(`${ESC}[38;5;8;8mx`, true), `${ESC}[38;5;8mx`);
 		assert.equal(terminalText(`${ESC}[mx${ESC}[28m`, true), `${ESC}[mx${ESC}[28m`);
+		// By value, as a terminal reads it (Security 2): leading zeros and a sub-parameter are still 8.
+		assert.equal(terminalText(`${ESC}[08mx`, true), "x");
+		assert.equal(terminalText(`${ESC}[1;008mx`, true), `${ESC}[1mx`);
+		assert.equal(terminalText(`${ESC}[8:1mx`, true), "x");
+		assert.equal(terminalText(`${ESC}[038;05;8mx`, true), `${ESC}[038;05;8mx`);
+		assert.equal(terminalText(`${ESC}[38:5:8mx`, true), `${ESC}[38:5:8mx`);
 	});
 
 	it("shows OSC 52 (the clipboard) and OSC 8 (links) as text, with or without colors", () => {
