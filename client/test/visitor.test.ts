@@ -16,6 +16,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, before, describe, it } from "node:test";
+import { Api } from "../src/api.ts";
 import { writeBox } from "../src/box.ts";
 import { writeConfig } from "../src/config.ts";
 import { isPublic } from "../src/join-commands.ts";
@@ -255,6 +256,29 @@ describe("a visitor folder", () => {
 			assert.equal(existsSync(join(run.root, ".abso")), false);
 		}
 		assert.match(runs[0]!.stderr, /isn't signed in to .*abso login signs it in/);
+	});
+
+	it("every request its Api makes goes through one send: reads only, no redirect, no sign-in", async () => {
+		const real = globalThis.fetch;
+		const calls: RequestInit[] = [];
+		globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+			calls.push(init ?? {});
+			return new Response("{}", { status: 200 });
+		}) as typeof fetch;
+		try {
+			const visitor = new Api({ server: url, project: "abso-core", agent: "", visitor: true, token: TOKEN });
+			await visitor.send(`${url}/p/abso-core/serve`, { headers: visitor.headers() });
+			await assert.rejects(visitor.send(`${url}/p/abso-core/a/x/run`, { method: "POST" }), /sends only reads/);
+			const member = new Api({ server: url, project: "abso-core", agent: "x", token: TOKEN });
+			await member.send(`${url}/p/abso-core/serve`, { headers: member.headers() });
+		} finally {
+			globalThis.fetch = real;
+		}
+		assert.equal(calls.length, 2);
+		assert.equal(calls[0]!.redirect, "error");
+		assert.equal(new Headers(calls[0]!.headers).get("authorization"), null);
+		assert.equal(calls[1]!.redirect, undefined);
+		assert.equal(new Headers(calls[1]!.headers).get("authorization"), `Bearer ${TOKEN}`);
 	});
 
 	it("runs only its reads: every other command is refused before any call, and a new command fails here", async () => {

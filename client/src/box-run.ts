@@ -150,7 +150,7 @@ export async function postRun(
 		try {
 			// stderr=split: the box's stderr comes apart from stdout (7a5a111); older servers ignore it.
 			// replace=1: stop the runs still going in the box first; without it the server answers 409 (#25).
-			const answer = await fetch(
+			const answer = await api.send(
 				`${api.url(api.agentPath("run"))}?cmd=${encodeURIComponent(command)}&stderr=split${replace ? "&replace=1" : ""}${fresh ? "&fresh=1" : ""}${boxQuery(api.box)}`,
 				{
 					method: "POST",
@@ -216,7 +216,7 @@ async function reattach(
 		onReconnect?.(last, attempt + 1);
 		await new Promise((ok) => setTimeout(ok, delay));
 		try {
-			const res = await fetch(followUrl(api, id, seen), { headers: api.headers() });
+			const res = await api.send(followUrl(api, id, seen), { headers: api.headers() });
 			if (res.status === 404)
 				throw new ApiError(
 					`the run broke off (${why}) and is gone from the box: ${errorSentence(await res.text())}`,

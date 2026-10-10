@@ -179,6 +179,17 @@ export class Api {
 		};
 	}
 
+	/**
+	 * Every request this Api makes goes through here. In a visitor folder it never sends anything but a GET,
+	 * and follows no redirect, so nothing it sends goes anywhere it didn't name (headers() adds no sign-in).
+	 */
+	send(url: string, init: RequestInit = {}): Promise<Response> {
+		if (!this.config.visitor) return fetch(url, init);
+		if ((init.method ?? "GET") !== "GET")
+			return Promise.reject(new ApiError("a folder that reads signed out sends only reads"));
+		return fetch(url, { ...init, redirect: "error" });
+	}
+
 	async json<T>(
 		method: "GET" | "POST",
 		path: string,
@@ -187,9 +198,8 @@ export class Api {
 		atLeastMs = 0,
 	): Promise<T> {
 		let res: Response | undefined;
-		// A visitor folder only reads, and follows no redirect, so nothing it sends goes anywhere it didn't name.
-		const visitor = this.config.visitor === true;
-		if (visitor && method !== "GET") throw new ApiError(`${path}: a folder that reads signed out sends only reads`);
+		if (this.config.visitor && method !== "GET")
+			throw new ApiError(`${path}: a folder that reads signed out sends only reads`);
 		const sent = body === undefined ? undefined : JSON.stringify(body);
 		const timeoutMs = Math.max(atLeastMs, timeoutFor(this.timeoutMs, sent));
 		// A connection that never opened is tried once more, IPv4 first (#37, GAME - UI/UX: one IPv6
@@ -197,11 +207,10 @@ export class Api {
 		// a POST is as safe to send again as a GET.
 		for (let attempt = 0; res === undefined; attempt++) {
 			try {
-				res = await fetch(this.url(path, server), {
+				res = await this.send(this.url(path, server), {
 					method,
 					headers: this.headers(sent === undefined ? undefined : "application/json"),
 					...(sent === undefined ? {} : { body: sent }),
-					...(visitor ? { redirect: "error" as const } : {}),
 					signal: AbortSignal.timeout(timeoutMs),
 				});
 			} catch (err) {
@@ -290,7 +299,7 @@ export class Api {
 		});
 		let res: Response;
 		try {
-			res = await fetch(`${this.url("/serve")}?${q}`, {
+			res = await this.send(`${this.url("/serve")}?${q}`, {
 				method: "POST",
 				headers: this.headers(),
 				signal: AbortSignal.timeout(20 * 60_000),
@@ -311,13 +320,16 @@ export class Api {
 	async prep(command: string, tarGz: Uint8Array<ArrayBuffer>): Promise<PrepAnswer> {
 		let res: Response;
 		try {
-			res = await fetch(`${this.url(this.agentPath("prep"))}?cmd=${encodeURIComponent(command)}${boxQuery(this.box)}`, {
-				method: "POST",
-				headers: this.headers("application/gzip"),
-				body: tarGz,
-				// A setup command can take minutes (npm ci, a browser download).
-				signal: AbortSignal.timeout(30 * 60_000),
-			});
+			res = await this.send(
+				`${this.url(this.agentPath("prep"))}?cmd=${encodeURIComponent(command)}${boxQuery(this.box)}`,
+				{
+					method: "POST",
+					headers: this.headers("application/gzip"),
+					body: tarGz,
+					// A setup command can take minutes (npm ci, a browser download).
+					signal: AbortSignal.timeout(30 * 60_000),
+				},
+			);
 		} catch (err) {
 			const e = err as Error;
 			throw new ApiError(
@@ -333,7 +345,7 @@ export class Api {
 	async unprep(): Promise<boolean> {
 		let res: Response;
 		try {
-			res = await fetch(
+			res = await this.send(
 				`${this.url(this.agentPath("prep"))}${this.box ? `?box=${encodeURIComponent(this.box)}` : ""}`,
 				{ method: "DELETE", headers: this.headers(), signal: AbortSignal.timeout(this.timeoutMs) },
 			);
@@ -369,7 +381,7 @@ export class Api {
 	async bytes(method: "GET" | "PUT", path: string, body?: Uint8Array): Promise<Uint8Array> {
 		let res: Response;
 		try {
-			res = await fetch(this.url(path), {
+			res = await this.send(this.url(path), {
 				method,
 				headers: this.headers(body === undefined ? undefined : "application/octet-stream"),
 				...(body === undefined ? {} : { body: body as Uint8Array<ArrayBuffer> }),
@@ -491,7 +503,7 @@ export class Api {
 		const path = this.agentPath("attachments");
 		let res: Response;
 		try {
-			res = await fetch(this.url(path, this.issuesServer), {
+			res = await this.send(this.url(path, this.issuesServer), {
 				method: "POST",
 				headers: { ...this.headers("application/octet-stream"), "x-abso-name": encodeURIComponent(name) },
 				body: bytes as Uint8Array<ArrayBuffer>,
@@ -538,7 +550,7 @@ export class Api {
 		const url = `${this.attachmentUrl(id)}${source ? "/source" : ""}`;
 		let res: Response;
 		try {
-			res = await fetch(url, {
+			res = await this.send(url, {
 				headers: this.headers(),
 				signal: AbortSignal.timeout(Math.max(this.timeoutMs, 120_000)),
 			});
@@ -936,7 +948,7 @@ export class Api {
 	async logs(id: string, io: RunIO): Promise<number> {
 		let res: Response;
 		try {
-			res = await fetch(followUrl(this, id, { at: 0, errAt: 0 }), { headers: this.headers() });
+			res = await this.send(followUrl(this, id, { at: 0, errAt: 0 }), { headers: this.headers() });
 		} catch (err) {
 			const e = err as Error;
 			throw new ApiError(
