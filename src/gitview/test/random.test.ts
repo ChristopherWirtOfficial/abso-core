@@ -81,7 +81,8 @@ async function commitInto(
 	return oid;
 }
 
-describe("random commits ingest exactly", () => {
+// The seeds share nothing (each has its own temp folder and cache), so 8 run at once: 81 s one by one, about 11 s so.
+describe("random commits ingest exactly", { concurrency: 8 }, () => {
 	for (let c = 0; c < CASES; c++) {
 		const seed = BASE_SEED + c;
 		it(`seed ${seed}`, async () => {
