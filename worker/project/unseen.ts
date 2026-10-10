@@ -1,5 +1,5 @@
-// Characters a reader can't see, refused in text the engine keeps and prints
-// (abso issue 276): version messages, starting notes, line notes and
+// Characters a reader can't see, refused in text the engine keeps and prints:
+// version messages, starting notes, line notes and
 // announcements. In a terminal, ESC and C1 start escape sequences that can
 // set the clipboard or draw a fake link, so `abso log` and news must never
 // carry them. The same list as the website's announcements and Issues.

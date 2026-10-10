@@ -996,7 +996,7 @@ export class Project {
 
 	/**
 	 * The files the agent's unpublished changes touch, in its own view. Kept per agent under what they're
-	 * made of (abso-core issue 6): its view's key and its draft. Most agents haven't moved since the last
+	 * made of: its view's key and its draft. Most agents haven't moved since the last
 	 * status, and the view cache holds fewer views than a big project has agents, so working them out again
 	 * on every call cost about 0.5 s on abso. A copy goes out, so no caller can change what's kept.
 	 */

@@ -1,5 +1,5 @@
-// Text the engine keeps and prints can't hold characters a reader can't see
-// (abso issue 276): a version message with an escape sequence would run in
+// Text the engine keeps and prints can't hold characters a reader can't see:
+// a version message with an escape sequence would run in
 // every terminal that shows `abso log` or news.
 
 import assert from "node:assert/strict";
