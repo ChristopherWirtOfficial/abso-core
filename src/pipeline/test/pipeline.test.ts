@@ -245,6 +245,34 @@ describe("refusing", () => {
 		has(ps, "pipelines.p.jobs.c.packages[2]", /isn't an npm package name/);
 	});
 
+	it("abso: a run job may ask for a reader or writer key; a writer key only where secrets may go", () => {
+		const read = checkPipelines(one({ a: { run: "abso status", abso: "reader" }, b: { run: "true" } }));
+		ok(read);
+		const jobs = read.ok ? read.file.pipelines[0]!.jobs : [];
+		assert.equal(jobs.find((j) => j.name === "a")?.abso, "reader");
+		assert.equal(jobs.find((j) => j.name === "b")?.abso, undefined);
+		ok(checkPipelines(one({ a: { run: "abso publish -m x", abso: "writer" } }, { only: ["shared"] })));
+		const ps = problems(
+			checkPipelines(
+				one({
+					a: { run: "x", abso: "owner" },
+					b: { uses: "deploy", worker: "w", abso: "reader" },
+					c: { run: "x", abso: "writer" },
+				}),
+			),
+		);
+		has(ps, "pipelines.p.jobs.a.abso", /must be reader or writer, not "owner"/);
+		has(ps, "pipelines.p.jobs.b.abso", /a uses step runs on the server/);
+		has(ps, "pipelines.p.only", /c holds a writer key and a named draft's version is no one's published work/);
+		has(
+			problems(checkPipelines(one({ c: { run: "x", abso: "writer" } }, { on: ["draft"], only: ["shared"] }))),
+			"pipelines.p.on",
+			/includes draft, but c holds a writer key/,
+		);
+		// A reader key is fine where a draft runs: it changes nothing.
+		ok(checkPipelines(one({ a: { run: "abso status", abso: "reader" } }, { on: ["draft"] })));
+	});
+
 	it("npm-publish: an optional dist-tag", () => {
 		const pack = { run: "npm pack --pack-destination out", keep: ["out"] };
 		const read = checkPipelines(

@@ -8,7 +8,8 @@
 // (`on`), optionally which spaces it runs for (`only`), its `jobs`, and which
 // jobs make a version green (`required`). A job runs a command (`run`) or a
 // built-in step (`uses`), after the jobs it `needs`, and may take another
-// job's kept files (`from`) and named `secrets`.
+// job's kept files (`from`) and named `secrets`, and a run job may ask for an
+// abso key on its own project (`abso: reader` or `writer`) for the length of the job.
 //
 // What the check refuses: a cycle in needs; needs, required or from naming a
 // job that doesn't exist; secrets in a pipeline a draft can start, since a
@@ -39,6 +40,8 @@ export interface Job extends Machine {
 	readonly keep: readonly string[];
 	readonly cache: readonly string[];
 	readonly secrets: readonly string[];
+	/** An abso key on the project for the job's length (abso 343): none unless asked. */
+	readonly abso?: "reader" | "writer";
 	/** The built-in step's own settings (deploy's worker, staging, live; notify's to), as written. */
 	readonly with: Readonly<Record<string, unknown>>;
 }
@@ -89,7 +92,7 @@ const NPM_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
 const TRIGGERS = ["publish", "draft", "green", "land", "hand"] as const;
 const SIZES: readonly Size[] = ["small", "standard", "large"];
 const MACHINE_KEYS = ["image", "dockerfile", "size"] as const;
-const JOB_KEYS = ["needs", "run", "uses", "from", "keep", "cache", "secrets", ...MACHINE_KEYS] as const;
+const JOB_KEYS = ["needs", "run", "uses", "from", "keep", "cache", "secrets", "abso", ...MACHINE_KEYS] as const;
 const PIPELINE_KEYS = ["on", "only", "jobs", "required"] as const;
 /** avcs.json's keys for today's CI (worker/src/ci.ts) and the merge queue: read elsewhere, left alone here. */
 const AVCS_JSON_KEYS = ["setup", "check", "build", "out", "queue", "whole"] as const;
@@ -238,18 +241,22 @@ function pipeline(name: string, p: unknown, at: string, say: Say): Pipeline | un
 
 	// Secrets go only where no draft can reach them: a draft runs code nobody
 	// has published, which could send a secret anywhere.
-	const holding = jobs.filter((j) => j.secrets.length > 0);
+	// A writer key (343) the same: it changes the project, so only published work may hold one.
+	const holding = jobs.filter((j) => j.secrets.length > 0 || j.abso === "writer");
 	if (holding.length) {
 		const who = holding.map((j) => j.name).join(", ");
+		const what = holding.every((j) => j.secrets.length === 0)
+			? "a writer key"
+			: holding.some((j) => j.abso === "writer")
+				? "secrets or a writer key"
+				: "secrets";
+		const verb = `hold${holding.length === 1 ? "s" : ""}`;
 		if (on?.includes("draft"))
-			say(
-				`${at}.on`,
-				`includes draft, but ${who} hold${holding.length === 1 ? "s" : ""} secrets; a draft runs unpublished code`,
-			);
+			say(`${at}.on`, `includes draft, but ${who} ${verb} ${what}; a draft runs unpublished code`);
 		if (!only || only.some((s) => s !== "shared"))
 			say(
 				`${at}.only`,
-				`must be shared, because ${who} hold${holding.length === 1 ? "s" : ""} secrets and a named draft's version is no one's published work`,
+				`must be shared, because ${who} ${verb} ${what} and a named draft's version is no one's published work`,
 			);
 	}
 
@@ -281,6 +288,11 @@ function job(name: string, j: unknown, at: string, say: Say): Job | undefined {
 	secrets.forEach((s, i) => {
 		if (!SECRET.test(s)) say(`${at}.secrets[${i}]`, `${q(s)} isn't a secret name: upper-case letters, digits and _`);
 	});
+	if (j.abso !== undefined) {
+		if (j.abso !== "reader" && j.abso !== "writer") say(`${at}.abso`, `must be reader or writer, not ${q(j.abso)}`);
+		else if (j.uses !== undefined)
+			say(`${at}.abso`, "gives a run job a key; a uses step runs on the server and has none");
+	}
 	const withs: Record<string, unknown> = {};
 	for (const k of settings) if (j[k] !== undefined) withs[k] = j[k];
 	if (uses === "deploy" && typeof j.worker !== "string")
@@ -308,6 +320,7 @@ function job(name: string, j: unknown, at: string, say: Say): Job | undefined {
 		keep: list(j.keep, `${at}.keep`, say, "a list of file patterns"),
 		cache: list(j.cache, `${at}.cache`, say, "a list of files"),
 		secrets,
+		...((j.abso === "reader" || j.abso === "writer") && j.uses === undefined ? { abso: j.abso } : {}),
 		with: withs,
 		...machine(j, at, say, false),
 	};
