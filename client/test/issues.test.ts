@@ -97,6 +97,8 @@ before(async () => {
 			return send(200, {
 				ask: { id: Number(ack[2]), by: "desk", of: ack[1], answer: null, ack: { at: Date.now(), note: "" } },
 			});
+		// Ask 404 stands for a server from before ask threads: neither route is there.
+		if (/\/(ask|reply)\/404$/.test(req.url ?? "")) return send(404, { error: "no such issues route" });
 		// A reply answers with the ask; from the one asked, a question makes it wait on the asker.
 		const reply = /\/a\/([^/]+)\/reply\/(\d+)$/.exec(req.url ?? "");
 		if (req.method === "POST" && reply) {
@@ -288,6 +290,19 @@ describe("issues commands, the client's part (#54)", () => {
 		assert.deepEqual(replies.at(-1), { text: "staging or live?", question: true });
 		assert.equal(r.stdout, "Replied on ask 7. desk hears it. It waits on desk.\n");
 		assert.equal((await main(["reply", "7"], { cwd: fay, env: ENV(), write: () => {} })).exit, 1);
+	});
+
+	it("names a server from before ask threads instead of a bare 404", async () => {
+		const fay = await folder("fay");
+		for (const argv of [
+			["reply", "404", "still there?"],
+			["ask", "404"],
+		]) {
+			const r = await main(argv, { cwd: fay, env: ENV(), write: () => {} });
+			assert.equal(r.exit, 1, argv.join(" "));
+			assert.match(r.stderr, /doesn't have ask threads yet/, argv.join(" "));
+			assert.doesNotMatch(r.stderr, /no such issues route/, argv.join(" "));
+		}
 	});
 
 	it("ask <N> reads one ask with its whole thread, oldest first, and whose turn it is", async () => {

@@ -439,6 +439,17 @@ export class Api {
 		return this.json(method, path, body, this.issuesServer);
 	}
 
+	/** An ask-thread call, with a server from before ask threads named as that rather than a bare 404. */
+	async #threads<T>(call: Promise<T>): Promise<T> {
+		try {
+			return await call;
+		} catch (err) {
+			if (err instanceof ApiError && err.status === 404 && /no such issues route/.test(err.message))
+				throw new ApiError(`${this.config.server} doesn't have ask threads yet`, 404);
+			throw err;
+		}
+	}
+
 	/** Issues, most recently updated first. */
 	issues(
 		q: { status?: string; agent?: string; parent?: number; open?: boolean; labels?: readonly string[] } = {},
@@ -468,12 +479,12 @@ export class Api {
 
 	/** The asks this agent sent: the open ones, then the latest answered, each with its thread. */
 	asked(): Promise<{ asks: readonly (Ask & { title: string | null })[] }> {
-		return this.#issues("GET", this.agentPath("asked"));
+		return this.#threads(this.#issues("GET", this.agentPath("asked")));
 	}
 
 	/** One ask, open or closed, with its thread and who it waits on. */
 	askThread(id: number): Promise<{ ask: Ask & { title: string | null } }> {
-		return this.#issues("GET", `/ask/${id}`);
+		return this.#threads(this.#issues("GET", `/ask/${id}`));
 	}
 
 	/** Open asks of someone (an agent, or person:<id>), soonest due first; every open ask without `of`. */
@@ -658,7 +669,7 @@ export class Api {
 
 	/** Adds to an ask's thread, as its asker or the one asked; the other side hears it, and the ask stays as it is. */
 	reply(id: number, body: { text: string; question?: boolean }): Promise<{ ask: Ask; news?: IssueNews }> {
-		return this.#issues("POST", this.agentPath(`reply/${id}`), body);
+		return this.#threads(this.#issues("POST", this.agentPath(`reply/${id}`), body));
 	}
 
 	/** Takes back an ask this agent made, with a note on why; the one asked hears it. */
