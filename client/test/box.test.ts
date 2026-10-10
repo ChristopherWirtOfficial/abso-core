@@ -91,6 +91,7 @@ test("login shows the code, waits while it's pending, and keeps the credential i
 	);
 	assert.deepEqual(said, [
 		"To sign this box in, open https://abso.dev/login/box?code=WXYZ-BCDF and approve the code WXYZ-BCDF.",
+		"Waiting for approval. Ctrl-C stops waiting, and abso stops by itself when the code runs out.",
 	]);
 	assert.equal(readBox(SERVER, h)?.credential, CREDENTIAL);
 	const files = readdirSync(join(h, ".abso", "boxes"));
@@ -158,6 +159,29 @@ test("a code that's turned down or runs out says so and keeps nothing", async ()
 		/in time\. Run abso login again/,
 	);
 	assert.equal(readBox(SERVER, h), undefined);
+});
+
+test("login says it's still waiting about once a minute, and stops in the end whatever the server says", async () => {
+	const c = clock();
+	const said: string[] = [];
+	const pending = Array.from({ length: 2000 }, (): [number, unknown] => [400, { error: "authorization_pending" }]);
+	await assert.rejects(
+		login(
+			SERVER,
+			{
+				fetch: server([[200, { ...started, expires_in: 10 ** 9, interval: 5 }], ...pending], []),
+				sleep: c.sleep,
+				now: c.now,
+				say: (line) => said.push(line),
+			},
+			home(),
+		),
+		/nobody approved the code WXYZ-BCDF in time\. Run abso login again\./,
+	);
+	assert.equal(c.slept(), 30 * 60 * 1000, "a server that says never still gets an end");
+	const still = said.filter((line) => line === "Still waiting for the code WXYZ-BCDF to be approved.");
+	assert.equal(still.length, 30);
+	assert.equal(said.length, 2 + 30);
 });
 
 test("a key is minted with the box credential, sent only to the box's own server", async () => {

@@ -174,6 +174,11 @@ function isGrant(g: unknown): g is Grant {
 	);
 }
 
+/** The longest login waits for approval, whatever the server says. */
+const MAX_LOGIN_WAIT_S = 30 * 60;
+/** How often login says it's still waiting. */
+const STILL_WAITING_MS = 60_000;
+
 export interface LoginIo {
 	readonly fetch?: typeof fetch;
 	readonly sleep?: (ms: number) => Promise<void>;
@@ -193,13 +198,21 @@ export async function login(server: string, io: LoginIo, home = homedir()): Prom
 	const start = await call(server, "/login/device", { name: boxName(), client: "abso" }, undefined, fetcher);
 	const { device_code: device, user_code: code, verification_uri_complete: link } = start.body;
 	let interval = Number(start.body.interval) || 5;
-	const expiresIn = Number(start.body.expires_in) || 900;
+	// The server says when its code runs out; a server that says never still gets an end.
+	const expiresIn = Math.min(Number(start.body.expires_in) || 900, MAX_LOGIN_WAIT_S);
 	if (typeof code !== "string" || typeof link !== "string" || typeof device !== "string")
 		throw new UsageError(`${originOf(server)} didn't give a code to approve`);
 	io.say(`To sign this box in, open ${link} and approve the code ${code}.`);
+	io.say("Waiting for approval. Ctrl-C stops waiting, and abso stops by itself when the code runs out.");
 	const until = now() + expiresIn * 1000;
+	let toldAt = now();
 	while (now() < until) {
 		await sleep(interval * 1000);
+		// A wait with no word looks like a hang, so say it's still waiting now and then.
+		if (now() - toldAt >= STILL_WAITING_MS) {
+			io.say(`Still waiting for the code ${code} to be approved.`);
+			toldAt = now();
+		}
 		const a = await call(server, "/login/token", { device_code: device }, undefined, fetcher);
 		if (a.status === 400) {
 			if (a.body.error === "authorization_pending") continue;
