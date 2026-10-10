@@ -802,14 +802,14 @@ export async function main(argv: readonly string[], env: Env): Promise<MainResul
 		if (command === "--version") {
 			// Loaded only here: it runs git, and no other command needs it.
 			const { versionReport } = await import("./install.ts");
-			const { newerCommitNote } = await import("./client-version.ts");
+			const { newerClientNote } = await import("./client-version.ts");
 			const report = versionReport(env.env);
 			const root = findRoot(env.cwd);
 			let behind: string | undefined;
 			if (root) {
 				try {
 					const server = (JSON.parse(readFileSync(configPath(root), "utf8")) as { server?: string }).server;
-					if (server) behind = await newerCommitNote(server);
+					if (server) behind = await newerClientNote(server);
 				} catch {}
 			}
 			return {

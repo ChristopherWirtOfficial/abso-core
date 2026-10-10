@@ -9,7 +9,7 @@ import { bool, type Parsed, UsageError } from "./args.ts";
 import { readKnownBlobs, writeKnownBlobs } from "./blobs.ts";
 import { ciText } from "./ci.ts";
 import { CleanFiles } from "./clean-files.ts";
-import { newerCommitNote } from "./client-version.ts";
+import { newerClientNote } from "./client-version.ts";
 import { type Env, heard, type Output, open, plural } from "./command-env.ts";
 import {
 	LISTED,
@@ -313,7 +313,7 @@ export async function runStatus(args: Parsed, env: Env): Promise<Output> {
 	const space = (draft: string | null | undefined): string => (draft ? `draft ${draft}` : "shared");
 	const parked = (me?.parked ?? []).filter((p) => p.draftChanges > 0);
 	const credential = credentialLabel(root, config.server, env.env);
-	const behind = await newerCommitNote(config.server);
+	const behind = await newerClientNote(config.server);
 	const lines = [
 		`Project ${config.project}: shared is at version ${status.version}. This folder is ${config.agent}${config.reader || me?.reader ? ", a reader (it records and publishes nothing)" : ""}, working in ${space(me?.draft)}.${config.follow ? ` It follows label ${config.follow}: syncs take it to the newest version with that label.` : ""} Signed in with ${credential.kind}${credential.id ? ` ${credential.id}` : ""}.`,
 		...(behind ? [behind] : []),

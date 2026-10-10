@@ -4,9 +4,11 @@
 // commit is read from .git without running git, since every command pays for
 // its start-up. (The mods carry their own stamp: src/install.ts.)
 
-import { readFileSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homeWritePath } from "./state-dir.ts";
 
 export const CLIENT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -76,12 +78,66 @@ export const builtCopy = (): boolean => packageVersion() !== undefined || bundle
 
 let version: string | undefined;
 
+const NPM_LATEST = "https://registry.npmjs.org/@abso-cli/abso/latest";
+const DAY = 24 * 60 * 60 * 1000;
+
+/** Whether x.y.z version a comes after b. */
+function laterThan(a: string, b: string): boolean {
+	const x = a.split(".").map(Number);
+	const y = b.split(".").map(Number);
+	for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return (x[i] ?? 0) > (y[i] ?? 0);
+	return false;
+}
+
 /**
- * When this client was bundled for a server and that server is now a different
- * commit. Undefined when they match, when the server can't be asked, or when
- * this client runs from a checkout, which abso sync updates and no server serves.
+ * For the npm package: npm's latest version when it comes after this one. npm
+ * is asked at most once a day, and its answer is kept in ~/.abso/npm-latest.json,
+ * so status doesn't wait on the registry each time.
  */
-export async function newerCommitNote(server: string): Promise<string | undefined> {
+async function newerPackageNote(
+	mine: string,
+	home: string,
+	registry: string,
+	now: number,
+): Promise<string | undefined> {
+	const file = homeWritePath(home, "npm-latest.json");
+	let latest: string | undefined;
+	try {
+		const kept = JSON.parse(readFileSync(file, "utf8")) as { checked?: unknown; latest?: unknown };
+		if (typeof kept.checked === "number" && now - kept.checked < DAY && typeof kept.latest === "string")
+			latest = kept.latest;
+	} catch {}
+	if (latest === undefined) {
+		try {
+			const response = await fetch(registry, { signal: AbortSignal.timeout(3000) });
+			const body = (await response.json()) as { version?: unknown };
+			if (typeof body.version !== "string" || !/^\d+\.\d+\.\d+$/.test(body.version)) return undefined;
+			latest = body.version;
+		} catch {
+			return undefined;
+		}
+		try {
+			mkdirSync(dirname(file), { recursive: true });
+			writeFileSync(file, `${JSON.stringify({ checked: now, latest })}\n`);
+		} catch {}
+	}
+	return laterThan(latest, mine)
+		? `abso ${latest} is out and this is ${mine}: npm install -g @abso-cli/abso updates it.`
+		: undefined;
+}
+
+/**
+ * When a built copy of this client is behind: the npm package when npm has a
+ * later version, or a client bundled for a server when that server is now a
+ * different commit. Undefined when it isn't, when the answer can't be had, or
+ * when this client runs from a checkout, which abso sync updates.
+ */
+export async function newerClientNote(
+	server: string,
+	at: { home?: string; registry?: string; now?: number } = {},
+): Promise<string | undefined> {
+	const pkg = packageVersion();
+	if (pkg) return newerPackageNote(pkg, at.home ?? homedir(), at.registry ?? NPM_LATEST, at.now ?? Date.now());
 	const mine = bundledCommit();
 	if (!mine) return undefined;
 	try {
