@@ -450,6 +450,16 @@ export class Api {
 		return this.#issues("GET", `/issue/${id}`);
 	}
 
+	/** The asks this agent sent: the open ones, then the latest answered, each with its thread. */
+	asked(): Promise<{ asks: readonly (Ask & { title: string | null })[] }> {
+		return this.#issues("GET", this.agentPath("asked"));
+	}
+
+	/** One ask, open or closed, with its thread and who it waits on. */
+	askThread(id: number): Promise<{ ask: Ask & { title: string | null } }> {
+		return this.#issues("GET", `/ask/${id}`);
+	}
+
 	/** Open asks of someone (an agent, or person:<id>), soonest due first; every open ask without `of`. */
 	waiting(of?: string): Promise<{ asks: readonly (Ask & { title: string | null })[] }> {
 		return this.#issues("GET", `/waiting?${query({ of })}`);
@@ -628,6 +638,11 @@ export class Api {
 	/** Acknowledges an ask of this agent without answering it: the asker hears it, and the ask stays open. */
 	ack(id: number, body: { note?: string }): Promise<{ ask: Ask; news?: IssueNews }> {
 		return this.#issues("POST", this.agentPath(`ack/${id}`), body);
+	}
+
+	/** Adds to an ask's thread, as its asker or the one asked; the other side hears it, and the ask stays as it is. */
+	reply(id: number, body: { text: string; question?: boolean }): Promise<{ ask: Ask; news?: IssueNews }> {
+		return this.#issues("POST", this.agentPath(`reply/${id}`), body);
 	}
 
 	/** Takes back an ask this agent made, with a note on why; the one asked hears it. */

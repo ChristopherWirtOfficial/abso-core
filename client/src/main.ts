@@ -41,7 +41,7 @@ import { newsBlockLines, newsShown, TOKEN_SERVERS } from "./core.ts";
 import { runDraftSync, runLand, runSwitch } from "./drafts.ts";
 import { runExport } from "./export.ts";
 import { runBlame, runWhere, runWho, runWhy } from "./history.ts";
-import { runAck, runAnswer, runAsk, runIssue, runIssues, runSearch, runWaiting } from "./issues.ts";
+import { runAck, runAnswer, runAsk, runIssue, runIssues, runReply, runSearch, runWaiting } from "./issues.ts";
 import { adminToken, issuedPublic, keyList, keyListText, keyNew, keyRevoke } from "./key-admin.ts";
 import { browserSkip, openInBrowser } from "./open-browser.ts";
 import { initInOrg, runOrg, runOrgs } from "./orgs.ts";
@@ -445,9 +445,9 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 			attach: "string",
 		},
 		usage:
-			'abso ask <who> "<question>" [--issue <N>] [--review | --task] [--due <YYYY-MM-DD>] [--blocks <N,N>] [--options "A|B|C"] [--attach <file,file>] | abso ask --withdraw <ask> [--note "why"]',
+			'abso ask <who> "<question>" [--issue <N>] [--review | --task] [--due <YYYY-MM-DD>] [--blocks <N,N>] [--options "A|B|C"] [--attach <file,file>] | abso ask <N> | abso ask --withdraw <ask> [--note "why"]',
 		about:
-			"Ask an agent, or a person (person:<id>), something; they hear it. On an issue, it holds the issue at Blocked (In review for --review) until answered. --task asks for something done instead of an answer; --options gives the choices; --blocks names the issues waiting on it. --attach sends files with the question, as on an issue. --withdraw takes back an ask you made that no longer needs an answer: it leaves their waiting list, stops holding the issue, keeps your --note as why, and they hear it.",
+			"Ask an agent, or a person (person:<id>), something; they hear it. Who must be one of the project's agents or members; a name that isn't is refused, with the closest one suggested. abso ask <N> shows ask N, open or closed, with its whole thread, its answer and whose turn it is. On an issue, it holds the issue at Blocked (In review for --review) until answered. --task asks for something done instead of an answer; --options gives the choices; --blocks names the issues waiting on it. --attach sends files with the question, as on an issue. --withdraw takes back an ask you made that no longer needs an answer: it leaves their waiting list, stops holding the issue, keeps your --note as why, and they hear it.",
 		run: runAsk,
 	},
 	search: {
@@ -458,10 +458,10 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		run: runSearch,
 	},
 	waiting: {
-		flags: { of: "string", mine: "boolean" },
-		usage: "abso waiting [--of <agent or person:id>] [--mine]",
+		flags: { of: "string", mine: "boolean", asked: "boolean" },
+		usage: "abso waiting [--of <agent or person:id>] [--mine] [--asked]",
 		about:
-			"The open asks, soonest due first: every one, those of someone (--of), or those of you (--mine). --mine also lists your publishes still in the merge queue and where each stands; the outcome comes as news.",
+			"The open asks, soonest due first: every one, those waiting on someone (--of), or those waiting on you (--mine), each with its newest reply. An ask waits on the one asked until they answer, or on the asker after a reply with --question, until the asker replies. --mine also lists your publishes still in the merge queue and where each stands; the outcome comes as news. --asked lists the asks you sent instead, open ones first, then the latest answered.",
 		run: runWaiting,
 	},
 	answer: {
@@ -476,8 +476,15 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: {},
 		usage: 'abso ack <ask> ["<note>"]',
 		about:
-			"Acknowledge an ask of you without answering it yet: the asker hears it, with your note, and the ask stays open, shown as acknowledged. abso answer closes it later.",
+			"Acknowledge an ask of you without answering it yet: it's the first reply in its thread. The asker hears it, with your note, and the ask stays open. abso reply adds more; abso answer closes it later.",
 		run: runAck,
+	},
+	reply: {
+		flags: { question: "boolean" },
+		usage: 'abso reply <ask> "<words>" [--question]',
+		about:
+			'Add to an ask\'s thread, as its asker or the one asked, open or closed: "ok, let me check", what you found, a follow-up. The other side hears it, and the ask stays as it is; abso answer still closes it. --question, from the one asked, asks the asker something back: the ask waits on them until they reply. On a public project, anyone can read the thread.',
+		run: runReply,
 	},
 	unqueue: {
 		flags: {},

@@ -27,6 +27,7 @@ import { issuesServerFor, tokenGoesTo } from "./core.ts";
 import { fromEnv } from "./env-names.ts";
 import { ignoredHere } from "./fetch.ts";
 import { loadIgnore, relativeTo } from "./folder.ts";
+import type { AskReply } from "./issues-wire.ts";
 import { queuedLines, standing } from "./queue.ts";
 import { seenText, shortWhen } from "./times.ts";
 
@@ -70,16 +71,35 @@ export function issueLine(i: IssueRow): string {
 	return `  ${String(i.id).padStart(3)}  ${i.status.padEnd(11)}  ${q(i.title)}${detail.length > 0 ? ` (${detail.join("; ")})` : ""}`;
 }
 
-function askLine(a: Ask & { title?: string | null }, api?: Pick<Api, "attachmentUrl">): string {
+/** The first line of a reply, for lists; abso ask <N> shows it whole. */
+const firstLine = (text: string): string => {
+	const line = text.split("\n")[0]!;
+	return line.length < text.length ? `${line} ...` : line;
+};
+
+/** One reply in an ask's thread. */
+function replyLine(r: AskReply, indent: string, whole: boolean): string {
+	return `${indent}${r.by}, ${shortWhen(r.at)}${r.question ? ", a question" : ""}: ${q(whole ? r.text : firstLine(r.text))}`;
+}
+
+/**
+ * An ask: its head line, its files and options, then, in a list, its newest reply, or with `thread`, every
+ * reply, oldest first; then its answer. Older servers send no thread, only the one asked's acknowledgement.
+ */
+function askLine(a: Ask & { title?: string | null }, api?: Pick<Api, "attachmentUrl">, thread = false): string {
 	const what = a.review ? "a review" : a.kind === "task" ? "a task" : "a question";
 	const where = a.issue === null ? "" : ` on issue ${a.issue}${a.title ? ` (${q(a.title)})` : ""}`;
+	const replies = a.replies;
 	const extra = [
 		// Who answered, and when, on the ask's own line, so a handled ask can't pass for an open one.
 		a.answer
 			? `${a.outcome === "withdrawn" ? "withdrawn" : "answered"} by ${a.answer.by}, ${shortWhen(a.answer.at)}`
 			: "",
-		!a.answer && a.ack ? `acknowledged ${shortWhen(a.ack.at)}, not answered yet` : "",
+		!a.answer && a.ack && replies === undefined ? `acknowledged ${shortWhen(a.ack.at)}, not answered yet` : "",
 		!a.answer && !a.ack && a.seen !== undefined ? seenText(a.seen) : "",
+		replies && replies.length > 0 ? (replies.length === 1 ? "1 reply" : `${replies.length} replies`) : "",
+		// Whose turn it is, when it isn't the one asked's: they asked something back.
+		!a.answer && a.waitingOn && a.waitingOn !== a.of ? `waiting on ${a.waitingOn}` : "",
 		a.due ? `due ${a.due}` : "",
 		a.blocks.length > 0 ? `blocks ${a.blocks.join(", ")}` : "",
 	].filter((x) => x !== "");
@@ -87,7 +107,10 @@ function askLine(a: Ask & { title?: string | null }, api?: Pick<Api, "attachment
 	const lines = [head, ...attachmentLines(api, a.attachments, "    ")];
 	if (a.options.length > 0) lines.push(`    options: ${a.options.map((o, i) => `${i + 1}. ${q(o)}`).join(", ")}`);
 	if (a.recommendation) lines.push(`    ${a.recommendation.by} recommends: ${q(a.recommendation.text)}`);
-	if (!a.answer && a.ack && a.ack.note !== "") lines.push(`    ${a.of} acknowledged: ${q(a.ack.note)}`);
+	if (replies === undefined) {
+		if (!a.answer && a.ack && a.ack.note !== "") lines.push(`    ${a.of} acknowledged: ${q(a.ack.note)}`);
+	} else if (thread) lines.push(...replies.map((r) => replyLine(r, "    ", true)));
+	else if (replies.length > 0) lines.push(replyLine(replies[replies.length - 1]!, "    last: ", false));
 	if (a.answer && a.outcome === "withdrawn") {
 		if (a.answer.words !== "") lines.push(`    why: ${q(a.answer.words)}`);
 	} else if (a.answer)
@@ -624,6 +647,7 @@ export async function runAsk(args: Parsed, env: Env): Promise<Output> {
 	if (str(args, "note") !== undefined)
 		throw new UsageError('--note goes with --withdraw: abso ask --withdraw <ask> --note "why"');
 	const [of, ...words] = args.positionals;
+	if (of !== undefined && words.length === 0 && /^\d+$/.test(of)) return showAsk(args, env, of);
 	if (of === undefined || words.length === 0)
 		throw new UsageError(
 			'abso ask <who> "<question>" [--issue <N>] [--review | --task] [--due <YYYY-MM-DD>] [--blocks <N,N>] [--options "A|B|C"]; who is an agent, or person:<id>',
@@ -657,6 +681,49 @@ export async function runAsk(args: Parsed, env: Env): Promise<Output> {
 		text: `Asked ${of} (ask ${r.id})${withFiles(attachments)}. They hear it; abso waiting shows what's open.${lost ? ` ${lost}` : ""}`,
 		json: { id: r.id, ...(attachments.length > 0 ? { attachments } : {}), ...(lost ? { notKept: lost } : {}) },
 	};
+}
+
+/** abso ask <N>: one ask, open or closed, with its whole thread, its answer and whose turn it is. */
+async function showAsk(args: Parsed, env: Env, word: string): Promise<Output> {
+	const others = ["issue", "due", "blocks", "options", "attach"].filter((f) => str(args, f) !== undefined);
+	if (others.length > 0 || bool(args, "review") || bool(args, "task"))
+		throw new UsageError('abso ask <N> shows ask N; to ask, say who and what: abso ask <who> "<question>"');
+	const id = issueNumber(word, "the ask number");
+	const { api, config } = openIssues(env);
+	const { ask } = await api.askThread(id);
+	const side = ask.of === config.agent || ask.by === config.agent;
+	const turn = ask.waitingOn === config.agent ? "you" : ask.waitingOn;
+	const steps = !side
+		? ""
+		: ask.answer
+			? `abso reply ${id} "..." still adds to it.`
+			: ask.of === config.agent
+				? `abso reply ${id} "..." adds to it; abso answer ${id} "..." answers and closes it.`
+				: `abso reply ${id} "..." adds to it.`;
+	const next = [!ask.answer && turn ? `It waits on ${turn}.` : "", steps].join(" ");
+	return {
+		text: [askLine(ask, api, true), next.trim()].filter((l) => l !== "").join("\n"),
+		json: { ask },
+	};
+}
+
+/** abso reply <ask> "<words>" [--question]: add to an ask's thread, as its asker or the one asked. */
+export async function runReply(args: Parsed, env: Env): Promise<Output> {
+	const [first, ...words] = args.positionals;
+	const id = issueNumber(first, "the ask number");
+	if (words.length === 0)
+		throw new UsageError(
+			`abso reply <ask> "<words>" [--question]: adds to an ask's thread, as its asker or the one asked`,
+		);
+	const { api, config } = openIssues(env);
+	const question = bool(args, "question");
+	const r = await api.reply(id, { text: words.join(" "), ...(question ? { question: true } : {}) });
+	const other = r.ask.by === config.agent ? r.ask.of : r.ask.by;
+	const turn =
+		!r.ask.answer && r.ask.waitingOn
+			? ` It waits on ${r.ask.waitingOn === config.agent ? "you" : r.ask.waitingOn}.`
+			: "";
+	return { text: `Replied on ask ${id}. ${other} hears it.${turn}`, json: { ask: r.ask } };
 }
 
 /** abso ask --withdraw <ask> [--note "why"]: the asker takes an ask back. It closes like an answer, and the one asked hears it. */
@@ -708,7 +775,8 @@ export async function runSearch(args: Parsed, env: Env): Promise<Output> {
 
 export async function runWaiting(args: Parsed, env: Env): Promise<Output> {
 	if (args.positionals.length > 0)
-		throw new UsageError("waiting takes no words: abso waiting [--of <agent or person:id>] [--mine]");
+		throw new UsageError("waiting takes no words: abso waiting [--of <agent or person:id>] [--mine] [--asked]");
+	if (bool(args, "asked")) return askedOf(args, env);
 	const { api, config } = openIssues(env);
 	const mine = bool(args, "mine") || str(args, "of") === config.agent;
 	const of = mine ? config.agent : str(args, "of");
@@ -728,7 +796,7 @@ export async function runWaiting(args: Parsed, env: Env): Promise<Output> {
 				: [
 						`${plural(asks.length, "open ask")}${of ? ` of ${of}` : ""}, soonest due first:`,
 						...asks.map((a) => askLine(a, api)),
-						'abso answer <ask> "..." answers one asked of you.',
+						'abso ask <N> shows one with its thread; abso reply <N> "..." adds to it; abso answer <N> "..." answers one asked of you.',
 					]),
 		].join("\n"),
 		json: {
@@ -740,6 +808,35 @@ export async function runWaiting(args: Parsed, env: Env): Promise<Output> {
 	};
 }
 
+/** abso waiting --asked: the asks you sent, open ones first, then the latest answered, each with its newest reply. */
+async function askedOf(args: Parsed, env: Env): Promise<Output> {
+	if (bool(args, "mine") || str(args, "of") !== undefined)
+		throw new UsageError("--asked lists the asks you sent; it takes no --mine or --of");
+	const { api, config } = openIssues(env);
+	const { asks } = await api.asked();
+	const open = asks.filter((a) => !a.answer);
+	const closed = asks.filter((a) => a.answer);
+	return {
+		text: [
+			...(asks.length === 0
+				? [`${config.agent} hasn't asked anything yet.`]
+				: [
+						...(open.length > 0
+							? [`${plural(open.length, "open ask")} you sent:`, ...open.map((a) => askLine(a, api))]
+							: []),
+						...(closed.length > 0
+							? [
+									`${closed.length === 1 ? "The latest answered" : `The latest ${closed.length} answered`}:`,
+									...closed.map((a) => askLine(a, api)),
+								]
+							: []),
+						"abso ask <N> shows one with its whole thread.",
+					]),
+		].join("\n"),
+		json: { asks },
+	};
+}
+
 /** abso ack <ask> ["note"]: tell the asker you have it, and answer later. The ask stays open until abso answer. */
 export async function runAck(args: Parsed, env: Env): Promise<Output> {
 	const [first, ...words] = args.positionals;
@@ -748,7 +845,7 @@ export async function runAck(args: Parsed, env: Env): Promise<Output> {
 	const note = words.join(" ");
 	const r = await api.ack(id, note !== "" ? { note } : {});
 	return {
-		text: `Acknowledged ask ${id}. ${r.ask.by} hears it; the ask stays open until abso answer ${id} "...".`,
+		text: `Acknowledged ask ${id}. ${r.ask.by} hears it; abso reply ${id} "..." adds more as you go, and the ask stays open until abso answer ${id} "...".`,
 		json: { ask: r.ask },
 	};
 }

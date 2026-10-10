@@ -85,6 +85,20 @@ export interface Ask {
 	outcome?: "withdrawn";
 	/** When the one asked acknowledged it without answering yet, with their note; it stays open. Absent until then. */
 	ack?: { at: number; note: string };
+	/** Its thread: what the asker and the one asked said on it, oldest first. The answer closes it and isn't one of these. Absent from older servers. */
+	replies?: AskReply[];
+	/** Who it waits on now: the one asked, or the asker while the newest reply is a question from the one asked. Null once it's closed. Absent from older servers. */
+	waitingOn?: string | null;
+}
+
+/** One reply on an ask, from the asker or the one asked. Neither opens nor closes it. */
+export interface AskReply {
+	id: number;
+	by: string;
+	text: string;
+	at: number;
+	/** A question back from the one asked: the ask waits on the asker until they reply. */
+	question?: true;
 }
 
 export interface Claim {

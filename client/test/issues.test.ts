@@ -29,6 +29,32 @@ let issuesUrl: string;
 const seen: string[] = [];
 /** The bodies of the copy requests it took. */
 const copies: Record<string, unknown>[] = [];
+/** The bodies of the replies it took. */
+const replies: { text: string; question?: boolean }[] = [];
+/** An open ask of fay's from desk with a thread: fay's ack, then a question back, so it waits on desk. */
+const threaded = {
+	id: 7,
+	issue: 3,
+	title: "Sync is slow",
+	by: "desk",
+	of: "fay",
+	kind: "question",
+	question: "Which way?",
+	review: false,
+	due: null,
+	recommendation: null,
+	options: [],
+	blocks: [],
+	at: 0,
+	answer: null,
+	seen: 0,
+	ack: { at: 0, note: "ok, let me check" },
+	replies: [
+		{ id: 1, by: "fay", text: "ok, let me check", at: 0 },
+		{ id: 2, by: "fay", text: "staging or live?\nlive is 906", at: 0, question: true },
+	],
+	waitingOn: "desk",
+};
 const dirs: string[] = [];
 
 before(async () => {
@@ -70,6 +96,36 @@ before(async () => {
 		if (req.method === "POST" && ack)
 			return send(200, {
 				ask: { id: Number(ack[2]), by: "desk", of: ack[1], answer: null, ack: { at: Date.now(), note: "" } },
+			});
+		// A reply answers with the ask; from the one asked, a question makes it wait on the asker.
+		const reply = /\/a\/([^/]+)\/reply\/(\d+)$/.exec(req.url ?? "");
+		if (req.method === "POST" && reply) {
+			let raw = "";
+			req.on("data", (c: Buffer) => (raw += c.toString("utf8")));
+			req.on("end", () => {
+				const body = JSON.parse(raw) as { text: string; question?: boolean };
+				replies.push(body);
+				send(200, {
+					ask: {
+						id: Number(reply[2]),
+						by: "desk",
+						of: reply[1],
+						answer: null,
+						waitingOn: body.question ? "desk" : reply[1],
+					},
+				});
+			});
+			return;
+		}
+		// One ask with its thread, and the asks an agent sent.
+		const one = /\/ask\/(\d+)$/.exec(req.url ?? "");
+		if (req.method === "GET" && one) return send(200, { ask: { ...threaded, id: Number(one[1]) } });
+		if (req.method === "GET" && /\/a\/[^/]+\/asked$/.test(req.url ?? ""))
+			return send(200, {
+				asks: [
+					threaded,
+					{ ...threaded, id: 8, replies: [], answer: { by: "fay", words: "yes", at: 0 }, waitingOn: null },
+				],
 			});
 		send(500, { error: "a stand-in" });
 	});
@@ -146,7 +202,8 @@ describe("issues commands, the client's part (#54)", () => {
 
 	it("are MCP tools", () => {
 		const names = mcpTools().map((t) => t.name);
-		for (const n of ["issues", "issue", "search", "ask", "waiting", "answer"]) assert.ok(names.includes(n), n);
+		for (const n of ["issues", "issue", "search", "ask", "waiting", "answer", "ack", "reply"])
+			assert.ok(names.includes(n), n);
 		assert.deepEqual(argvFor("ask", { args: ["alice", "Which login?"], issue: "3", review: true }), [
 			"ask",
 			"--issue=3",
@@ -210,11 +267,63 @@ describe("issues commands, the client's part (#54)", () => {
 		const before = seen.length;
 		const r = await main(["ack", "7", "on it after the deploy"], { cwd: fay, env: ENV(), write: () => {} });
 		assert.equal(r.exit, 0, r.stdout + r.stderr);
-		assert.equal(r.stdout, 'Acknowledged ask 7. desk hears it; the ask stays open until abso answer 7 "...".\n');
+		assert.equal(
+			r.stdout,
+			'Acknowledged ask 7. desk hears it; abso reply 7 "..." adds more as you go, and the ask stays open until abso answer 7 "...".\n',
+		);
 		const posts = seen.slice(before).filter((s) => s.startsWith("POST"));
 		assert.deepEqual(posts.length, 1, posts.join("\n"));
 		assert.match(posts[0]!, /^POST \/p\/issues\d+\/a\/fay\/ack\/7$/);
 		assert.equal((await main(["ack"], { cwd: fay, env: ENV(), write: () => {} })).exit, 1);
+	});
+
+	it("reply is one POST to reply/<ask> with the words, and says whose turn it is", async () => {
+		const fay = await folder("fay");
+		const before = seen.length;
+		const r = await main(["reply", "7", "staging or live?", "--question"], { cwd: fay, env: ENV(), write: () => {} });
+		assert.equal(r.exit, 0, r.stdout + r.stderr);
+		const posts = seen.slice(before).filter((s) => s.startsWith("POST"));
+		assert.equal(posts.length, 1, posts.join("\n"));
+		assert.match(posts[0]!, /^POST \/p\/issues\d+\/a\/fay\/reply\/7$/);
+		assert.deepEqual(replies.at(-1), { text: "staging or live?", question: true });
+		assert.equal(r.stdout, "Replied on ask 7. desk hears it. It waits on desk.\n");
+		assert.equal((await main(["reply", "7"], { cwd: fay, env: ENV(), write: () => {} })).exit, 1);
+	});
+
+	it("ask <N> reads one ask with its whole thread, oldest first, and whose turn it is", async () => {
+		const fay = await folder("fay");
+		const before = seen.length;
+		const r = await main(["ask", "7"], { cwd: fay, env: ENV(), write: () => {} });
+		assert.equal(r.exit, 0, r.stdout + r.stderr);
+		assert.match(seen.slice(before).join("\n"), /^GET \/p\/issues\d+\/ask\/7$/m);
+		assert.match(
+			r.stdout,
+			/^ {2}ask 7: desk, .* asks fay a question on issue 3 \("Sync is slow"\) \(2 replies; waiting on desk\): "Which way\?"$/m,
+		);
+		const ack = r.stdout.indexOf('    fay, Jan 1 1970 00:00 UTC: "ok, let me check"');
+		const back = r.stdout.indexOf('    fay, Jan 1 1970 00:00 UTC, a question: "staging or live?\\nlive is 906"');
+		assert.ok(ack > 0 && back > ack, r.stdout);
+		assert.match(
+			r.stdout,
+			/^It waits on desk\. abso reply 7 "\.\.\." adds to it; abso answer 7 "\.\.\." answers and closes it\.$/m,
+		);
+		// The asker reads it as their turn, and can't answer it.
+		const desk = await folder("desk");
+		const d = await main(["ask", "7"], { cwd: desk, env: ENV(), write: () => {} });
+		assert.match(d.stdout, /^It waits on you\. abso reply 7 "\.\.\." adds to it\.$/m);
+	});
+
+	it("waiting --asked lists the asks you sent, open first, then the latest answered", async () => {
+		const fay = await folder("fay");
+		const before = seen.length;
+		const r = await main(["waiting", "--asked"], { cwd: fay, env: ENV(), write: () => {} });
+		assert.equal(r.exit, 0, r.stdout + r.stderr);
+		assert.match(seen.slice(before).join("\n"), /^GET \/p\/issues\d+\/a\/fay\/asked$/m);
+		assert.match(r.stdout, /^1 open ask you sent:$/m);
+		assert.match(r.stdout, /^ {4}last: fay, .*, a question: "staging or live\? \.\.\."$/m);
+		assert.ok(r.stdout.indexOf("ask 7:") < r.stdout.indexOf("The latest answered:"), r.stdout);
+		assert.ok(r.stdout.indexOf("The latest answered:") < r.stdout.indexOf("ask 8:"), r.stdout);
+		assert.match(r.stdout, /^ {4}answer: "yes"$/m);
 	});
 
 	it("an acknowledged ask reads as acknowledged, not answered, with the note under it", () => {
