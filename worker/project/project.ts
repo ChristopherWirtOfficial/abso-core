@@ -2258,7 +2258,7 @@ export class Project {
 		if (missing.length > 0)
 			throw new ProjectError(
 				"conflict",
-				`this change depends on ${missing.join(", ")}, which is not in the set being published`,
+				`this change depends on ${missing.join(", ")}, which is not in the set being pushed`,
 			);
 	}
 

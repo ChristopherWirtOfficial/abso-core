@@ -42,7 +42,7 @@ test("an objection follows its lines through a move, and nobody hears they were 
 	assert.deepEqual(Project.load(store.entries, new MemoryStore()).notes(), project.notes());
 });
 
-test("a note on lines published into a named draft stays open while their author works in shared", () => {
+test("a note on lines pushed into a named draft stays open while their author works in shared", () => {
 	const { project } = setup();
 	project.switchTo("builder", "feat", 10);
 	edit(
@@ -102,7 +102,7 @@ test("a land, a pluck and a drop that fix an objection tell its writer", () => {
 	);
 });
 
-test("a queued publish keeps the start note it was queued under", () => {
+test("a queued push keeps the start note it was queued under", () => {
 	const store = new MemoryStore();
 	const project = new Project(store, { now: () => 10 });
 	project.checkerReady = true;

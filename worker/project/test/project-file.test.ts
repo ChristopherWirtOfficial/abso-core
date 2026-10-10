@@ -45,7 +45,7 @@ test("with both, abso.json counts and status says avcs.json is ignored", () => {
 	assert.deepEqual(project.status().projectFile, { used: "abso.json", ignored: "avcs.json" });
 });
 
-test("a broken abso.json is refused like a broken avcs.json, at publish and at init", () => {
+test("a broken abso.json is refused like a broken avcs.json, at push and at init", () => {
 	const project = new Project(new MemoryStore());
 	project.init({ "abso.json": '{"queue": false}\n' }, 0);
 	project.sync("alice");

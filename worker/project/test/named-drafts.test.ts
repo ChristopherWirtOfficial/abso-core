@@ -102,7 +102,7 @@ test("the changed-definition rule applies to landing too", () => {
 	assert.equal(project.land("ann", "Land", 8).ok, true);
 });
 
-test("switching parks unpublished work in the space you leave, and switching back restores it", () => {
+test("switching parks unpushed work in the space you leave, and switching back restores it", () => {
 	const { project } = setup();
 	project.edit("ann", { file: "notes.md", old: "one\n", new: "ONE (shared work)\n" }, 1);
 
@@ -129,7 +129,7 @@ test("switching parks unpublished work in the space you leave, and switching bac
 	assert.deepEqual(project.switchTo("ann", null, 9).files, {});
 });
 
-test("carry takes unpublished changes into a new named draft, and only a new one", () => {
+test("carry takes unpushed changes into a new named draft, and only a new one", () => {
 	const { project } = setup();
 	project.edit("ann", { file: "notes.md", old: "one\n", new: "ONE\n" }, 1);
 	const moved = project.switchTo("ann", "idea", 2, { carry: true });

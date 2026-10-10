@@ -174,7 +174,7 @@ test("files as an agent has them: its own new files in, and an unknown agent isn
 	assert.ok(!p.status().agents.some((a) => a.agent === "nobody"));
 });
 
-test("drafts that would collide by the publish rule: lines, a definition, and a name defined twice", () => {
+test("drafts that would collide by the push rule: lines, a definition, and a name defined twice", () => {
 	const p = setup();
 	p.edit("ann", { file: "src/coast/tide.ts", old: "wave = 2", new: "wave = 20" }, 10);
 	p.edit("bob", { file: "src/coast/tide.ts", old: "wave = 2", new: "wave = 22" }, 11);

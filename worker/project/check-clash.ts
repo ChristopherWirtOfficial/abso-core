@@ -43,6 +43,6 @@ export function checkClash(
 		if (!touched.has(name) || !view.hasFile(name)) continue;
 		const bad = configProblem(view.text(name));
 		if (bad)
-			throw new ProjectError("conflict", `${name} ${bad}. Shared keeps the one it has; fix yours and publish again.`);
+			throw new ProjectError("conflict", `${name} ${bad}. Shared keeps the one it has; fix yours and push again.`);
 	}
 }

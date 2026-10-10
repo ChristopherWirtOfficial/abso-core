@@ -131,7 +131,7 @@ export function drop(
 			[
 				{
 					key: `drop ${version}`,
-					text: `${agent.name} dropped ${names} from shared (version ${version}): "${message.trim()}". Run abso sync to take it out of your folder.`,
+					text: `${agent.name} dropped ${names} from shared (version ${version}): "${message.trim()}". Run abso pull to take it out of your folder.`,
 				},
 			],
 			entries,

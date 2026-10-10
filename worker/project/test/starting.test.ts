@@ -30,7 +30,7 @@ function setup() {
 	return { project, store };
 }
 
-test("the first edit to a file in someone else's unpublished draft brings one line of news, once", () => {
+test("the first edit to a file in someone else's unpushed draft brings one line of news, once", () => {
 	const { project } = setup();
 	edit(project, "builder3", { file: "src/storm/storm.ts", old: "1", new: "2" }, 1);
 	edit(project, "builder3", { file: "src/storm/system.ts", old: "1", new: "2" }, 2);
@@ -38,7 +38,7 @@ test("the first edit to a file in someone else's unpublished draft brings one li
 	assert.equal(first.news.length, 1);
 	assert.match(
 		first.news[0]!,
-		/^builder3 has unpublished changes in src\/storm\/storm\.ts, which you just started changing/,
+		/^builder3 has unpushed changes in src\/storm\/storm\.ts, which you just started changing/,
 	);
 	// Its second edit to the same file says nothing more; a new file does.
 	assert.deepEqual(
@@ -47,7 +47,7 @@ test("the first edit to a file in someone else's unpublished draft brings one li
 	);
 	const second = project.record("builder6", { "src/storm/system.ts": "export const system = 5;\n" }, 5);
 	assert.equal(second.news.length, 1);
-	assert.match(second.news[0]!, /^builder3 has unpublished changes in src\/storm\/system\.ts/);
+	assert.match(second.news[0]!, /^builder3 has unpushed changes in src\/storm\/system\.ts/);
 	// A file nobody else is in: no news.
 	assert.deepEqual(
 		edit(project, "builder6", { file: "notes/todo.md", old: "# todo", new: "# todo\n- storm" }, 6).news,
@@ -103,7 +103,7 @@ test("a first edit to a file named in someone's starting note brings news, befor
 	);
 });
 
-test("a starting note lasts through publishes until taken back, the next start, or 2 hours idle (#44); nothing is locked or refused", () => {
+test("a starting note lasts through pushes until taken back, the next start, or 2 hours idle (#44); nothing is locked or refused", () => {
 	const { project, store } = setup();
 	project.starting("builder3", "Storm", ["src/storm/storm.ts"], 1);
 	// Someone else can still edit and publish the file.
@@ -116,7 +116,7 @@ test("a starting note lasts through publishes until taken back, the next start, 
 	assert.deepEqual(
 		project.startingNotes().map((n) => n.text),
 		["Storm"],
-		"a publish no longer ends it",
+		"a push no longer ends it",
 	);
 	// Two hours and a bit with nothing from builder3: it has ended.
 	assert.equal(
@@ -178,7 +178,7 @@ test("a note that names files by glob, or only in its text, brings news on a fir
 	);
 });
 
-test("starting on a glob names the unpublished changes it covers, and their author hears of it", () => {
+test("starting on a glob names the unpushed changes it covers, and their author hears of it", () => {
 	const project = new Project(new MemoryStore());
 	project.init({ "tools/play.mjs": "launch();\n", "tools/shot.mjs": "launch();\n", "src/x.ts": "x;\n" }, 0);
 	for (const a of ["builder4", "builder6"]) project.sync(a);

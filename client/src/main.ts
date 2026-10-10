@@ -292,7 +292,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { server: "string", agent: "string", dir: "string", reader: "boolean" },
 		usage: "abso join <project> [--agent <name>] [--dir <folder>] [--server <url>] [--reader]",
 		about:
-			"Join a project as a new agent and write its shared files into a folder: --dir, else here when this folder is empty, else ./<project> (which has to be new or empty). Without --agent the agent is named after this box (the name abso login gave it, lower-cased), or the next free <name>-2, <name>-3; that needs the box signed in with abso login. The server is --server, else ABSO_SERVER, else the one this box signed in to with abso login, else https://api.abso.dev. --reader joins as a reader: it reads everything and records nothing, and the server refuses its edits, records and publishes. With --reader and no sign-in, a public project is joined to read signed out: the folder holds only its settings, sends no sign-in, and runs status, log, show, files, blame, why, where, issues, issue and search; every other command is refused.",
+			"Join a project as a new agent and write its shared files into a folder: --dir, else here when this folder is empty, else ./<project> (which has to be new or empty). Without --agent the agent is named after this box (the name abso login gave it, lower-cased), or the next free <name>-2, <name>-3; that needs the box signed in with abso login. The server is --server, else ABSO_SERVER, else the one this box signed in to with abso login, else https://api.abso.dev. --reader joins as a reader: it reads everything and records nothing, and the server refuses its edits, records and pushes. With --reader and no sign-in, a public project is joined to read signed out: the folder holds only its settings, sends no sign-in, and runs status, log, show, files, blame, why, where, issues, issue and search; every other command is refused.",
 		run: runJoin,
 	},
 	record: {
@@ -302,7 +302,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 			"Send every file that changed since the server last heard about it (--all: every file). For edits the hook did not see.",
 		run: runRecord,
 	},
-	publish: {
+	push: {
 		flags: {
 			message: "string",
 			binary: "string",
@@ -313,9 +313,9 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 			"no-wait": "boolean",
 			done: "boolean",
 		},
-		usage: 'abso publish -m "<why>" [--as-is] [--check ["<command>"]] [--wait <seconds> | --no-wait] [--done]',
+		usage: 'abso push -m "<why>" [--as-is] [--check ["<command>"]] [--wait <seconds> | --no-wait] [--done]',
 		about:
-			'Record, then add your draft to shared. Refused when it collides with work published since your last sync, or when lines a sync showed changed on both sides are still untouched (--as-is publishes both sides\' lines anyway). --check "<command>" (e.g. --check "npm run typecheck") first syncs, then runs the command in your box on your draft with newest shared, and publishes only if it exits 0, so two changes that each pass alone can\'t turn shared red. --check alone runs the "build" and then the "check" in the project\'s avcs.json (your draft\'s copy), as the server does on each new version. With the merge queue on ("queue": true in avcs.json), a publish to shared is queued and lands only once the project\'s check passes on shared with it on top: publish waits up to 100 s for that (--wait <seconds> changes it, --no-wait returns at once), then says it landed (exit 0), was pulled with the check\'s output (exit 2, its changes still in your draft), or is still queued (exit 3; the outcome comes as news). --check alone is skipped then, since the queue runs the check. --done takes your start note back once it\'s published: this publish finishes that work.',
+			'Record, then add your draft to shared. Refused when it collides with work pushed since your last pull, or when lines a pull showed changed on both sides are still untouched (--as-is pushes both sides\' lines anyway). --check "<command>" (e.g. --check "npm run typecheck") first pulls, then runs the command in your box on your draft with newest shared, and pushes only if it exits 0, so two changes that each pass alone can\'t turn shared red. --check alone runs the "build" and then the "check" in the project\'s avcs.json (your draft\'s copy), as the server does on each new version. With the merge queue on ("queue": true in avcs.json), a push to shared is queued and lands only once the project\'s check passes on shared with it on top: push waits up to 100 s for that (--wait <seconds> changes it, --no-wait returns at once), then says it landed (exit 0), was turned back with the check\'s output (exit 2, its changes still in your draft), or is still queued (exit 3; the outcome comes as news). --check alone is skipped then, since the queue runs the check. --done takes your start note back once it\'s pushed: this push finishes that work.',
 		run: runPublish,
 	},
 	bisect: {
@@ -330,21 +330,21 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: {},
 		usage: "abso reader on|off",
 		about:
-			"Make this folder's agent a reader, which reads everything and records nothing (the server refuses its edits, records and publishes), or a writer again. Refused while it has unpublished or parked work.",
+			"Make this folder's agent a reader, which reads everything and records nothing (the server refuses its edits, records and pushes), or a writer again. Refused while it has unpushed or parked work.",
 		run: runReader,
 	},
 	settle: {
 		flags: { yours: "boolean", theirs: "boolean", both: "boolean" },
 		usage: "abso settle <file...> --yours|--theirs|--both",
 		about:
-			"Settle the collisions a sync marked in these files: each marker block becomes your lines, theirs, or both (yours first), then it records. abso status lists the files with markers.",
+			"Settle the collisions a pull marked in these files: each marker block becomes your lines, theirs, or both (yours first), then it records. abso status lists the files with markers.",
 		run: runSettle,
 	},
-	sync: {
+	pull: {
 		flags: { verbose: "boolean", full: "boolean" },
-		usage: "abso sync [--full]",
+		usage: "abso pull [--full]",
 		about:
-			"Record, then bring shared's new work into the folder. Lines changed on both sides are listed as collisions to settle. --full writes any file of yours the folder is missing, not only what changed since your last sync.",
+			"Record, then bring shared's new work into the folder. Lines changed on both sides are listed as collisions to settle. --full writes any file of yours the folder is missing, not only what changed since your last pull.",
 		run: runSync,
 	},
 	run: {
@@ -378,14 +378,14 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: {},
 		usage: "abso mv <from> <to>",
 		about:
-			"Move a file in your draft, its lines keeping their history (as git mv), recorded as a move rather than guessed from the folder. The way to change a file's case: README.md and readme.md are one file in abso, and a write under another spelling goes to the existing one, with a warning that names abso mv. It reaches shared with your next publish.",
+			"Move a file in your draft, its lines keeping their history (as git mv), recorded as a move rather than guessed from the folder. The way to change a file's case: README.md and readme.md are one file in abso, and a write under another spelling goes to the existing one, with a warning that names abso mv. It reaches shared with your next push.",
 		run: runMv,
 	},
 	review: {
 		flags: { since: "string" },
 		usage: "abso review [<id> | v<version> | <agent>] [--since <position|2h>]",
 		about:
-			"Review is reading what landed. With no change: the changes with anything new since you last looked, newest first (a change is one start note's work, a named draft's, or a lone publish), and the mark moves on; --since 2h (or a log position) looks further back without moving it. With a change id, v<version> (the change holding that version of shared) or an agent (its newest change): that change's page, with what it set out to do, its versions, what it settled, its reviewers and its notes.",
+			"Review is reading what landed. With no change: the changes with anything new since you last looked, newest first (a change is one start note's work, a named draft's, or a lone push), and the mark moves on; --since 2h (or a log position) looks further back without moving it. With a change id, v<version> (the change holding that version of shared) or an agent (its newest change): that change's page, with what it set out to do, its versions, what it settled, its reviewers and its notes.",
 		run: runReview,
 	},
 	note: {
@@ -402,7 +402,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		usage:
 			'abso note <file>:<line>[-<line>] "<text>" [--object | --read] [--draft <agent> | --at <version>] | abso note --reply <id> "<text>" | abso note --close <id> --resolved|--withdrawn',
 		about:
-			"A note on lines: it sits on those lines and follows them as the file changes. The lines' authors and the change's agent hear it as news. The line numbers are as your folder shows the file (it records first); --draft <agent> notes their unpublished work as their draft shows it, --at <version> a version of shared. --object asks for a fix (it shows as addressed once all its lines change); --read says you read it, telling nobody. --reply answers a note; --close closes one of yours.",
+			"A note on lines: it sits on those lines and follows them as the file changes. The lines' authors and the change's agent hear it as news. The line numbers are as your folder shows the file (it records first); --draft <agent> notes their unpushed work as their draft shows it, --at <version> a version of shared. --object asks for a fix (it shows as addressed once all its lines change); --read says you read it, telling nobody. --reply answers a note; --close closes one of yours.",
 		run: runNote,
 	},
 	notes: {
@@ -425,7 +425,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		usage:
 			"abso issues [--open] [--status <status>] [--agent <agent>] [--parent <N>] [--label <l,l>] | abso issues --labels",
 		about:
-			"The project's issues, most recently updated first, each with its status, agents, labels, versions and who it waits on. --label keeps the issues with every label named (friction, say); --labels lists the labels in use, with how many issues are open under each; --drafts lists your drafts. A status comes from the work: abso start --issue N puts an issue In progress, an open ask makes it Blocked (or In review, for a review), and publish --done closes it.",
+			"The project's issues, most recently updated first, each with its status, agents, labels, versions and who it waits on. --label keeps the issues with every label named (friction, say); --labels lists the labels in use, with how many issues are open under each; --drafts lists your drafts. A status comes from the work: abso start --issue N puts an issue In progress, an open ask makes it Blocked (or In review, for a review), and push --done closes it.",
 		run: runIssues,
 	},
 	issue: {
@@ -457,7 +457,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		usage:
 			'abso issue <N> --save-attachments <folder> | abso issue <N> --copy-to <project> [--clean <file>] [--dry-run] | abso issue <N> [--comment "..." [--attach <file,file>] | --object "..." | --drop | --reopen | --done [--done-by <version>]] | abso issue <N> [--title "..."] [--description "..."] [--parent <N|none>] [--agent <agent|none>] [--blocked-by <N,N|none>] [--label <l,l>] [--unlabel <l,l>] [--notify <who,who> | --quiet] | abso issue new "<title>" [--description "..."] [--parent <N>] [--lines <file>:<from>-<to>@<version>] [--agent <agent>] [--blocked-by <N,N>] [--notify <who,who>] [--label <l,l>] [--attach <file,file>]',
 		about:
-			"One issue: its description, Agent, Blocked by, labels, asks, comments, edits, sub-issues and watchers. --comment comments on it and --object objects; its agents hear either. A comment holds up to 4000 characters: a longer --comment (or --comment-file) goes up in parts, split at paragraph breaks and each starting (1/3), (2/3) and so on, and a longer --object is refused before anything is sent. --drop drops it. --reopen opens a dropped issue again. --done marks it done by hand, and --done-by <version> names the published version that did it. publish --done still marks it done too. --title, --description, --parent, --agent and --blocked-by edit it, and the edit tells its watchers (who opened it, its Agent and agents, its Reviewer, whoever was named in Notify, and whoever commented); --notify tells more people, --quiet tells nobody. --label adds labels and --unlabel takes them off (friction, area:client: lower-case letters, digits and - _ . :); a label-only edit tells nobody unless --notify names people. An issue is Blocked until each issue it's blocked by is Done. abso issue new opens one; --lines ties it to lines at a version of shared, --agent says who it's for, --notify tells people now, and --label labels it. --attach shot.png,after.png puts images on a new issue or a comment (png, jpeg, gif or webp, 10 MB each; the server checks the type by the bytes and takes out metadata such as where a photo was taken. An svg, up to 1 MB, is drawn as a png, and its own file is kept as a download, on servers that take svg), and prints each one's id for the text to point at; the issue's page lists them with a link, and --save-attachments <folder> saves every one on the issue and its comments there as <id>-<name> (an svg's own file too), outside the abso folder or where abso leaves files out. --copy-to <project> copies the issue into another project, with its comments, answered asks and labels, each keeping its author and time; --dry-run shows what would go and writes nothing, and --clean <file> gives cleaned texts by source id as JSON ({title, description, comments: [{id, text}], asks: [{id, question, answer}]}; a comment left out of a given list isn't copied). Copying out of a project on a live server takes an owner of that project. abso issue draft \"<title>\" [the same fields] saves a draft instead: yours alone, with no number and no news; abso issue draft <D> [fields] changes it, --open opens it as an issue, --delete deletes it.",
+			"One issue: its description, Agent, Blocked by, labels, asks, comments, edits, sub-issues and watchers. --comment comments on it and --object objects; its agents hear either. A comment holds up to 4000 characters: a longer --comment (or --comment-file) goes up in parts, split at paragraph breaks and each starting (1/3), (2/3) and so on, and a longer --object is refused before anything is sent. --drop drops it. --reopen opens a dropped issue again. --done marks it done by hand, and --done-by <version> names the pushed version that did it. push --done still marks it done too. --title, --description, --parent, --agent and --blocked-by edit it, and the edit tells its watchers (who opened it, its Agent and agents, its Reviewer, whoever was named in Notify, and whoever commented); --notify tells more people, --quiet tells nobody. --label adds labels and --unlabel takes them off (friction, area:client: lower-case letters, digits and - _ . :); a label-only edit tells nobody unless --notify names people. An issue is Blocked until each issue it's blocked by is Done. abso issue new opens one; --lines ties it to lines at a version of shared, --agent says who it's for, --notify tells people now, and --label labels it. --attach shot.png,after.png puts images on a new issue or a comment (png, jpeg, gif or webp, 10 MB each; the server checks the type by the bytes and takes out metadata such as where a photo was taken. An svg, up to 1 MB, is drawn as a png, and its own file is kept as a download, on servers that take svg), and prints each one's id for the text to point at; the issue's page lists them with a link, and --save-attachments <folder> saves every one on the issue and its comments there as <id>-<name> (an svg's own file too), outside the abso folder or where abso leaves files out. --copy-to <project> copies the issue into another project, with its comments, answered asks and labels, each keeping its author and time; --dry-run shows what would go and writes nothing, and --clean <file> gives cleaned texts by source id as JSON ({title, description, comments: [{id, text}], asks: [{id, question, answer}]}; a comment left out of a given list isn't copied). Copying out of a project on a live server takes an owner of that project. abso issue draft \"<title>\" [the same fields] saves a draft instead: yours alone, with no number and no news; abso issue draft <D> [fields] changes it, --open opens it as an issue, --delete deletes it.",
 		run: runIssue,
 	},
 	ask: {
@@ -489,7 +489,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { of: "string", mine: "boolean", asked: "boolean" },
 		usage: "abso waiting [--of <agent or person:id>] [--mine] [--asked]",
 		about:
-			"The open asks, soonest due first: every one, those waiting on someone (--of), or those waiting on you (--mine), each with its newest reply. An ask waits on the one asked until they answer, or on the asker after a reply with --question, until the asker replies. --mine also lists your publishes still in the merge queue and where each stands; the outcome comes as news. --asked lists the asks you sent instead, open ones first, then the latest answered.",
+			"The open asks, soonest due first: every one, those waiting on someone (--of), or those waiting on you (--mine), each with its newest reply. An ask waits on the one asked until they answer, or on the asker after a reply with --question, until the asker replies. --mine also lists your pushes still in the merge queue and where each stands; the outcome comes as news. --asked lists the asks you sent instead, open ones first, then the latest answered.",
 		run: runWaiting,
 	},
 	answer: {
@@ -518,7 +518,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: {},
 		usage: "abso unqueue",
 		about:
-			"Take back your publishes still waiting in the merge queue: their changes stay in your draft, unpublished. Refused while one is being checked; it lands or is pulled within a few minutes (abso drop takes it back after it lands).",
+			"Take back your pushes still waiting in the merge queue: their changes stay in your draft, unpushed. Refused while one is being checked; it lands or is turned back within a few minutes (abso drop takes it back after it lands).",
 		run: runUnqueue,
 	},
 	visibility: {
@@ -600,14 +600,14 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { short: "boolean" },
 		usage: "abso status [--short]",
 		about:
-			"The shared version, whether shared is green or red by the project's CI (abso ci has more), who waits in the merge queue, every agent's base and draft, and what in this folder is not yet recorded. --short prints one word for stamping a build: the version this folder is on (214), with the named draft (coast@3), +unpublished when it holds changes not yet published, and +queued when a publish of yours waits in the merge queue.",
+			"The shared version, whether shared is green or red by the project's CI (abso ci has more), who waits in the merge queue, every agent's base and draft, and what in this folder is not yet recorded. --short prints one word for stamping a build: the version this folder is on (214), with the named draft (coast@3), +unpushed when it holds changes not yet pushed, and +queued when a push of yours waits in the merge queue.",
 		run: runStatus,
 	},
 	switch: {
 		flags: { carry: "boolean", verbose: "boolean" },
 		usage: "abso switch <draft> | abso switch -c <new draft> | abso switch shared",
 		about:
-			"Move this folder to a named draft, or back to shared. Your unpublished changes are parked where you leave and come back when you return; -c carries them into a new draft instead.",
+			"Move this folder to a named draft, or back to shared. Your unpushed changes are parked where you leave and come back when you return; -c carries them into a new draft instead.",
 		run: runSwitch,
 	},
 	land: {
@@ -617,9 +617,9 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 			"Land your named draft in shared, as one unit. Refused only on a collision with work that landed in shared since the draft began.",
 		run: runLand,
 	},
-	"draft-sync": {
+	"draft-pull": {
 		flags: {},
-		usage: "abso draft-sync",
+		usage: "abso draft-pull",
 		about: "Move your named draft onto shared's newest version, then bring that into this folder.",
 		run: runDraftSync,
 	},
@@ -627,21 +627,21 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { draft: "string", agent: "string" },
 		usage: "abso diff [file...] [--agent <name>] | abso diff <from> <to> [file...] [--draft <name>]",
 		about:
-			"Your unpublished changes, line by line, as git prints them (records first). --agent <name>: that agent's recorded, unpublished changes instead, to review them; it changes nothing. With two versions: what changed between them in this space.",
+			"Your unpushed changes, line by line, as git prints them (records first). --agent <name>: that agent's recorded, unpushed changes instead, to review them; it changes nothing. With two versions: what changed between them in this space.",
 		run: runDiff,
 	},
 	restore: {
 		flags: { all: "boolean" },
 		usage: "abso restore <file...> | abso restore <file>:<line>[-<line>] | abso restore --all",
 		about:
-			"Discard your unpublished changes to those files (--all: to every file), like git restore. The files go back to how your space has them. <file>:<lines> puts back only the changes that touch those lines (numbered as abso diff shows the file now) and keeps your other changes to it.",
+			"Discard your unpushed changes to those files (--all: to every file), like git restore. The files go back to how your space has them. <file>:<lines> puts back only the changes that touch those lines (numbered as abso diff shows the file now) and keeps your other changes to it.",
 		run: runRestore,
 	},
 	export: {
 		flags: { version: "string", keep: "string" },
 		usage: "abso export <dir> [--version <N>] [--keep <glob>]",
 		about:
-			"Write one published version of this folder's space (the newest unless --version) into a folder of its own, for a build that doesn't move. The folder must be empty, an earlier export (which it replaces, keeping node_modules and what --keep names), or one .absoignore leaves out; .avcs-export.json there names the version.",
+			"Write one pushed version of this folder's space (the newest unless --version) into a folder of its own, for a build that doesn't move. The folder must be empty, an earlier export (which it replaces, keeping node_modules and what --keep names), or one .absoignore leaves out; .avcs-export.json there names the version.",
 		run: runExport,
 	},
 	files: {
@@ -656,13 +656,13 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		usage:
 			"abso log [file] [-n <count>] [--before <version>] [--draft <name>] [--since <version|30m|2h|1d|date>] [--by <agent,...>] [--count]",
 		about:
-			"The published versions of this folder's space (shared or a named draft), newest first: who, when, why and which files, and for shared, whether the version passed CI's check (abso ci). With a file: only the versions that changed it. --before <version> starts below that version, so any stretch of history can be listed; the end of the list names the --before for the next older ones. --since takes a version (the versions after it), a span back from now (30m, 2h, 1d), a clock time today (20:00) or a date and time; --by keeps one agent's versions (or several, comma-separated); --count prints versions and files per agent instead of the list.",
+			"The pushed versions of this folder's space (shared or a named draft), newest first: who, when, why and which files, and for shared, whether the version passed CI's check (abso ci). With a file: only the versions that changed it. --before <version> starts below that version, so any stretch of history can be listed; the end of the list names the --before for the next older ones. --since takes a version (the versions after it), a span back from now (30m, 2h, 1d), a clock time today (20:00) or a date and time; --by keeps one agent's versions (or several, comma-separated); --count prints versions and files per agent instead of the list.",
 		run: runLog,
 	},
 	show: {
 		flags: { draft: "string" },
 		usage: "abso show <version> | abso show <version>:<file> [--draft <name>]",
-		about: "One version: who published it, why, and its diff. With :<file>, that file's text as it was then.",
+		about: "One version: who pushed it, why, and its diff. With :<file>, that file's text as it was then.",
 		run: runShow,
 	},
 	announce: {
@@ -676,7 +676,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { done: "boolean", issue: "string" },
 		usage: 'abso start "<what>" [files...] [--issue <n>] | abso start --done',
 		about:
-			"Say what you are starting on, before your first edit, so abso where shows it to everyone. Names who already has unpublished changes in those files, and tells them. Nothing is locked; publishing ends the note.",
+			"Say what you are starting on, before your first edit, so abso where shows it to everyone. Names who already has unpushed changes in those files, and tells them. Nothing is locked; pushing ends the note.",
 		run: runStart,
 	},
 	news: {
@@ -697,34 +697,34 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: {},
 		usage: "abso who <file...>",
 		about:
-			"For each file: who last changed it, who has unpublished changes in it (and where), and whose abso start note names it. Ask before you start in someone's file.",
+			"For each file: who last changed it, who has unpushed changes in it (and where), and whose abso start note names it. Ask before you start in someone's file.",
 		run: runWho,
 	},
 	where: {
 		flags: {},
 		usage: "abso where",
-		about: "Who is working where: each file with unpublished changes, whose they are, and which lines.",
+		about: "Who is working where: each file with unpushed changes, whose they are, and which lines.",
 		run: runWhere,
 	},
 	blame: {
 		flags: { from: "string", to: "string", version: "string", draft: "string", mine: "boolean" },
 		usage: "abso blame <file> [--from <n>] [--to <n>] [--version <n>] [--draft <name> | --mine]",
 		about:
-			"Who wrote each line of the file as shared has it (or had it at --version), and the publish that brought it in. --draft reads a named draft; --mine reads your own view, marking your unpublished lines with *.",
+			"Who wrote each line of the file as shared has it (or had it at --version), and the push that brought it in. --draft reads a named draft; --mine reads your own view, marking your unpushed lines with *.",
 		run: runBlame,
 	},
 	why: {
 		flags: { draft: "string", mine: "boolean" },
 		usage: "abso why <file>:<line> [--draft <name> | --mine]",
 		about:
-			"Why one line of shared (or of a named draft, or your own view) is the way it is: its change, its publish, its reasons, and any collision it settled.",
+			"Why one line of shared (or of a named draft, or your own view) is the way it is: its change, its push, its reasons, and any collision it settled.",
 		run: runWhy,
 	},
 	drop: {
 		flags: { message: "string", "with-dependents": "boolean" },
 		usage: 'abso drop <version...> -m "<why>" [--with-dependents]',
 		about:
-			"Take published versions back out of shared, as a new version: like git revert. History keeps them. Refused when later versions build on them, unless --with-dependents drops those too.",
+			"Take pushed versions back out of shared, as a new version: like git revert. History keeps them. Refused when later versions build on them, unless --with-dependents drops those too.",
 		run: runDrop,
 	},
 	pluck: {
@@ -738,7 +738,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { message: "string" },
 		usage: 'abso amend -m "<new message>"',
 		about:
-			"Correct the message of your newest publish in this space. Only the message changes; the log keeps the original.",
+			"Correct the message of your newest push in this space. Only the message changes; the log keeps the original.",
 		run: runAmend,
 	},
 	label: {
@@ -758,7 +758,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { none: "boolean" },
 		usage: "abso follow <label> | abso follow --none",
 		about:
-			"Make this folder follow a label: every sync takes it to the newest version of shared with that label, not the newest version. --none goes back to following shared.",
+			"Make this folder follow a label: every pull takes it to the newest version of shared with that label, not the newest version. --none goes back to following shared.",
 		run: runFollow,
 	},
 	"check-ignore": {
@@ -872,6 +872,18 @@ function carriesCredential(env: Env): boolean {
 	}
 }
 
+/** git's forms of push and pull that abso doesn't have (#427): one plain line naming the abso way. */
+function gitOnlyForm(command: string, words: readonly string[]): string | undefined {
+	const has = (...forms: string[]) => words.some((w) => forms.some((f) => w === f || w.startsWith(`${f}=`)));
+	if (command === "push" && has("-f", "--force", "--force-with-lease", "--force-if-includes"))
+		return "abso push has no --force: nothing overwrites shared. When a push is refused, abso pull brings in the other side and abso settle keeps yours, theirs or both.";
+	if (command === "push" && has("-u", "--set-upstream", "--all", "--tags"))
+		return "abso push has no upstreams, branches or tags: it adds your draft to shared. A named draft is abso switch <name>; a label is abso label.";
+	if (command === "pull" && has("--rebase", "-r", "--no-rebase", "--ff-only", "--ff", "--no-ff", "--squash"))
+		return "abso pull has no --rebase or merge modes: it always brings shared under your draft, and lines changed on both sides are listed for abso settle.";
+	return undefined;
+}
+
 export async function main(argv: readonly string[], env: Env): Promise<MainResult> {
 	const command = argv[0];
 	const json = argv.includes("--json") && command !== "run" && command !== "logs";
@@ -909,7 +921,13 @@ export async function main(argv: readonly string[], env: Env): Promise<MainResul
 			throw new UsageError(
 				`unknown command ${JSON.stringify(command)}; the commands are ${Object.keys(COMMANDS).join(", ")}, hook, mcp`,
 			);
+		const gitOnly = gitOnlyForm(command, argv.slice(1));
+		if (gitOnly) throw new UsageError(gitOnly);
 		const parsed = parseArgs(command, argv.slice(1), withBodyFiles(command, def.flags), def.rest);
+		if ((command === "push" || command === "pull") && parsed.positionals.length > 0)
+			throw new UsageError(
+				`abso ${command} takes no remote or branch: it ${command === "push" ? "adds your draft to shared" : "brings shared into this folder"}. A named draft is abso switch <name>.`,
+			);
 		if (bool(parsed, "help")) {
 			const files = bodyFilesHelp(command, def.flags);
 			return { stdout: `${def.usage}\n  ${def.about}\n${files ? `  ${files}\n` : ""}`, stderr: "", exit: EXIT.ok };

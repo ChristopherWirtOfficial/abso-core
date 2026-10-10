@@ -639,7 +639,7 @@ export async function runIssue(args: Parsed, env: Env): Promise<Output> {
 		let version: number | null = null;
 		if (doneBy !== undefined) {
 			version = issueNumber(doneBy, "--done-by");
-			if (version < 1) throw new UsageError("--done-by is a published version, 1 or more");
+			if (version < 1) throw new UsageError("--done-by is a pushed version, 1 or more");
 			try {
 				await api.show(version, { draft: null });
 			} catch {

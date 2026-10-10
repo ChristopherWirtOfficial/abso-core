@@ -79,7 +79,7 @@ test("diff shows what the draft changes, file by file", () => {
 	});
 });
 
-test("restore drops one file’s unpublished changes and keeps the rest", () => {
+test("restore drops one file’s unpushed changes and keeps the rest", () => {
 	const { project } = setup();
 	project.edit("ann", { file: "a.txt", old: "one\n", new: "uno\n" }, 1);
 	project.edit("ann", { file: "a.txt", old: "three\n", new: "tres\n" }, 2);
@@ -153,7 +153,7 @@ test("one file's history, a file at a version, and a diff between versions", () 
 	);
 });
 
-test("amend corrects the message of the agent's newest publish; the log keeps the original", () => {
+test("amend corrects the message of the agent's newest push; the log keeps the original", () => {
 	const store = new MemoryStore();
 	const project = new Project(store);
 	project.init({ "a.txt": "a\n" }, 0);
@@ -176,7 +176,7 @@ test("amend corrects the message of the agent's newest publish; the log keeps th
 	assert.deepEqual(Project.load(store.entries, new MemoryStore()).log(), project.log());
 });
 
-test("the log lists a publish's net changes: a file made and removed before the publish is not one (#37)", () => {
+test("the log lists a push's net changes: a file made and removed before the push is not one (#37)", () => {
 	const project = new Project(new MemoryStore());
 	project.init({ "a.txt": "a\n" }, 0);
 	project.record("b5", { "src/clock.ts": "clock\n", "src/rng.ts": "rng\n", "notes/builder5.md": "notes\n" }, 1);

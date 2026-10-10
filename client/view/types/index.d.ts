@@ -7,12 +7,12 @@ export type AvcsView = {
 	/** The version the space is at, and the version the agent's draft builds on. */
 	version: number;
 	base: number | null;
-	/** Files with unpublished changes, and how many changes. */
+	/** Files with unpushed changes, and how many changes. */
 	files: string[];
 	changes: number;
 	/** Unpublished work left in other spaces. */
 	parked: { space: string; changes: number }[];
-	/** Other agents with unpublished changes in the same files: agent -> files. */
+	/** Other agents with unpushed changes in the same files: agent -> files. */
 	overlap: { agent: string; files: string[] }[];
 	/** The newest news lines, oldest first: [iso time, sentence]. */
 	news: [string, string][];

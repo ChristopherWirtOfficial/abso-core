@@ -14,7 +14,7 @@ function setup() {
 	return project;
 }
 
-test("two agents creating one name in two spellings: the second publish is refused, naming both", () => {
+test("two agents creating one name in two spellings: the second push is refused, naming both", () => {
 	const p = setup();
 	p.record("alice", { "README.md": "# A\n" }, 1);
 	p.record("bob", { "readme.md": "# b\n" }, 2);
@@ -101,7 +101,7 @@ test("a clash shared already holds doesn't block work on either file", () => {
 	assert.equal(p.publish("alice", "edit one of them", 2).ok, true);
 });
 
-test("with the merge queue, a publish that clashes with one queued ahead is refused at queue time", () => {
+test("with the merge queue, a push that clashes with one queued ahead is refused at queue time", () => {
 	const p = new Project(new MemoryStore());
 	p.checkerReady = true;
 	p.init({ "avcs.json": '{"queue": true}\n' }, 0);

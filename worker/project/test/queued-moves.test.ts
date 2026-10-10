@@ -14,7 +14,7 @@ function edit(project: Project, agent: string, body: EditBody, time: number): vo
 	if (!a.ok) throw new Error(`edit by ${agent} was out of step`);
 }
 
-test("a move in a later publish leaves the agent's queued publish whole, and both land", () => {
+test("a move in a later push leaves the agent's queued push whole, and both land", () => {
 	const store = new MemoryStore();
 	const project = new Project(store);
 	project.checkerReady = true;
@@ -61,7 +61,7 @@ test("a move in a later publish leaves the agent's queued publish whole, and bot
 	assert.equal(again.version, 2);
 });
 
-test("restore while a publish waits in the queue undoes only the later edits, and the queued one lands", () => {
+test("restore while a push waits in the queue undoes only the later edits, and the queued one lands", () => {
 	const store = new MemoryStore();
 	const project = new Project(store);
 	project.checkerReady = true;

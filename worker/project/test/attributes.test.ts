@@ -24,7 +24,7 @@ test("init keeps empty files, executable files and links", () => {
 	assert.deepEqual(project.modes(), { latest: { link: "run.sh" }, "run.sh": { exec: true } });
 });
 
-test("an empty file can be made, published, synced and removed", () => {
+test("an empty file can be made, pushed, pulled and removed", () => {
 	const { project } = setup();
 	project.sync("ann");
 	project.sync("bob");
@@ -38,7 +38,7 @@ test("an empty file can be made, published, synced and removed", () => {
 	assert.equal(project.files()["notes.md"], "");
 });
 
-test("the executable bit and links change on their own, and show up in sync, show and diff", () => {
+test("the executable bit and links change on their own, and show up in pull, show and diff", () => {
 	const { project } = setup();
 	project.sync("ann");
 	project.sync("bob");

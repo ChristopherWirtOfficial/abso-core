@@ -34,7 +34,7 @@ const file = read(FILE);
 const started = (p: ReturnType<typeof plan>) => p.start.map((s) => s.name);
 
 describe("which pipelines an event starts", () => {
-	it("a publish to shared starts ci, in waves that can run side by side", () => {
+	it("a push to shared starts ci, in waves that can run side by side", () => {
 		const p = plan(file, { kind: "publish", space: "shared" });
 		assert.deepEqual(started(p), ["ci"]);
 		assert.deepEqual(p.start[0]!.waves, [["setup"], ["lint", "test"], ["bundle"]]);
@@ -77,7 +77,7 @@ describe("which pipelines an event starts", () => {
 		};
 		const p = plan(unchecked, { kind: "draft", space: "shared" });
 		assert.deepEqual(p.start, []);
-		assert.match(p.skip[0]!.why, /holds secrets, and a draft runs unpublished code/);
+		assert.match(p.skip[0]!.why, /holds secrets, and a draft runs unpushed code/);
 	});
 
 	it("waves stop on jobs that wait on each other rather than loop", () => {

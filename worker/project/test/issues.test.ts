@@ -20,7 +20,7 @@ function setup() {
 	return { project, store };
 }
 
-test("a note naming an issue claims it; publish --done ends it as done, with the version", () => {
+test("a note naming an issue claims it; push --done ends it as done, with the version", () => {
 	const { project, store } = setup();
 	const s = project.starting("builder", "Bigger a", ["a.ts"], 1, { issue: 12 });
 	const at = store.entries.findIndex((e) => e.type === "starting");
@@ -48,7 +48,7 @@ test("a new note or a plain take-back ends the claim without done; notes without
 	const next = project.starting("builder", "Second", undefined, 2, { issue: 4 });
 	assert.equal(next.hooks?.unclaim?.issue, 3);
 	assert.equal(next.hooks?.unclaim?.done, false);
-	assert.equal(next.hooks?.unclaim?.version, undefined, "nothing published");
+	assert.equal(next.hooks?.unclaim?.version, undefined, "nothing pushed");
 	assert.equal(next.hooks?.claim?.issue, 4);
 	const back = project.starting("builder", null, undefined, 3);
 	assert.deepEqual([back.hooks?.unclaim?.issue, back.hooks?.unclaim?.done, back.hooks?.claim], [4, false, undefined]);

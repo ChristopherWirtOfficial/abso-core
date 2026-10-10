@@ -25,7 +25,7 @@ test("unseenIn: ESC, C1, BEL and bidi overrides are found; newline, tab and CRLF
 	assert.equal(unseenIn(`😀😀😀${CR}\nB`), null, "CRLF after emoji passes");
 });
 
-test("publish, amend, land, starting notes and announcements refuse unseen characters before the engine sees them", () => {
+test("push, amend, land, starting notes and announcements refuse unseen characters before the engine sees them", () => {
 	// A stand-in for the engine: it records each call that gets through.
 	const calls: string[] = [];
 	const project = new Proxy({} as ProjectCalls, {

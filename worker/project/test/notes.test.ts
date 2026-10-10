@@ -97,7 +97,7 @@ test("fixing every line an objection is on marks it addressed and tells its writ
 	assert.ok(project.news("builder").news.some((x) => x.includes("security resolved its objection on auth.ts")));
 });
 
-test("a note on someone's unpublished draft sits on their lines and belongs to their change", () => {
+test("a note on someone's unpushed draft sits on their lines and belongs to their change", () => {
 	const { project, store } = setup();
 	project.starting("builder", "Logout", undefined, 4);
 	const logout = store.entries.length - 1;

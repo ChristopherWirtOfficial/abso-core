@@ -57,10 +57,10 @@ export function sync(host: SyncHost, agentName: string, options: { label?: strin
 		throw new ProjectError(
 			"conflict",
 			target === last(space)
-				? `your unpublished changes to ${stranded.join(", ")} build on lines a drop took out of shared; ` +
-						`restore those files (abso restore ${stranded.join(" ")}) and sync again`
-				: `your unpublished changes to ${stranded.join(", ")} build on lines version ${target} doesn't have yet; ` +
-						`publish or restore them before following label ${options.label}`,
+				? `your unpushed changes to ${stranded.join(", ")} build on lines a drop took out of shared; ` +
+						`restore those files (abso restore ${stranded.join(" ")}) and pull again`
+				: `your unpushed changes to ${stranded.join(", ")} build on lines version ${target} doesn't have yet; ` +
+						`push or restore them before following label ${options.label}`,
 		);
 	}
 	// Moving back to a labeled version: the agent's own newer published work must not build on what that version lacks.
@@ -70,7 +70,7 @@ export function sync(host: SyncHost, agentName: string, options: { label?: strin
 		host.flush(entries);
 		throw new ProjectError(
 			"conflict",
-			`your published changes to ${lacking.join(", ")} build on versions after ${target}, so you can't move back to it`,
+			`your pushed changes to ${lacking.join(", ")} build on versions after ${target}, so you can't move back to it`,
 		);
 	}
 	const oldBase = host.at(space, agent.base);

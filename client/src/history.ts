@@ -47,7 +47,7 @@ function viewOf(args: Parsed, agent: string): View {
 }
 
 function published(p: Publish | null): string {
-	return p === null ? "not published" : `version ${p.version} by ${byWhom(p)} (${when(p.time)}): "${p.message}"`;
+	return p === null ? "not pushed" : `version ${p.version} by ${byWhom(p)} (${when(p.time)}): "${p.message}"`;
 }
 
 export async function runBlame(args: Parsed, env: Env): Promise<Output> {
@@ -91,9 +91,9 @@ export async function runBlame(args: Parsed, env: Env): Promise<Output> {
 		...b.lines.map(
 			(l) => `  ${String(l.n).padStart(digits)}  ${tag(l).padEnd(tagWidth)} ${l.author.padEnd(width)}  ${l.text}`,
 		),
-		...(unpublished ? ["", "* not published yet: your own unpublished change."] : []),
+		...(unpublished ? ["", "* not pushed yet: your own unpushed change."] : []),
 		"",
-		"Publishes:",
+		"Pushes:",
 		...[...versions].sort(([x], [y]) => x - y).map(([, line]) => line),
 	];
 	return { text: lines.join("\n"), json: { ...b } };
@@ -115,7 +115,7 @@ export async function runWhy(args: Parsed, env: Env): Promise<Output> {
 	const w = await api.why(file, lineNumber(raw, "the line")!, viewOf(args, agent));
 	const lines = [
 		`${w.file} line ${w.line}: ${w.text}`,
-		`Written by ${w.change.author} (${when(w.change.time)}), published in ${published(w.publish)}.`,
+		`Written by ${w.change.author} (${when(w.change.time)}), pushed in ${published(w.publish)}.`,
 		...(w.change.message ? [`The change says: "${w.change.message}"`] : []),
 		...(w.settled.length > 0
 			? [
@@ -174,13 +174,13 @@ export async function runWho(args: Parsed, env: Env): Promise<Output> {
 			`${file}:`,
 			last
 				? `  last changed in version ${last.version} by ${byWhom(last)}, ${when(last.time)}: ${last.message}`
-				: "  in no published version yet",
+				: "  in no pushed version yet",
 			...(drafts.length > 0
 				? drafts.map(
 						(s) =>
-							`  ${s.agent}${s.agent === agent ? " (you)" : ""} has unpublished changes at lines ${ranges(s.lines) || "(none left)"}, last at ${when(s.lastEdit)}`,
+							`  ${s.agent}${s.agent === agent ? " (you)" : ""} has unpushed changes at lines ${ranges(s.lines) || "(none left)"}, last at ${when(s.lastEdit)}`,
 					)
-				: ["  nobody has unpublished changes in it"]),
+				: ["  nobody has unpushed changes in it"]),
 			...notes.map(
 				(n) =>
 					`  ${n.agent}${n.agent === agent ? " (you)" : ""} started "${n.text}"${n.draft ? ` in draft ${n.draft}` : ""}, ${when(n.time)}`,
@@ -203,7 +203,7 @@ export async function runWhere(_args: Parsed, env: Env): Promise<Output> {
 	const starting = notes.length > 0 ? ["Starting on:", ...notes] : [];
 	if (files.length === 0)
 		return {
-			text: [`Nobody has unpublished changes. Shared is at version ${w.version}.`, ...starting].join("\n"),
+			text: [`Nobody has unpushed changes. Shared is at version ${w.version}.`, ...starting].join("\n"),
 			json: { ...w },
 		};
 	const lines = [...starting, `Who's working where (shared is at version ${w.version}):`];

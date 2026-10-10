@@ -23,7 +23,7 @@ function collided() {
 
 const theirsLine = ">>>>>>> theirs: writer1, version 1 \"Goal wording 'playtest 4'\"";
 
-test("sync writes the block diff3 style, labeled, and lists it as a marked collision", () => {
+test("pull writes the block diff3 style, labeled, and lists it as a marked collision", () => {
 	const { project, synced } = collided();
 	const text = project.draftOf("builder1")!.view.text("src/goals.ts");
 	assert.equal(
@@ -90,7 +90,7 @@ for (const [keep, kept, phrase] of [
 	["yours", "yours", "it kept its own lines, not yours"],
 	["both", "both", "it kept both its lines and yours"],
 ] as const) {
-	test(`settled by keeping ${keep}: the publish goes through, logs it, and writer1 hears "${phrase}"`, () => {
+	test(`settled by keeping ${keep}: the push goes through, logs it, and writer1 hears "${phrase}"`, () => {
 		const { project, store } = collided();
 		const lines = project
 			.draftOf("builder1")!
@@ -103,7 +103,7 @@ for (const [keep, kept, phrase] of [
 			project
 				.news("writer1")
 				.news.includes(
-					`builder1 settled its collision with your version 1 in src/goals.ts, publishing version 2: ${phrase}. abso show 2:src/goals.ts shows the file.`,
+					`builder1 settled its collision with your version 1 in src/goals.ts, pushing version 2: ${phrase}. abso show 2:src/goals.ts shows the file.`,
 				),
 		);
 		assert.deepEqual(project.status().agents.find((a) => a.agent === "builder1")!.collisions, undefined);
@@ -116,7 +116,7 @@ for (const [keep, kept, phrase] of [
 	});
 }
 
-test("publish refuses while the markers are in; asIs keeps both, lists the file, and tells writer1", () => {
+test("push refuses while the markers are in; asIs keeps both, lists the file, and tells writer1", () => {
 	const { project } = collided();
 	const refused = project.publish("builder1", "Not yet", 4);
 	assert.deepEqual(!refused.ok && refused.collisions.map((c) => [c.kind, c.marked, c.file, c.yours.lines]), [

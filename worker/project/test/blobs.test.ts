@@ -20,7 +20,7 @@ function setup(held: Set<string> = new Set([A, B, C])) {
 	return { project, store };
 }
 
-test("init and a first sync carry binary files as blobs, not text", () => {
+test("init and a first pull carry binary files as blobs, not text", () => {
 	const store = new MemoryStore();
 	const project = new Project(store, { hasBlob: () => true });
 	project.init({ "README.md": "hi\n" }, 0, {}, { "logo.png": A });
@@ -31,7 +31,7 @@ test("init and a first sync carry binary files as blobs, not text", () => {
 	assert.deepEqual(project.blobs(), { "logo.png": A });
 });
 
-test("a blob changed, published and synced; a file turning binary and back", () => {
+test("a blob changed, pushed and pulled; a file turning binary and back", () => {
 	const { project } = setup();
 	project.record("ann", {}, 1, {}, { "logo.png": B, "README.md": C });
 	assert.equal(project.publish("ann", "New logo; readme is binary now", 2).ok, true);

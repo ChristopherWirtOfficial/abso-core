@@ -148,8 +148,8 @@ export async function runReader(args: Parsed, env: Env): Promise<Output> {
 	writeConfig(root, raw as unknown as Settings);
 	return {
 		text: on
-			? "This folder is a reader now: status, sync, log, show, files and export work, and nothing it does is recorded or published. abso reader off undoes it."
-			: "This folder records and publishes again.",
+			? "This folder is a reader now: status, pull, log, show, files and export work, and nothing it does is recorded or pushed. abso reader off undoes it."
+			: "This folder records and pushes again.",
 		json: { reader: on },
 	};
 }
@@ -158,7 +158,7 @@ export async function runReader(args: Parsed, env: Env): Promise<Output> {
 export function openCollisionsText(open: readonly OpenCollision[]): string[] {
 	if (open.length === 0) return [];
 	return [
-		`${plural(open.length, "collision")} to settle before you publish (keep yours, theirs or a mix and delete the marker lines, or abso settle <file> --yours|--theirs|--both):`,
+		`${plural(open.length, "collision")} to settle before you push (keep yours, theirs or a mix and delete the marker lines, or abso settle <file> --yours|--theirs|--both):`,
 		...open.map(
 			(c) =>
 				`  ${c.file} lines ${c.lines[0]}-${c.lines[1]}, with ${c.theirs.agent}'s version ${c.theirs.version} ("${c.theirs.message}")`,
@@ -216,7 +216,7 @@ export async function runMv(args: Parsed, env: Env): Promise<Output> {
 	});
 	return {
 		text: [
-			`Moved ${from} to ${to} in your draft; its lines keep their history. It reaches shared with your next publish.`,
+			`Moved ${from} to ${to} in your draft; its lines keep their history. It reaches shared with your next push.`,
 			...(isComposed(to) ? [] : [uncomposedText(to)]),
 		].join("\n"),
 		json: { from: answer.from, to: answer.to },
@@ -260,7 +260,7 @@ export async function runSettle(args: Parsed, env: Env): Promise<Output> {
 	return {
 		text: [
 			...recordedFirst(recorded).filter((l) => !l.startsWith("Recorded first")),
-			`Settled ${counts.map(([rel, n]) => `${plural(n, "block")} in ${rel}`).join(", ")}, keeping ${which}.${keep === "both" ? " Both sides stay in the file; when you publish, the other author hears that you kept both." : ""}`,
+			`Settled ${counts.map(([rel, n]) => `${plural(n, "block")} in ${rel}`).join(", ")}, keeping ${which}.${keep === "both" ? " Both sides stay in the file; when you push, the other author hears that you kept both." : ""}`,
 		].join("\n"),
 		json: { keep, files: counts.map(([file, blocks]) => ({ file, blocks })), recorded: recorded.sent },
 	};
@@ -274,7 +274,7 @@ export function missingText(missing: readonly string[]): string[] {
 			? missing.join(", ")
 			: `${missing.slice(0, LISTED).join(", ")}, and ${missing.length - LISTED} more`;
 	return [
-		`Missing from this folder though your view has ${missing.length === 1 ? "it" : "them"} (abso sync --full writes ${missing.length === 1 ? "it" : "them"}; abso files lists them all): ${some}`,
+		`Missing from this folder though your view has ${missing.length === 1 ? "it" : "them"} (abso pull --full writes ${missing.length === 1 ? "it" : "them"}; abso files lists them all): ${some}`,
 	];
 }
 
@@ -302,7 +302,7 @@ export async function runStatus(args: Parsed, env: Env): Promise<Output> {
 		const me = status.agents.find((a) => a.agent === config.agent);
 		const unpublished = local.size > 0 || (me?.draftChanges ?? 0) > 0;
 		// +queued: published into the merge queue, not landed yet (#39).
-		const word = `${me?.draft ? `${me.draft}@` : ""}${me?.base ?? "none"}${unpublished ? "+unpublished" : ""}${(me?.queued?.length ?? 0) > 0 ? "+queued" : ""}`;
+		const word = `${me?.draft ? `${me.draft}@` : ""}${me?.base ?? "none"}${unpublished ? "+unpushed" : ""}${(me?.queued?.length ?? 0) > 0 ? "+queued" : ""}`;
 		return { text: word, json: { version: me?.base ?? null, draft: me?.draft ?? null, unpublished, word } };
 	}
 	const missing = view === undefined ? [] : missingHere(root, view.files, local);
@@ -326,7 +326,7 @@ export async function runStatus(args: Parsed, env: Env): Promise<Output> {
 	const credential = credentialLabel(root, config.server, env.env);
 	const behind = await newerClientNote(config.server);
 	const lines = [
-		`Project ${config.project}: shared is at version ${status.version}. This folder is ${config.agent}${config.reader || me?.reader ? ", a reader (it records and publishes nothing)" : ""}, working in ${space(me?.draft)}.${config.follow ? ` It follows label ${config.follow}: syncs take it to the newest version with that label.` : ""} Signed in with ${credential.kind}${credential.id ? ` ${credential.id}` : ""}.`,
+		`Project ${config.project}: shared is at version ${status.version}. This folder is ${config.agent}${config.reader || me?.reader ? ", a reader (it records and pushes nothing)" : ""}, working in ${space(me?.draft)}.${config.follow ? ` It follows label ${config.follow}: pulls take it to the newest version with that label.` : ""} Signed in with ${credential.kind}${credential.id ? ` ${credential.id}` : ""}.`,
 		...(behind ? [behind] : []),
 		// Is shared green (#39)? Right under the first line, since it decides what to do next.
 		...ciText(status.ci, status.version),
@@ -341,7 +341,7 @@ export async function runStatus(args: Parsed, env: Env): Promise<Output> {
 			: `Not yet recorded (abso record sends them): ${[...local.keys()].join(", ")}`,
 		...(neverShared.length > 0
 			? [
-					`Added to your draft by an earlier record and deleted since, so they never reach shared; the next record (sync, publish, run) takes them out of your draft: ${neverShared.join(", ")}`,
+					`Added to your draft by an earlier record and deleted since, so they never reach shared; the next record (pull, push, run) takes them out of your draft: ${neverShared.join(", ")}`,
 				]
 			: []),
 		...openCollisionsText(me?.collisions ?? []),

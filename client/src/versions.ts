@@ -38,7 +38,7 @@ export async function runDrop(args: Parsed, env: Env): Promise<Output> {
 			text: [
 				`Dropped from shared, as version ${answer.version}:`,
 				...answer.dropped.map(ref),
-				"Other agents hear it as news; their next sync takes it out of their folders. History keeps it: abso log shows the drop.",
+				"Other agents hear it as news; their next pull takes it out of their folders. History keeps it: abso log shows the drop.",
 			].join("\n"),
 			json: { ...answer },
 		};
@@ -46,14 +46,14 @@ export async function runDrop(args: Parsed, env: Env): Promise<Output> {
 	const lines = ["Not dropped."];
 	if (answer.dependents && answer.dependents.length > 0) {
 		lines.push(
-			`Later published versions build on ${versions.length === 1 ? "it" : "them"}:`,
+			`Later pushed versions build on ${versions.length === 1 ? "it" : "them"}:`,
 			...answer.dependents.map(ref),
 			"Pass --with-dependents to drop those too.",
 		);
 	}
 	if (answer.blocked && answer.blocked.length > 0) {
 		lines.push(
-			"Unpublished work builds on it, and a drop never touches unpublished work:",
+			"Unpushed work builds on it, and a drop never touches unpushed work:",
 			...answer.blocked.map(
 				(b) => `  ${b.agent !== undefined ? `agent ${b.agent}` : `draft ${b.draft}`}: ${b.files.join(", ")}`,
 			),
@@ -99,7 +99,7 @@ export async function runAmend(args: Parsed, env: Env): Promise<Output> {
 	const a = await api.amend(message);
 	const where = a.draft === null ? "shared" : `draft ${a.draft}`;
 	return {
-		text: `Version ${a.version} of ${where} now says: ${a.message}\n(It said: ${a.was}.) Only the message changed; to change what it did, publish again or abso drop it.`,
+		text: `Version ${a.version} of ${where} now says: ${a.message}\n(It said: ${a.was}.) Only the message changed; to change what it did, push again or abso drop it.`,
 		json: { ...a },
 	};
 }
@@ -147,8 +147,8 @@ export async function runFollow(args: Parsed, env: Env): Promise<Output> {
 	const s = await applyAnswer(root, api, await api.sync());
 	const changes = s.written.length + s.deleted.length;
 	const head = follow
-		? `This folder now follows label ${follow}: every sync takes it to the newest version with that label. It is on version ${s.version}.`
-		: `This folder follows no label now: syncs take it to shared's newest version, ${s.version}.`;
+		? `This folder now follows label ${follow}: every pull takes it to the newest version with that label. It is on version ${s.version}.`
+		: `This folder follows no label now: pulls take it to shared's newest version, ${s.version}.`;
 	return {
 		text: [
 			head,

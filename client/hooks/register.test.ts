@@ -46,7 +46,7 @@ function world(on: On, inFolder: boolean, news: string[][]) {
 test("the news poll asks every 30 seconds in an abso folder, and keeps each item once", async ($, on) => {
 	// The kit has no conversation to append to, so the append itself is checked in a live session (#25);
 	// here: the poll's timing, the call, and the news log the view mod reads.
-	const w = world(on, true, [["Announcement from lead: stop publishing until v12 lands"], []]);
+	const w = world(on, true, [["Announcement from lead: stop pushing until v12 lands"], []]);
 	await $.session.start({ cwd: "/w/p" });
 	await w.clock.advance(29_000);
 	expect(w.asked).toEqual([]);

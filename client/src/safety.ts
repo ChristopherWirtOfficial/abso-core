@@ -146,7 +146,7 @@ export function screenAnswer<T extends Paths>(root: string, answer: T): { answer
 export function refusedText(refused: readonly Refused[]): string[] {
 	if (refused.length === 0) return [];
 	return [
-		`REFUSED ${refused.length === 1 ? "1 path" : `${refused.length} paths`} from the server, and wrote nothing there (another agent published ${refused.length === 1 ? "it" : "them"}; tell whoever runs the project):`,
+		`REFUSED ${refused.length === 1 ? "1 path" : `${refused.length} paths`} from the server, and wrote nothing there (another agent pushed ${refused.length === 1 ? "it" : "them"}; tell whoever runs the project):`,
 		...refused.map((r) => `  ${JSON.stringify(r.path)}: ${r.why}`),
 	];
 }

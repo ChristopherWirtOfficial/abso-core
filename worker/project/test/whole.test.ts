@@ -29,7 +29,7 @@ function setup(config: object = { whole: ["test/recordings/**"] }) {
 const recording = (n: number) =>
 	`${JSON.stringify({ frames: Array.from({ length: 50 }, (_, i) => i * n) }, null, 2)}\n`;
 
-test("a path the project marks whole is stored as a blob, and publishes and syncs like one", () => {
+test("a path the project marks whole is stored as a blob, and pushes and pulls like one", () => {
 	const { project, store } = setup();
 	const r = project.record("ann", { "test/recordings/one.json": recording(1) }, 1);
 	assert.deepEqual(r.changed, ["test/recordings/one.json"]);

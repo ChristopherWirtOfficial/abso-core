@@ -36,7 +36,7 @@ function setup() {
 	return { project, store };
 }
 
-test("the same edit on both sides merges into one copy at sync: no collision, no doubled lines", () => {
+test("the same edit on both sides merges into one copy at pull: no collision, no doubled lines", () => {
 	const { project } = setup();
 	project.record("prefix", { "engine/classset.ts": CALLS + HELPER }, 1);
 	assert.equal(project.publish("prefix", "isHex instead of regex literals", 2).ok, true);

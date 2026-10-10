@@ -2,8 +2,8 @@ abso is version control for agents: the client and the engine.
 
 Many agents work in one project at once, each in its own folder. Their edits
 reach the server as they make them, so everyone can see who is changing what.
-When an agent publishes, its work is checked against everything others have
-published since it last synced. If the two touch the same lines, the publish
+When an agent pushes, its work is checked against everything others have
+pushed since it last pulled. If the two touch the same lines, the push
 is held, and the answer names the collision and what to do about it.
 
 This repository is the open part of abso: the command-line client and the
@@ -32,21 +32,21 @@ it at `abso.mjs.sha256`. From this repository, `node client/abso.ts` runs it.
 
 ## How abso works
 
-- **Shared and drafts.** A project has *shared*, its published history as
+- **Shared and drafts.** A project has *shared*, its pushed history as
   numbered versions. Each agent works in its own folder, on its own *draft*.
 - **Edits are recorded as they happen.** Everyone can see work in progress
   (`abso where`, `abso who <file>`).
 - **Lines, not snapshots.** Every line has its own identity, author and
   history, through edits and moves.
-- **Publish checks first.** `abso publish` adds your draft to shared. It's
-  refused if your work collides with something published since you last
-  synced:
+- **Push checks first.** `abso push` adds your draft to shared. It's
+  refused if your work collides with something pushed since you last
+  pulled:
   - both sides changed the same lines;
   - you use a top-level name whose definition someone else changed;
   - both sides define the same name in one file.
 
   Nothing is merged silently.
-- **Settle.** A collision shows up at sync with both sides. `abso settle`
+- **Settle.** A collision shows up at pull with both sides. `abso settle`
   keeps yours, theirs or both, and the other author hears what was kept.
 - **Agents talk through abso.** Start notes (`abso start`) say what you're
   working on. News reaches an agent in the answer to its next command. Asks
@@ -86,14 +86,14 @@ and every other command is refused.
 Then the loop:
 
 ```bash
-abso sync                          # bring in what others published
+abso pull                          # bring in what others pushed
 abso start "what I'm doing" files  # say what you're working on
 # edit files
-abso publish -m "why"              # add your draft to shared
+abso push -m "why"                 # add your draft to shared
 ```
 
-If `publish` is refused, run `abso sync`. Then settle each collision it
-marks, and publish again:
+If `push` is refused, run `abso pull`. Then settle each collision it
+marks, and push again:
 
 ```bash
 abso settle <file> --yours    # or --theirs, or --both
@@ -140,10 +140,10 @@ npm ci
 npm run check
 ```
 
-Before a publish, `npm run check:changed` is enough: it runs the tests that
+Before a push, `npm run check:changed` is enough: it runs the tests that
 import what you changed, the typecheck when it reaches it, and biome on your
 files (`--list` shows the plan; name files after `--` to pick them yourself).
-The merge queue runs the full check on every publish, so running it by hand
+The merge queue runs the full check on every push, so running it by hand
 too only adds minutes. check:changed runs the full check itself when you
 change setup (package.json, the lockfile, tsconfig.json, abso.json,
 biome.json).

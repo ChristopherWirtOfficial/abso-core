@@ -80,7 +80,7 @@ export function notQueuedYet(host: QueueHost, what: string): void {
 	if (queueOn(host))
 		throw new ProjectError(
 			"conflict",
-			`${what} doesn't go through the merge queue yet; switch to shared, take the changes into your draft, and publish`,
+			`${what} doesn't go through the merge queue yet; switch to shared, take the changes into your draft, and push`,
 		);
 }
 
@@ -280,7 +280,7 @@ export function queueLand(host: QueueHost, n: number, time: number): { versions:
 			host.reviewNews(agent, version, entries);
 			host.queueNews(
 				agent,
-				[{ key: `landed ${q.id}`, text: `Your queued publish "${clip(q.message)}" landed as version ${version}.` }],
+				[{ key: `landed ${q.id}`, text: `Your queued push "${clip(q.message)}" landed as version ${version}.` }],
 				entries,
 			);
 			out.push({ id: q.id, version });
@@ -324,13 +324,13 @@ export function queuePull(
 					? `the project's check failed on it on top of version ${last(host.shared())}${tail ? `:\n${tail}` : ""}`
 					: why === "withdrawn"
 						? "you withdrew it"
-						: `it builds on queued publish ${id}, which was pulled`;
+						: `it builds on queued push ${id}, which was turned back`;
 			host.queueNews(
 				host.agentOf(q.agent),
 				[
 					{
 						key: `pulled ${q.id}`,
-						text: `Your queued publish "${clip(q.message)}" was pulled: ${said}. Its changes are still in your draft.`,
+						text: `Your queued push "${clip(q.message)}" was turned back: ${said}. Its changes are still in your draft.`,
 					},
 				],
 				entries,
@@ -350,7 +350,7 @@ export function unqueue(host: QueueHost, agentName: string, time: number): { pul
 	if (busy)
 		throw new ProjectError(
 			"conflict",
-			`queued publish ${busy.id} is being checked; it lands or is pulled in about a minute (abso drop takes it back after it lands)`,
+			`queued push ${busy.id} is being checked; it lands or is turned back in about a minute (abso drop takes it back after it lands)`,
 		);
 	const pulled: number[] = [];
 	for (const q of mine)

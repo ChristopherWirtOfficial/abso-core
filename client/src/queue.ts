@@ -30,7 +30,7 @@ export function standing(items: readonly QueueItem[], id: number): string {
 		const batch = items.filter((q) => q.checking).length;
 		return batch === 1 ? "being checked" : `being checked in a batch of ${batch}`;
 	}
-	return at === 0 ? "next to be checked" : `waiting, ${at} ${at === 1 ? "publish" : "publishes"} ahead of it`;
+	return at === 0 ? "next to be checked" : `waiting, ${at} ${at === 1 ? "push" : "pushes"} ahead of it`;
 }
 
 /**
@@ -61,7 +61,7 @@ export async function waitForQueued(
 		const now = state.paused
 			? `the queue is paused: ${state.paused.reason}; next try ${state.paused.nextTry.slice(11, 16)} UTC`
 			: standing(state.items, id);
-		if (now !== said) say(`abso: your publish is ${now}.\n`);
+		if (now !== said) say(`abso: your push is ${now}.\n`);
 		said = now;
 	}
 	return { kind: "waiting", state };
@@ -76,7 +76,7 @@ async function outcomeOf(api: Api, id: number, state: QueueState): Promise<Queue
 	// publish says the outcome itself, so that line isn't printed again as news.
 	const said = [...all]
 		.reverse()
-		.find((n) => /^Your queued publish ".*" (landed as version \d+|was pulled: )/s.test(n));
+		.find((n) => /^Your queued push ".*" (landed as version \d+|was turned back: )/s.test(n));
 	const news = all.filter((n) => n !== said);
 	const last = state.last;
 	const landed =
@@ -88,7 +88,7 @@ async function outcomeOf(api: Api, id: number, state: QueueState): Promise<Queue
 	if (last?.kind === "pulled" && last.pulled.includes(id))
 		return {
 			kind: "pulled",
-			text: `Your queued publish was pulled: the project's check failed on it.${last.output ? `\n${last.output.trimEnd()}` : ""}`,
+			text: `Your queued push was turned back: the project's check failed on it.${last.output ? `\n${last.output.trimEnd()}` : ""}`,
 			news,
 		};
 	return { kind: "gone", news };
@@ -101,14 +101,14 @@ async function outcomeOf(api: Api, id: number, state: QueueState): Promise<Queue
  */
 export function pulledText(news: string): string {
 	const m =
-		/^Your queued publish (".*") was pulled: ([^\n]*?)(?::\n([\s\S]*?))?\.? Its changes are still in your draft\.$/s.exec(
+		/^Your queued push (".*") was turned back: ([^\n]*?)(?::\n([\s\S]*?))?\.? Its changes are still in your draft\.$/s.exec(
 			news.replace(/\n\. Its changes/, ". Its changes"),
 		);
-	if (!m) return `${news}\nNot published. Fix it, then publish again.`;
+	if (!m) return `${news}\nNot pushed. Fix it, then push again.`;
 	const output = m[3]?.trimEnd() ?? "";
 	return [
 		...(output === "" ? [] : ["The check's output ends:", output]),
-		`Not published: your queued publish ${m[1]} was pulled: ${m[2]!.replace(/\.$/, "")}. Its changes are still in your draft; fix them, then publish again.`,
+		`Not pushed: your queued push ${m[1]} was turned back: ${m[2]!.replace(/\.$/, "")}. Its changes are still in your draft; fix them, then push again.`,
 	].join("\n");
 }
 
@@ -148,17 +148,17 @@ export function queuedLines(queue: QueueState | null | undefined, me: string): s
 	if (mine.length === 0) return [];
 	return [
 		...mine.map(
-			(q) => `Your publish ${q.id} (${JSON.stringify(q.message)}) is in the merge queue: ${standing(items, q.id)}.`,
+			(q) => `Your push ${q.id} (${JSON.stringify(q.message)}) is in the merge queue: ${standing(items, q.id)}.`,
 		),
 		...(queue?.paused ? [`The merge queue is paused: ${queue.paused.reason}.`] : []),
-		`${mine.length === 1 ? "It lands or is pulled" : "Each lands or is pulled"} once the project's check runs on it; the outcome comes as news, and abso unqueue takes ${mine.length === 1 ? "it" : "them"} back.`,
+		`${mine.length === 1 ? "It lands or is turned back" : "Each lands or is turned back"} once the project's check runs on it; the outcome comes as news, and abso unqueue takes ${mine.length === 1 ? "it" : "them"} back.`,
 	];
 }
 
 /** abso unqueue: take this agent's queued publishes back; their changes stay in the draft. */
 export async function runUnqueue(args: Parsed, env: Env): Promise<Output> {
 	if (args.positionals.length > 0)
-		throw new UsageError("unqueue takes no arguments: it takes back every publish of yours still in the merge queue");
+		throw new UsageError("unqueue takes no arguments: it takes back every push of yours still in the merge queue");
 	const { root, api } = open(env);
 	const answer = await api.unqueue();
 	// The engine says it as news too ("you withdrew it"); this command's own text says the same, so it isn't printed twice.
@@ -167,11 +167,11 @@ export async function runUnqueue(args: Parsed, env: Env): Promise<Output> {
 		() => [] as string[],
 	);
 	logNews(root, news);
-	const others = news.filter((n) => !/^Your queued publish ".*" was pulled: you withdrew it\./s.test(n));
+	const others = news.filter((n) => !/^Your queued push ".*" was turned back: you withdrew it\./s.test(n));
 	const ids = answer.pulled;
 	return {
 		text: [
-			`Took back ${ids.length === 1 ? `queued publish ${ids[0]}` : `queued publishes ${ids.join(", ")}`}: ${ids.length === 1 ? "its" : "their"} changes are still in your draft, unpublished.`,
+			`Took back ${ids.length === 1 ? `queued push ${ids[0]}` : `queued pushes ${ids.join(", ")}`}: ${ids.length === 1 ? "its" : "their"} changes are still in your draft, unpushed.`,
 			...others.map((n) => `  ${n}`),
 		].join("\n"),
 		json: { pulled: ids, news: others },

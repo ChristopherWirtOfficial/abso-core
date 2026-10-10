@@ -273,7 +273,7 @@ async function recordFolderLocked(
 export function gitMarkerText(list: readonly { path: string; line: number }[] | undefined): string[] {
 	return (list ?? []).map(
 		(m) =>
-			`Note: ${m.path} has lines that look like a git conflict (from line ${m.line}). abso records them as ordinary text and will publish them as they are. If a merge was left unfinished, fix the file first.`,
+			`Note: ${m.path} has lines that look like a git conflict (from line ${m.line}). abso records them as ordinary text and will push them as they are. If a merge was left unfinished, fix the file first.`,
 	);
 }
 
@@ -320,7 +320,7 @@ function recordedList(r: Recorded): string {
 }
 
 export const READER_REFUSES =
-	"this folder is a reader: it records and publishes nothing (abso reader off makes it a writer again)";
+	"this folder is a reader: it records and pushes nothing (abso reader off makes it a writer again)";
 
 /** abso pause: send nothing from the folder (no hook, no record) until abso resume. */
 export async function runPause(_args: Parsed, env: Env): Promise<Output> {
@@ -339,7 +339,7 @@ export async function runResume(_args: Parsed, env: Env): Promise<Output> {
 	rmSync(pausedPath(root), { force: true });
 	return {
 		text: was
-			? "Recording again. Changes made while paused go at the next abso record (or publish, sync, ...); abso status lists them."
+			? "Recording again. Changes made while paused go at the next abso record (or push, pull, ...); abso status lists them."
 			: "Recording was not paused.",
 		json: { paused: false },
 	};
@@ -478,14 +478,14 @@ export function unwrittenText(
 	if (paths.length === 0) return [];
 	const list = paths.map((p) => `${p} (version ${unwritten[p]!.version}: ${unwritten[p]!.why})`).join(", ");
 	return [
-		`Stale here: a sync couldn't write ${paths.length === 1 ? "this file" : "these files"}, and no later sync sends ${paths.length === 1 ? "it" : "them"} again. Close whatever holds ${paths.length === 1 ? "it" : "them"}, then abso sync --full: ${list}`,
+		`Stale here: a pull couldn't write ${paths.length === 1 ? "this file" : "these files"}, and no later pull sends ${paths.length === 1 ? "it" : "them"} again. Close whatever holds ${paths.length === 1 ? "it" : "them"}, then abso pull --full: ${list}`,
 	];
 }
 
 /** Write the files a sync or switch answer lists into the folder (the same rules as sync). */
 /** Write a sync's answer into the folder, holding its lock (#51). */
 export async function applyAnswer(root: string, api: Api, unscreened: SyncAnswer): Promise<Applied> {
-	return withFolderLock(root, "sync", () => applyAnswerLocked(root, api, unscreened));
+	return withFolderLock(root, "pull", () => applyAnswerLocked(root, api, unscreened));
 }
 
 async function applyAnswerLocked(root: string, api: Api, unscreened: SyncAnswer): Promise<Applied> {

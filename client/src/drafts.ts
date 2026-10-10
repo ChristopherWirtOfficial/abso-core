@@ -75,17 +75,17 @@ export async function runSwitch(args: Parsed, env: Env): Promise<Output> {
 	const lines = [
 		...recordedFirst(recorded),
 		carry
-			? `Started ${where}, carrying your unpublished changes into it.`
-			: `Switched to ${where}. Your unpublished changes where you were are parked there, and come back when you switch back.`,
+			? `Started ${where}, carrying your unpushed changes into it.`
+			: `Switched to ${where}. Your unpushed changes where you were are parked there, and come back when you switch back.`,
 		`It is at version ${synced.version}. ${written.length + deleted.length === 0 ? "No files changed in this folder." : `${plural(written.length, "file")} updated, ${deleted.length} deleted:`}`,
 		...changedFilesText("switch", written, deleted, [], bool(args, "verbose")),
 		...refusedText([...switched.refused, ...synced.refused]),
 		...mergedLinesText([...switched.merged, ...synced.merged]),
-		...(kept.length > 0 ? [`Left alone because they changed while switching (run abso sync): ${kept.join(", ")}`] : []),
+		...(kept.length > 0 ? [`Left alone because they changed while switching (run abso pull): ${kept.join(", ")}`] : []),
 		...(dropped.length > 0 ? [`Dropped from your draft, kept on disk (these stay local): ${dropped.join(", ")}`] : []),
 		...(collisions.length > 0 ? [collisionsHeading(collisions), ...collisions.map(collisionText)] : []),
 		...(answer.draft !== null
-			? ['Publish into this draft with abso publish; land it in shared with abso land -m "why".']
+			? ['Push into this draft with abso push; land it in shared with abso land -m "why".']
 			: []),
 	];
 	return {
@@ -137,7 +137,7 @@ export async function runLand(args: Parsed, env: Env): Promise<Output> {
 			...pre,
 			`Not landed: ${plural(collisions.length, "collision")} with work that landed in shared since the draft's base.`,
 			...collisions.map(collisionText),
-			"Run abso draft-sync to move the draft onto shared, settle those lines in the draft, publish, then land again.",
+			"Run abso draft-pull to move the draft onto shared, settle those lines in the draft, push, then land again.",
 		].join("\n"),
 		json: { collisions, recorded: recorded.sent },
 	};

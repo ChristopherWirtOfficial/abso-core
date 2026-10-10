@@ -11,7 +11,7 @@ import { type Checked, checkPipelines, type Problem, readPipelineFile } from "..
 const DRAFT = `defaults: { image: node, size: standard }   # image: a menu or \`dockerfile: path\`
 pipelines:
   ci:
-    on: [publish, draft]          # every version of shared, and an agent's draft before it publishes
+    on: [publish, draft]          # every version of shared, and an agent's draft before it pushes
     jobs:
       setup:  { run: npm ci, cache: [package-lock.json] }
       lint:   { needs: [setup], run: npx biome ci . }
@@ -111,7 +111,7 @@ describe("reading the file", () => {
 
 	it("says where YAML or JSON breaks, and refuses a name it can't tell the format of", () => {
 		has(
-			problems(readPipelineFile("pipelines:\n  p:\n    on: [publish\n", "abso.yml")),
+			problems(readPipelineFile("pipelines:\n  p:\n    on: [push\n", "abso.yml")),
 			"file",
 			/isn't valid YAML at line \d/,
 		);
@@ -216,7 +216,7 @@ describe("refusing", () => {
 		ok(checkPipelines(one({ a: { run: "npm test" } }, { on: ["draft"] })));
 	});
 
-	it("npm-publish: the packages it may publish, from a job's kept files", () => {
+	it("npm-publish: the packages it may push, from a job's kept files", () => {
 		const pack = { run: "npm pack --pack-destination out", keep: ["out"] };
 		const read = checkPipelines(
 			one({
@@ -251,7 +251,7 @@ describe("refusing", () => {
 		const jobs = read.ok ? read.file.pipelines[0]!.jobs : [];
 		assert.equal(jobs.find((j) => j.name === "a")?.abso, "reader");
 		assert.equal(jobs.find((j) => j.name === "b")?.abso, undefined);
-		ok(checkPipelines(one({ a: { run: "abso publish -m x", abso: "writer" } }, { only: ["shared"] })));
+		ok(checkPipelines(one({ a: { run: "abso push -m x", abso: "writer" } }, { only: ["shared"] })));
 		const ps = problems(
 			checkPipelines(
 				one({
@@ -263,7 +263,7 @@ describe("refusing", () => {
 		);
 		has(ps, "pipelines.p.jobs.a.abso", /must be reader or writer, not "owner"/);
 		has(ps, "pipelines.p.jobs.b.abso", /a uses step runs on the server/);
-		has(ps, "pipelines.p.only", /c holds a writer key and a named draft's version is no one's published work/);
+		has(ps, "pipelines.p.only", /c holds a writer key and a named draft's version is no one's pushed work/);
 		has(
 			problems(checkPipelines(one({ c: { run: "x", abso: "writer" } }, { on: ["draft"], only: ["shared"] }))),
 			"pipelines.p.on",

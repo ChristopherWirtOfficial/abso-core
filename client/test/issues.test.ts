@@ -35,7 +35,7 @@ const replies: { text: string; question?: boolean }[] = [];
 const threaded = {
 	id: 7,
 	issue: 3,
-	title: "Sync is slow",
+	title: "Pull is slow",
 	by: "desk",
 	of: "fay",
 	kind: "question",
@@ -78,7 +78,7 @@ before(async () => {
 						dryRun: true,
 						plan: {
 							from: { project: body.from, issue: body.issue },
-							title: "Sync is slow",
+							title: "Pull is slow",
 							edited: ["description"],
 							labels: ["client"],
 							closed: { how: "done" },
@@ -246,16 +246,16 @@ describe("issues commands, the client's part (#54)", () => {
 	});
 
 	it("shows a search hit as the issue, then where it matched, without the match markers", () => {
-		const issue = { id: 12, title: "Sync is slow", status: "open" as const, updated: 0, labels: [] };
+		const issue = { id: 12, title: "Pull is slow", status: "open" as const, updated: 0, labels: [] };
 		assert.deepEqual(
 			searchLines({ issue, where: "comment", comment: 40, snippet: "the \u0001network\u0002 drops mid-sync" }),
-			['   12  open         "Sync is slow"', '       in comment 40: "the network drops mid-sync"'],
+			['   12  open         "Pull is slow"', '       in comment 40: "the network drops mid-sync"'],
 		);
 		assert.deepEqual(searchLines({ issue, where: "description", snippet: "Pages load late.", meaning: true }), [
-			'   12  open         "Sync is slow"',
+			'   12  open         "Pull is slow"',
 			'       by meaning: "Pages load late."',
 		]);
-		assert.deepEqual(searchLines({ issue, where: "title", snippet: "Sync is slow" })[1], "       in the title");
+		assert.deepEqual(searchLines({ issue, where: "title", snippet: "Pull is slow" })[1], "       in the title");
 	});
 
 	it("withdraw is one POST to the asker's own withdraw/<ask> route", async () => {
@@ -316,7 +316,7 @@ describe("issues commands, the client's part (#54)", () => {
 		assert.match(seen.slice(before).join("\n"), /^GET \/p\/issues\d+\/ask\/7$/m);
 		assert.match(
 			r.stdout,
-			/^ {2}ask 7: desk, .* asks fay a question on issue 3 \("Sync is slow"\) \(2 replies; waiting on desk\): "Which way\?"$/m,
+			/^ {2}ask 7: desk, .* asks fay a question on issue 3 \("Pull is slow"\) \(2 replies; waiting on desk\): "Which way\?"$/m,
 		);
 		const ack = r.stdout.indexOf('    fay, Jan 1 1970 00:00 UTC: "ok, let me check"');
 		const back = r.stdout.indexOf('    fay, Jan 1 1970 00:00 UTC, a question: "staging or live?\\nlive is 906"');
@@ -417,7 +417,7 @@ describe("abso issue <N> --copy-to <project>", () => {
 			r.out.trimEnd(),
 			[
 				`A dry run: nothing was written. Copying ${from} issue 12 into core would make:`,
-				`  "Sync is slow", done (description edited when copied)`,
+				`  "Pull is slow", done (description edited when copied)`,
 				"  2 comments (1 edited), 1 answered ask, labelled client",
 				"  not copied: comments 4; asks 2 (open asks, and what --clean left out)",
 				"Run it again without --dry-run to copy it.",

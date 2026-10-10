@@ -40,7 +40,7 @@ export function amend(
 		host.flush(entries);
 		throw new ProjectError(
 			"bad-request",
-			`${agent.name} hasn't published in ${space.name === SHARED ? "shared" : `draft ${space.name}`}, so there is nothing to amend`,
+			`${agent.name} hasn't pushed in ${space.name === SHARED ? "shared" : `draft ${space.name}`}, so there is nothing to amend`,
 		);
 	}
 	const was = p.message;

@@ -43,7 +43,7 @@ test("a tell lists each recipient, and marks one heard when its news is handed o
 	assert.deepEqual(Project.load(store.entries, new MemoryStore()).status().tells, project.status().tells);
 });
 
-test("a sync's reset hears no tell, two tells with the same words stay two, and only the newest are kept", () => {
+test("a pull's reset hears no tell, two tells with the same words stay two, and only the newest are kept", () => {
 	const { project } = setup();
 	project.announce("lead", "Same words.", ["b1"], 1);
 	project.announce("lead", "Same words.", ["b1"], 2);
@@ -53,7 +53,7 @@ test("a sync's reset hears no tell, two tells with the same words stay two, and 
 	assert.ok(tells[0]!.id > tells[1]!.id, "newest first");
 	assert.ok(
 		tells.every((t) => !t.to[0]!.heard),
-		"a sync keeps announcements, so nothing is heard",
+		"a pull keeps announcements, so nothing is heard",
 	);
 	for (let i = 0; i < TELLS_KEPT + 3; i++) project.announce("lead", `Tell ${i}.`, ["b2"], 3 + i);
 	const kept = project.status().tells;

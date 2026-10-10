@@ -38,7 +38,7 @@ function queued(project: Project, agent: string, message: string, time: number):
 	return a.queued;
 }
 
-test("without the queue a publish lands as before", () => {
+test("without the queue a push lands as before", () => {
 	const { project } = setup(false);
 	edit(project, "one", { file: "a.ts", old: "1", new: "2" }, 1);
 	const a = project.publish("one", "a is 2", 2);
@@ -46,7 +46,7 @@ test("without the queue a publish lands as before", () => {
 	assert.deepEqual(project.queue().items, []);
 });
 
-test("a queued publish waits, shows in status and the candidate, and lands as its own version with the same tree", () => {
+test("a queued push waits, shows in status and the candidate, and lands as its own version with the same tree", () => {
 	const { project } = setup();
 	edit(project, "one", { file: "a.ts", old: "1", new: "2" }, 1);
 	const a = project.publish("one", "a is 2", 2);
@@ -71,10 +71,10 @@ test("a queued publish waits, shows in status and the candidate, and lands as it
 	assert.equal(project.treeAt(1), candidate.tree);
 	assert.deepEqual(project.queue().items, []);
 	assert.equal(project.status().agents.find((x) => x.agent === "one")?.queued, undefined);
-	assert.ok(project.news("one").news.some((n) => n.includes('Your queued publish "a is 2" landed as version 1')));
+	assert.ok(project.news("one").news.some((n) => n.includes('Your queued push "a is 2" landed as version 1')));
 });
 
-test("a publish that changes lines queued ahead of it is refused at once, naming the queued one", () => {
+test("a push that changes lines queued ahead of it is refused at once, naming the queued one", () => {
 	const { project } = setup();
 	edit(project, "one", { file: "a.ts", old: "1", new: "2" }, 1);
 	queued(project, "one", "a is 2", 2);
@@ -87,7 +87,7 @@ test("a publish that changes lines queued ahead of it is refused at once, naming
 	assert.equal(project.queue().items.length, 1);
 });
 
-test("a name defined both in a queued publish and in a new one is refused", () => {
+test("a name defined both in a queued push and in a new one is refused", () => {
 	const { project } = setup();
 	edit(
 		project,
@@ -110,7 +110,7 @@ test("a name defined both in a queued publish and in a new one is refused", () =
 	);
 });
 
-test("publishes to different files queue behind each other and land in order", () => {
+test("pushes to different files queue behind each other and land in order", () => {
 	const { project } = setup();
 	edit(project, "one", { file: "a.ts", old: "1", new: "2" }, 1);
 	queued(project, "one", "a is 2", 2);
@@ -133,20 +133,20 @@ test("publishes to different files queue behind each other and land in order", (
 	);
 });
 
-test("a failed publish is pulled with the check's output; its changes stay in the draft and can be queued again", () => {
+test("a failed push is turned back with the check's output; its changes stay in the draft and can be queued again", () => {
 	const { project } = setup();
 	edit(project, "one", { file: "a.ts", old: "1", new: "2" }, 1);
 	queued(project, "one", "a is 2", 2);
 	assert.deepEqual(project.queuePull(1, "failed", 3, "line 1\nnot ok 1 - a is 1\n").pulled, [1]);
 	assert.deepEqual(project.queue().items, []);
 	const news = project.news("one").news.join("\n");
-	assert.ok(news.includes("was pulled: the project's check failed on it"), news);
+	assert.ok(news.includes("was turned back: the project's check failed on it"), news);
 	assert.ok(news.includes("not ok 1 - a is 1"));
 	assert.equal(project.diff("one").files.length, 1, "the change is still in the draft");
 	assert.equal(queued(project, "one", "a is 2, again", 4), 2);
 });
 
-test("a queued publish built on a pulled one comes out with it", () => {
+test("a queued push built on a pulled one comes out with it", () => {
 	const { project } = setup();
 	edit(project, "one", { file: "a.ts", old: "1", new: "2" }, 1);
 	queued(project, "one", "a is 2", 2);
@@ -159,10 +159,10 @@ test("a queued publish built on a pulled one comes out with it", () => {
 		project.queue().items.map((q) => q.id),
 		[3],
 	);
-	assert.ok(project.news("one").news.some((n) => n.includes("it builds on queued publish 1, which was pulled")));
+	assert.ok(project.news("one").news.some((n) => n.includes("it builds on queued push 1, which was turned back")));
 });
 
-test("an agent can withdraw its queued publishes while they wait, not while they are being checked", () => {
+test("an agent can withdraw its queued pushes while they wait, not while they are being checked", () => {
 	const { project } = setup();
 	edit(project, "one", { file: "a.ts", old: "1", new: "2" }, 1);
 	queued(project, "one", "a is 2", 2);

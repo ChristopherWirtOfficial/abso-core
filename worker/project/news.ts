@@ -133,7 +133,7 @@ export function settledItem(by: string, version: number, s: Settled): NewsItem {
 	return {
 		key: `settled ${by} ${version} ${s.file} ${s.theirs.version}`,
 		text:
-			`${by} settled its collision with your version ${s.theirs.version} in ${s.file}, publishing version ${version}: ${SETTLED_WHAT[s.kept]}.` +
+			`${by} settled its collision with your version ${s.theirs.version} in ${s.file}, pushing version ${version}: ${SETTLED_WHAT[s.kept]}.` +
 			(s.lost
 				? ` It also lost ${s.lost.length === 1 ? "a line" : `${s.lost.length} lines`} you both still had: ${s.lost.map((l) => `"${clip(l)}"`).join(", ")}.`
 				: "") +
@@ -148,7 +148,7 @@ export function overlapItems(draftId: string, overlaps: readonly Overlap[]): New
 	const items: NewsItem[] = [];
 	for (const [name, list] of byAgent) {
 		const files = list.map((o) => o.file);
-		const what = list.some((o) => o.changes) ? "has unpublished changes in" : "says it is starting on";
+		const what = list.some((o) => o.changes) ? "has unpushed changes in" : "says it is starting on";
 		const note = list.find((o) => o.starting)?.starting;
 		items.push({
 			key: `overlap ${draftId} ${name} ${files.join(" ")}`,
@@ -164,8 +164,8 @@ export function moveItem(atom: string, origin: Origin, from: string, to: string)
 	return {
 		key: `move ${atom}`,
 		text:
-			`${origin.agent} published "${origin.message}" (${versionName(origin)}), which moved lines your draft changes ${where}; ` +
-			`your changes moved with them. Run abso sync to see them there.`,
+			`${origin.agent} pushed "${origin.message}" (${versionName(origin)}), which moved lines your draft changes ${where}; ` +
+			`your changes moved with them. Run abso pull to see them there.`,
 	};
 }
 
@@ -174,16 +174,16 @@ export function linesText(c: Collision): string {
 	const [a, b] = c.theirs.lines;
 	const where = b >= a ? `lines ${a}-${b}` : `line ${a}`;
 	return (
-		`${c.theirs.agent} published "${c.theirs.message}" (${versionName(c.theirs)}), ` +
-		`which changes ${c.file} ${where}, where your draft also changes lines; run abso sync to see both versions.`
+		`${c.theirs.agent} pushed "${c.theirs.message}" (${versionName(c.theirs)}), ` +
+		`which changes ${c.file} ${where}, where your draft also changes lines; run abso pull to see both versions.`
 	);
 }
 
 /** A changed or removed definition the draft uses (#11). */
 export function definitionText(origin: Origin, change: string, name: string, file: string, line: number): string {
 	return (
-		`${origin.agent} published "${origin.message}" (${versionName(origin)}), which ${change}, ` +
-		`and your draft uses ${name} in ${file} line ${line}; run abso sync to see the new definition.`
+		`${origin.agent} pushed "${origin.message}" (${versionName(origin)}), which ${change}, ` +
+		`and your draft uses ${name} in ${file} line ${line}; run abso pull to see the new definition.`
 	);
 }
 

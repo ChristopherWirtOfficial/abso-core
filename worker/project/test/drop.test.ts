@@ -49,7 +49,7 @@ test("dropping a version takes its change out; later unrelated work stays; histo
 	assert.deepEqual(project.show(3).diff, [{ path: "a.ts", before: "one\nTWO\nthree\n", after: "one\ntwo\nthree\n" }]);
 	// Everyone hears it, and their next sync takes it out of their folder.
 	assert.deepEqual(project.news("bob").news, [
-		'cat dropped version 1 from shared (version 3): "TWO broke the parser". Run abso sync to take it out of your folder.',
+		'cat dropped version 1 from shared (version 3): "TWO broke the parser". Run abso pull to take it out of your folder.',
 	]);
 	assert.deepEqual(project.sync("ann").files, { "a.ts": "one\ntwo\nthree\n", "b.ts": "alpha\nBETA\n" });
 });
@@ -69,7 +69,7 @@ test("work that built on a dropped version is listed and refused, unless it goes
 	assert.deepEqual(project.files(), { "a.ts": "one\ntwo\nthree\n", "b.ts": "alpha\nBETA\n" });
 });
 
-test("unpublished work that builds on it blocks a drop; drop never touches a draft", () => {
+test("unpushed work that builds on it blocks a drop; drop never touches a draft", () => {
 	const { project } = setup();
 	twoVersions(project);
 	project.sync("cat");
@@ -84,7 +84,7 @@ test("unpublished work that builds on it blocks a drop; drop never touches a dra
 	assert.deepEqual(project.files(), { "a.ts": "one\ntwo\nthree\n", "b.ts": "ALPHA\nBETA\n" });
 });
 
-test("an agent that edits dropped lines without syncing is told to restore, not broken", () => {
+test("an agent that edits dropped lines without pulling is told to restore, not broken", () => {
 	const { project } = setup();
 	twoVersions(project);
 	project.sync("cat"); // cat sees TWO

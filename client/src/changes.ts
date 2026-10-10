@@ -87,7 +87,7 @@ export async function runFiles(args: Parsed, env: Env): Promise<Output> {
 	return {
 		text: [
 			mine
-				? `Your view holds ${what}: ${spaceName(answer.draft)} at version ${answer.version}, with your unpublished changes.${missing.size > 0 ? ` ${missing.size} of them ${missing.size === 1 ? "is" : "are"} missing from this folder (abso sync --full writes them).` : ""}`
+				? `Your view holds ${what}: ${spaceName(answer.draft)} at version ${answer.version}, with your unpushed changes.${missing.size > 0 ? ` ${missing.size} of them ${missing.size === 1 ? "is" : "are"} missing from this folder (abso pull --full writes them).` : ""}`
 				: `${spaceName(answer.draft)} at version ${answer.version} holds ${what}.`,
 			...files.map((f) => (missing.has(f) ? `${f}  (missing from this folder)` : f)),
 		].join("\n"),
@@ -145,15 +145,15 @@ export async function runDiff(args: Parsed, env: Env): Promise<Output> {
 	const other = str(args, "agent");
 	if (other !== undefined) {
 		if (between || str(args, "draft") !== undefined)
-			throw new UsageError("--agent shows that agent's unpublished changes: abso diff [file...] --agent <name>");
+			throw new UsageError("--agent shows that agent's unpushed changes: abso diff [file...] --agent <name>");
 		const answer = await api.diffOf(other);
 		const files = pick(answer.files);
 		const d = diffs(files);
 		const where = `${spaceName(answer.draft)}${answer.base === null ? "" : ` (on version ${answer.base})`}`;
 		const head =
 			files.length === 0
-				? `${other} has no recorded, unpublished changes${inPaths(only, "to")} in ${where}.`
-				: `${other}'s recorded, unpublished changes${inPaths(only, "to")} in ${where}: ${totals(files)}.`;
+				? `${other} has no recorded, unpushed changes${inPaths(only, "to")} in ${where}.`
+				: `${other}'s recorded, unpushed changes${inPaths(only, "to")} in ${where}: ${totals(files)}.`;
 		return {
 			text: [head, ...d.text].join("\n"),
 			json: { agent: other, draft: answer.draft, base: answer.base, files: d.json, unmatched: unmatched(files) },
@@ -179,7 +179,7 @@ export async function runDiff(args: Parsed, env: Env): Promise<Output> {
 
 	if (str(args, "draft") !== undefined)
 		throw new UsageError(
-			"--draft goes with two versions (abso diff <from> <to>); abso diff alone shows your own unpublished changes",
+			"--draft goes with two versions (abso diff <from> <to>); abso diff alone shows your own unpushed changes",
 		);
 	// Folder-only edits count as unpublished changes too.
 	const recorded = await recordFolder(root, api);
@@ -189,8 +189,8 @@ export async function runDiff(args: Parsed, env: Env): Promise<Output> {
 	const where = `${spaceName(answer.draft)}${answer.base === null ? "" : ` (on version ${answer.base})`}`;
 	const head =
 		files.length === 0
-			? `No unpublished changes${inPaths(only, "to")} in ${where}.`
-			: `Your unpublished changes${inPaths(only, "to")} in ${where}: ${totals(files)}.`;
+			? `No unpushed changes${inPaths(only, "to")} in ${where}.`
+			: `Your unpushed changes${inPaths(only, "to")} in ${where}: ${totals(files)}.`;
 	const pre = recordedFirst(recorded);
 	return {
 		text: [...pre, head, ...notes(files), ...d.text].join("\n"),
@@ -287,7 +287,7 @@ function notes(v: FollowedEntry): string[] {
 	if (v.drops && v.drops.length > 0)
 		out.push(`  drops ${v.drops.length === 1 ? "version" : "versions"} ${v.drops.join(", ")}`);
 	if (v.droppedIn !== undefined) out.push(`  dropped in version ${v.droppedIn}: shared no longer has these changes`);
-	if (v.originalMessage !== undefined) out.push(`  amended; first published as: ${v.originalMessage}`);
+	if (v.originalMessage !== undefined) out.push(`  amended; first pushed as: ${v.originalMessage}`);
 	return out;
 }
 
@@ -598,12 +598,12 @@ export async function runRestore(args: Parsed, env: Env): Promise<Output> {
 	);
 	const lines = [
 		restored.length + deleted.length === 0
-			? "Nothing to restore: no unpublished changes there."
-			: `Discarded your unpublished changes to ${plural(restored.length + deleted.length, "file")}:`,
+			? "Nothing to restore: no unpushed changes there."
+			: `Discarded your unpushed changes to ${plural(restored.length + deleted.length, "file")}:`,
 		...restored.map((f) => `  restored ${f}`),
 		...deleted.map((f) => `  deleted ${f} (it is new in your draft)`),
 		...(untouched.length > 0 && restored.length + deleted.length > 0
-			? [`No unpublished changes to: ${untouched.join(", ")}`]
+			? [`No unpushed changes to: ${untouched.join(", ")}`]
 			: []),
 		...refusedText(refused),
 	];

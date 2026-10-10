@@ -65,7 +65,7 @@ export function switchTo(
 			if (host.graph.atom(id).deps.some((d) => !into.has(d))) {
 				throw new ProjectError(
 					"bad-request",
-					`your unpublished changes build on changes that shared doesn't have yet (they're in draft ${agent.space}); publish them there first, or switch without carrying`,
+					`your unpushed changes build on changes that shared doesn't have yet (they're in draft ${agent.space}); push them there first, or switch without carrying`,
 				);
 			}
 		}

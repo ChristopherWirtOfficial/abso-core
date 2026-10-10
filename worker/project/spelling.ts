@@ -29,18 +29,18 @@ export function clashIn(view: View, touched: Iterable<string>, now: View): strin
 		const key = pathKey(p);
 		const twin = liveAs(key, p);
 		if (twin !== undefined && !old(p, twin))
-			return `${p} and ${twin} would both be in shared, but they're one file, spelled two ways (case or Unicode form). Keep one: abso mv ${p} ${twin}, or put your change into ${twin}, then publish again.`;
+			return `${p} and ${twin} would both be in shared, but they're one file, spelled two ways (case or Unicode form). Keep one: abso mv ${p} ${twin}, or put your change into ${twin}, then push again.`;
 		const parts = p.split("/");
 		for (let i = 1; i < parts.length; i++) {
 			const file = liveAs(pathKey(parts.slice(0, i).join("/")));
 			if (file !== undefined && !old(p, file))
-				return `${p} puts a file in folder ${parts.slice(0, i).join("/")}, but ${file} is a file of that name in shared, and no disk holds both. Move one of them (abso mv), then publish again.`;
+				return `${p} puts a file in folder ${parts.slice(0, i).join("/")}, but ${file} is a file of that name in shared, and no disk holds both. Move one of them (abso mv), then push again.`;
 		}
 		for (const [k, qs] of byKey) {
 			if (!k.startsWith(`${key}/`)) continue;
 			const under = qs.find((q) => view.hasFile(q));
 			if (under !== undefined && !old(p, under))
-				return `${p} is a file, but ${under} makes a folder of that name in shared, and no disk holds both. Move one of them (abso mv), then publish again.`;
+				return `${p} is a file, but ${under} makes a folder of that name in shared, and no disk holds both. Move one of them (abso mv), then push again.`;
 		}
 	}
 	return undefined;

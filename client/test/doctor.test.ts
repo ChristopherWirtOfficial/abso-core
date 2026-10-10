@@ -219,10 +219,10 @@ test("plainError words a refusal by whether a credential went, and a server that
 	);
 	assert.equal(
 		plainError(
-			new ApiError("could not reach http://x: refused. Nothing was published. Run the same command again."),
+			new ApiError("could not reach http://x: refused. Nothing was pushed. Run the same command again."),
 			true,
 		),
-		"Can't reach http://x: refused. Nothing was published. Run the same command again.",
+		"Can't reach http://x: refused. Nothing was pushed. Run the same command again.",
 	);
 	assert.equal(plainError(new ApiError("GET /log answered 500: boom", 500), true), undefined);
 	assert.equal(plainError(new Error("anything else"), true), undefined);

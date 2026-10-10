@@ -98,7 +98,7 @@ export function readerAnswer(
 			if (me && (me.draftChanges > 0 || (me.parked?.length ?? 0) > 0)) {
 				return fail(
 					409,
-					`${agent} has unpublished changes; publish or restore them (abso restore --all) before it becomes a reader`,
+					`${agent} has unpushed changes; push or restore them (abso restore --all) before it becomes a reader`,
 				);
 			}
 		}
@@ -430,7 +430,7 @@ export function answer(
 			}
 			case "publish": {
 				const message = (body as { message?: string })?.message;
-				if (typeof message !== "string" || !message.trim()) return fail(400, "publish needs {message} saying why");
+				if (typeof message !== "string" || !message.trim()) return fail(400, "push needs {message} saying why");
 				const unseen = unseenError("the message", message);
 				if (unseen) return fail(400, unseen);
 				// asIs (#37): publish even with collided lines untouched since the sync, both sides kept.
@@ -442,7 +442,7 @@ export function answer(
 				if ((body as { full?: unknown } | undefined)?.full === true) {
 					// {full: true}: every file in the agent's view, as a first sync answers (#37).
 					const history = project as ProjectCalls & Partial<ProjectHistory>;
-					if (!history.syncFull) return fail(501, "a full sync needs the engine");
+					if (!history.syncFull) return fail(501, "a full pull needs the engine");
 					if (label !== undefined && typeof label !== "string") return fail(400, "label must be a label name");
 					return { status: 200, body: history.syncFull(agent, label as string | undefined) };
 				}

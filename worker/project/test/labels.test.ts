@@ -72,7 +72,7 @@ test("following a label back is refused when it would strand the agent's own wor
 	assert.throws(() => project.label("ci", "ok", 99, 12), /no version 99/);
 });
 
-test("a log with labels and label-following syncs loads back the same", () => {
+test("a log with labels and label-following pulls loads back the same", () => {
 	const { project, store } = setup();
 	publishVersions(project, 2);
 	project.label("ci", "passed-ci", 1, 10);

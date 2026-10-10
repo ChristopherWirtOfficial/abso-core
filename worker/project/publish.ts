@@ -81,7 +81,7 @@ export function publish(
 	time: number,
 	options: { asIs?: boolean } = {},
 ): PublishAnswer {
-	if (typeof message !== "string") throw new ProjectError("bad-request", "publish needs a message");
+	if (typeof message !== "string") throw new ProjectError("bad-request", "push needs a message");
 	const known = host.agents.get(agentName);
 	if (known && known.space === SHARED)
 		host.checkClash(host.draft(known), host.queueOn() ? host.queuedAtoms(known.name) : undefined);
@@ -106,8 +106,8 @@ export function publishDraft(
 	if (stranded.length > 0) {
 		throw new ProjectError(
 			"conflict",
-			`your unpublished changes to ${stranded.join(", ")} build on lines a drop took out of shared; ` +
-				`restore those files (abso restore ${stranded.join(" ")}), sync, and make the change again`,
+			`your unpushed changes to ${stranded.join(", ")} build on lines a drop took out of shared; ` +
+				`restore those files (abso restore ${stranded.join(" ")}), pull, and make the change again`,
 		);
 	}
 	// asIs (#11): every block of markers keeps both sides, and the publish says which files it settled that way.

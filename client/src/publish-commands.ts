@@ -73,7 +73,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 	const rawWait = str(args, "wait");
 	if (rawWait !== undefined && !/^\d{1,4}$/.test(rawWait))
 		throw new UsageError(
-			`--wait is how many seconds to wait for a queued publish to land, like 100 (got ${JSON.stringify(rawWait)})`,
+			`--wait is how many seconds to wait for a queued push to land, like 100 (got ${JSON.stringify(rawWait)})`,
 		);
 	const waitSeconds = bool(args, "no-wait") ? 0 : rawWait === undefined ? WAIT_SECONDS : Number(rawWait);
 	let skippedCheck = false;
@@ -105,23 +105,23 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 		const say = env.writeErr ?? env.write;
 		// Known to have no prep: refuse before syncing and running (#37). Unknown: the run below tells.
 		const noPrep =
-			"your box has no prep, so a check would run without node_modules and its result couldn't be trusted. Run abso prep 'npm ci --ignore-scripts' once (every fresh box then starts from it), then publish --check again.";
+			"your box has no prep, so a check would run without node_modules and its result couldn't be trusted. Run abso prep 'npm ci --ignore-scripts' once (every fresh box then starts from it), then push --check again.";
 		if (knownPrep(root, boxOf(args, env)) === null && existsSync(join(root, "package-lock.json"))) {
 			return {
 				exit: EXIT.refused,
-				text: `Not published: ${noPrep} (Nothing was run: this folder's last run in that box said it had no prep.)`,
+				text: `Not pushed: ${noPrep} (Nothing was run: this folder's last run in that box said it had no prep.)`,
 				json: { check: { command: check, ran: false, prep: null } },
 			};
 		}
 		const synced = await unreached(
 			runSync({ positionals: [], flags: new Map() }, env),
-			"Nothing was published, and the check didn't run.",
+			"Nothing was pushed, and the check didn't run.",
 		);
 		const sj = synced.json as { collisions?: readonly unknown[]; refused?: readonly Refused[] };
 		if ((sj.collisions?.length ?? 0) > 0) {
 			return {
 				exit: EXIT.refused,
-				text: `${synced.text}\nNot published: the sync before the check left collisions. Settle them, then publish --check again.`,
+				text: `${synced.text}\nNot pushed: the pull before the check left collisions. Settle them, then push --check again.`,
 				json: { check: null, sync: synced.json },
 			};
 		}
@@ -129,7 +129,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 		// Paths the sync wouldn't write (safety.ts) don't block: the check just ran without them.
 		if ((sj.refused?.length ?? 0) > 0)
 			say(
-				`abso: the sync didn't write these: ${sj.refused!.map((r) => r.path).join(", ")}; the check runs without them.\n`,
+				`abso: the pull didn't write these: ${sj.refused!.map((r) => r.path).join(", ")}; the check runs without them.\n`,
 			);
 		say(`abso: checking your draft on newest shared in the box: ${check}\n`);
 		const flags = new Map<string, string | boolean>();
@@ -141,7 +141,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 		if ((ran.json as { prep?: string | null }).prep === null && existsSync(join(root, "package-lock.json"))) {
 			return {
 				exit: EXIT.refused,
-				text: "Not published: your box has no prep, so the check ran without node_modules and its result can't be trusted. Run abso prep 'npm ci --ignore-scripts' once (every fresh box then starts from it), then publish --check again.",
+				text: "Not pushed: your box has no prep, so the check ran without node_modules and its result can't be trusted. Run abso prep 'npm ci --ignore-scripts' once (every fresh box then starts from it), then push --check again.",
 				json: { check: { command: check, exit: ran.exit ?? 0, prep: null } },
 			};
 		}
@@ -175,7 +175,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 			return {
 				exit: EXIT.refused,
 				text: [
-					`Not published: the check failed (exit ${ran.exit}) on your draft with newest shared. Its output is above.`,
+					`Not pushed: the check failed (exit ${ran.exit}) on your draft with newest shared. Its output is above.`,
 					...verdict,
 				].join("\n"),
 				json: {
@@ -187,7 +187,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 				},
 			};
 		}
-		say("abso: the check passed; publishing.\n");
+		say("abso: the check passed; pushing.\n");
 	}
 	const checked = check !== undefined;
 	const leftOut: LeftOut[] = [];
@@ -195,10 +195,8 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 	// Say how far it got when the server can't be reached (#37, GAME - UI/UX: did the check run? did the draft go up?).
 	const reached = await unreached(
 		steps,
-		checked
-			? "The check passed, but the publish never reached the server: nothing was published."
-			: "Nothing was published.",
-		`${checked ? "The check passed; " : ""}the publish may have reached the server before its answer was lost: abso status shows whether your draft was published.`,
+		checked ? "The check passed, but the push never reached the server: nothing was pushed." : "Nothing was pushed.",
+		`${checked ? "The check passed; " : ""}the push may have reached the server before its answer was lost: abso status shows whether your draft was pushed.`,
 	);
 	const out = withLeftOut(reached, leftOut);
 	// --done: this publish finishes the work the start note named (#44): take the note back once it's published.
@@ -209,7 +207,7 @@ export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 		if (queued === undefined || outcome === "pulled") return out;
 		return {
 			...out,
-			text: `${out.text}\nYour start note stays (--done): publish ${queued} hasn't landed yet. Once it has, abso start --done takes the note back and abso issue <N> --done closes the issue it names.`,
+			text: `${out.text}\nYour start note stays (--done): push ${queued} hasn't landed yet. Once it has, abso start --done takes the note back and abso issue <N> --done closes the issue it names.`,
 		};
 	}
 	// done (#54): the work is finished, so an issue the note named is closed with this change.
@@ -244,7 +242,7 @@ async function afterLostPublish(
 		);
 		if (landed) {
 			return {
-				text: `Published version ${landed.version}. The server's answer was lost (${why}), but shared's log shows your publish landed.`,
+				text: `Pushed version ${landed.version}. The server's answer was lost (${why}), but shared's log shows your push landed.`,
 				json: { version: landed.version, lostAnswer: why },
 			};
 		}
@@ -254,13 +252,13 @@ async function afterLostPublish(
 		if (queued) {
 			return {
 				exit: STILL_QUEUED,
-				text: `Queued as publish ${queued.id}. The server's answer was lost (${why}), but the merge queue holds your publish; the outcome comes as news on your next edit, and abso status shows the queue.`,
+				text: `Queued as push ${queued.id}. The server's answer was lost (${why}), but the merge queue holds your push; the outcome comes as news on your next edit, and abso status shows the queue.`,
 				json: { queued: queued.id, outcome: "queued", lostAnswer: why },
 			};
 		}
 		return {
 			exit: EXIT.error,
-			text: `Not published: ${why}. Shared's newest versions and the merge queue don't have it, so it's safe to publish again.`,
+			text: `Not pushed: ${why}. Shared's newest versions and the merge queue don't have it, so it's safe to push again.`,
 			json: { published: false, lostAnswer: why },
 		};
 	} catch {
@@ -303,7 +301,7 @@ async function publishSteps(
 		// Publishing now would leave the others on the file's old text without anyone noticing (#25).
 		return {
 			exit: EXIT.refused,
-			text: [...pre, ...turnedBinaryText(recorded.turnedBinary), "Not published."].join("\n"),
+			text: [...pre, ...turnedBinaryText(recorded.turnedBinary), "Not pushed."].join("\n"),
 			json: { turnedBinary: recorded.turnedBinary, recorded: recorded.sent },
 		};
 	}
@@ -331,7 +329,7 @@ async function publishSteps(
 	if (answer.ok && "queued" in answer) {
 		// The merge queue (#39): it lands once a batch with it passes the project's check.
 		const say = env.writeErr ?? env.write;
-		const head = `Queued as publish ${answer.queued}${answer.ahead === 0 ? "" : `, ${answer.ahead} ${answer.ahead === 1 ? "publish" : "publishes"} ahead of it`}: it lands once the project's check passes on it in the merge queue.`;
+		const head = `Queued as push ${answer.queued}${answer.ahead === 0 ? "" : `, ${answer.ahead} ${answer.ahead === 1 ? "push" : "pushes"} ahead of it`}: it lands once the project's check passes on it in the merge queue.`;
 		const notes = [
 			...pre,
 			...(skippedCheck
@@ -365,9 +363,7 @@ async function publishSteps(
 		if (out.kind !== "waiting") heard(root, out.news);
 		if (out.kind === "landed")
 			return {
-				text: [...notes, `Published version ${out.version}: it passed the project's check in the merge queue.`].join(
-					"\n",
-				),
+				text: [...notes, `Pushed version ${out.version}: it passed the project's check in the merge queue.`].join("\n"),
 				json: { ...json, version: out.version, outcome: "landed" },
 			};
 		if (out.kind === "pulled")
@@ -381,7 +377,7 @@ async function publishSteps(
 				exit: STILL_QUEUED,
 				text: [
 					...notes,
-					`Publish ${answer.queued} left the merge queue, but nothing said whether it landed: abso log -n 3 shows it if it did.`,
+					`Push ${answer.queued} left the merge queue, but nothing said whether it landed: abso log -n 3 shows it if it did.`,
 				].join("\n"),
 				json: { ...json, outcome: "unknown" },
 			};
@@ -391,9 +387,7 @@ async function publishSteps(
 			: "still in the queue (the queue could not be read)";
 		return {
 			exit: STILL_QUEUED,
-			text: [...notes, `Still queued after ${waitSeconds} s: publish ${answer.queued} is ${where}. ${later}`].join(
-				"\n",
-			),
+			text: [...notes, `Still queued after ${waitSeconds} s: push ${answer.queued} is ${where}. ${later}`].join("\n"),
 			json: { ...json, outcome: "queued" },
 		};
 	}
@@ -402,7 +396,7 @@ async function publishSteps(
 		const what =
 			answer.changes === 0
 				? await alreadyInShared(root, api, config.agent, recorded.paths, answer.version)
-				: `Published version ${answer.version}.${merged.length > 0 ? ` ${mergedText(merged)}` : ""}`;
+				: `Pushed version ${answer.version}.${merged.length > 0 ? ` ${mergedText(merged)}` : ""}`;
 		// The check ran on shared as it was; what landed since went in unchecked.
 		const moved =
 			checked && merged.length > 0
@@ -440,9 +434,9 @@ async function publishSteps(
 			exit: EXIT.refused,
 			text: [
 				...pre,
-				`Not published: ${files.join(", ")} still ${files.length === 1 ? "has" : "have"} collision markers (${plural(collisions.length, "block")}).`,
+				`Not pushed: ${files.join(", ")} still ${files.length === 1 ? "has" : "have"} collision markers (${plural(collisions.length, "block")}).`,
 				...collisions.map(collisionText),
-				`Settle each: keep yours, theirs or a mix and delete the marker lines, or abso settle <file> --yours|--theirs|--both. Then publish again. abso publish --as-is keeps both sides everywhere; the other authors hear it.`,
+				`Settle each: keep yours, theirs or a mix and delete the marker lines, or abso settle <file> --yours|--theirs|--both. Then push again. abso push --as-is keeps both sides everywhere; the other authors hear it.`,
 			].join("\n"),
 			json: { collisions, recorded: recorded.sent },
 		};
@@ -453,9 +447,9 @@ async function publishSteps(
 			exit: EXIT.refused,
 			text: [
 				...pre,
-				`Not published: ${plural(collisions.length, "collision")} you synced into and haven't edited since. Both sides' lines are still in the file, so publishing now would put them in shared twice.`,
+				`Not pushed: ${plural(collisions.length, "collision")} you pulled into and haven't edited since. Both sides' lines are still in the file, so pushing now would put them in shared twice.`,
 				...collisions.map(collisionText),
-				"Edit each to what it should be (keep yours, theirs, or a mix), then publish again. If both really belong, abso publish --as-is keeps both.",
+				"Edit each to what it should be (keep yours, theirs, or a mix), then push again. If both really belong, abso push --as-is keeps both.",
 			].join("\n"),
 			json: { collisions, recorded: recorded.sent },
 		};
@@ -469,23 +463,23 @@ async function publishSteps(
 		text: [
 			...pre,
 			// A name defined twice is already in your folder (sync listed it); the rest is newer work.
-			`Not published: ${plural(collisions.length, "collision")}${newer.length > 0 ? " with work published since your last sync" : ""}.${answer.reason ? ` (${answer.reason})` : ""}`,
+			`Not pushed: ${plural(collisions.length, "collision")}${newer.length > 0 ? " with work pushed since your last pull" : ""}.${answer.reason ? ` (${answer.reason})` : ""}`,
 			...real.map(collisionText),
 			...(local.length > 0
 				? [
-						`  ${local.map((c) => c.file).join(", ")}: local files that should never have been shared. abso sync drops them from your draft and leaves your copy on disk.`,
+						`  ${local.map((c) => c.file).join(", ")}: local files that should never have been shared. abso pull drops them from your draft and leaves your copy on disk.`,
 					]
 				: []),
 			...(real.some((c) => c.theirs.queued !== undefined)
 				? [
-						"Some of theirs are still in the merge queue, not in shared: once they land (abso status shows the queue), abso sync brings them in to settle; if they're pulled, publish again as you are.",
+						"Some of theirs are still in the merge queue, not in shared: once they land (abso status shows the queue), abso pull brings them in to settle; if they're turned back, push again as you are.",
 					]
 				: []),
 			newer.length > 0
-				? `Run abso sync: each of those files comes back holding both sides' lines, with no markers. Edit it to what it should be${twice.length > 0 ? ", keep one definition of each name defined twice" : ""}, then publish again.`
+				? `Run abso pull: each of those files comes back holding both sides' lines, with no markers. Edit it to what it should be${twice.length > 0 ? ", keep one definition of each name defined twice" : ""}, then push again.`
 				: twice.length > 0
-					? "Keep one definition of each name defined twice (delete yours, or theirs), then publish again."
-					: "Run abso sync, then publish again.",
+					? "Keep one definition of each name defined twice (delete yours, or theirs), then push again."
+					: "Run abso pull, then push again.",
 		].join("\n"),
 		json: { collisions, recorded: recorded.sent, ...(answer.reason ? { reason: answer.reason } : {}) },
 	};
@@ -504,14 +498,14 @@ export async function runSync(args: Parsed, env: Env): Promise<Output> {
 		...turnedBinaryText(recorded.turnedBinary),
 		...recordedFirst(recorded),
 		...droppedIgnoredText(ignoredDropped),
-		`Synced to version ${s.version}: ${changes === 0 ? "no files changed" : `${plural(updated.length, "file")} updated, ${removed.length} deleted${s.renamed.length > 0 ? `, ${s.renamed.length} renamed` : ""}`}.`,
-		...changedFilesText("sync", updated, removed, s.renamed, bool(args, "verbose")),
+		`Pulled to version ${s.version}: ${changes === 0 ? "no files changed" : `${plural(updated.length, "file")} updated, ${removed.length} deleted${s.renamed.length > 0 ? `, ${s.renamed.length} renamed` : ""}`}.`,
+		...changedFilesText("pull", updated, removed, s.renamed, bool(args, "verbose")),
 		...refusedText(s.refused),
 		// Ones an earlier sync couldn't write; this sync's are named just above.
 		...unwrittenText(s.unwritten, new Set(s.refused.map((r) => r.path))),
 		...mergedLinesText(s.merged),
 		...(s.kept.length > 0
-			? [`Left alone because they changed while syncing (run abso sync again): ${s.kept.join(", ")}`]
+			? [`Left alone because they changed while pulling (run abso pull again): ${s.kept.join(", ")}`]
 			: []),
 		...(s.dropped.length > 0
 			? [`Dropped from your draft, kept on disk (these stay local): ${s.dropped.join(", ")}`]
@@ -569,7 +563,7 @@ async function alreadyInShared(
 	recordedPaths: readonly string[],
 	version: number,
 ): Promise<string> {
-	const empty = `Nothing to publish: your draft is empty. Shared is at version ${version}.`;
+	const empty = `Nothing to push: your draft is empty. Shared is at version ${version}.`;
 	const log = await api.log({ agent }, FOLDER_LOG_LIMIT);
 	const since = log.versions.find((v) => v.agent === agent)?.time ?? 0;
 	const edited = new Set(recordedPaths);
@@ -588,7 +582,7 @@ async function alreadyInShared(
 			found.push(`${rel} (version ${last.version}, ${last.agent}: "${last.message}")`);
 	}
 	if (found.length === 0) return empty;
-	return `Nothing published: shared already has ${found.length === 1 ? "the file you changed" : "the files you changed"} as you have ${found.length === 1 ? "it" : "them"}, so nothing of yours is lost. Last changed in ${found.join("; ")}. Shared is at version ${version}.`;
+	return `Nothing pushed: shared already has ${found.length === 1 ? "the file you changed" : "the files you changed"} as you have ${found.length === 1 ? "it" : "them"}, so nothing of yours is lost. Last changed in ${found.join("; ")}. Shared is at version ${version}.`;
 }
 
 /**

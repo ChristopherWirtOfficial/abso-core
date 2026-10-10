@@ -31,7 +31,7 @@ function same(project: Project, store: MemoryStore, step: string) {
 const filesOf = (status: ReturnType<Project["status"]>, agent: string) =>
 	status.agents.find((a) => a.agent === agent)!.files;
 
-test("status answers the same warm and cold through records, publishes and syncs in shared", () => {
+test("status answers the same warm and cold through records, pushes and pulls in shared", () => {
 	const { project, store } = setup();
 	project.edit("ann", { file: "core.ts", old: "  return x + 1;", new: "  return x + 2;" }, 1);
 	assert.deepEqual(filesOf(same(project, store, "ann's edit"), "ann"), ["core.ts"]);
@@ -40,16 +40,16 @@ test("status answers the same warm and cold through records, publishes and syncs
 	project.edit("bob", { file: "notes.md", old: "three\n", new: "three!\n" }, 3);
 	same(project, store, "bob's edit");
 	project.publish("ann", "Ann's two", 4);
-	assert.deepEqual(filesOf(same(project, store, "ann's publish"), "ann"), []);
+	assert.deepEqual(filesOf(same(project, store, "ann's push"), "ann"), []);
 	project.sync("bob");
-	assert.deepEqual(filesOf(same(project, store, "bob's sync"), "bob"), ["notes.md"]);
+	assert.deepEqual(filesOf(same(project, store, "bob's pull"), "bob"), ["notes.md"]);
 	project.record("cat", { "new.ts": "export {};\n" }, 5);
 	assert.deepEqual(filesOf(same(project, store, "cat's new file"), "cat"), ["new.ts"]);
 	project.publish("cat", "Cat's file", 6);
-	same(project, store, "cat's publish");
+	same(project, store, "cat's push");
 });
 
-test("two agents in one named draft: one publishes, and the other's status still matches a cold load", () => {
+test("two agents in one named draft: one pushes, and the other's status still matches a cold load", () => {
 	const { project, store } = setup();
 	project.switchTo("ann", "rw", 1);
 	project.switchTo("bob", "rw", 2);
@@ -59,12 +59,12 @@ test("two agents in one named draft: one publishes, and the other's status still
 	const before = same(project, store, "both edit in rw");
 	assert.deepEqual(filesOf(before, "bob"), ["notes.md"]);
 	project.publish("ann", "Double", 5);
-	const after = same(project, store, "ann publishes into rw");
+	const after = same(project, store, "ann pushes into rw");
 	assert.deepEqual(filesOf(after, "ann"), []);
 	project.sync("bob");
-	assert.deepEqual(filesOf(same(project, store, "bob syncs in rw"), "bob"), ["notes.md"]);
+	assert.deepEqual(filesOf(same(project, store, "bob pulls in rw"), "bob"), ["notes.md"]);
 	project.publish("bob", "Note", 6);
-	assert.deepEqual(filesOf(same(project, store, "bob publishes into rw"), "bob"), []);
+	assert.deepEqual(filesOf(same(project, store, "bob pushes into rw"), "bob"), []);
 	project.land("ann", "Land rw", 7);
 	same(project, store, "rw lands");
 	project.switchTo("ann", "shared", 8);

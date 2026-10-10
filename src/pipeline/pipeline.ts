@@ -252,11 +252,11 @@ function pipeline(name: string, p: unknown, at: string, say: Say): Pipeline | un
 				: "secrets";
 		const verb = `hold${holding.length === 1 ? "s" : ""}`;
 		if (on?.includes("draft"))
-			say(`${at}.on`, `includes draft, but ${who} ${verb} ${what}; a draft runs unpublished code`);
+			say(`${at}.on`, `includes draft, but ${who} ${verb} ${what}; a draft runs unpushed code`);
 		if (!only || only.some((s) => s !== "shared"))
 			say(
 				`${at}.only`,
-				`must be shared, because ${who} ${verb} ${what} and a named draft's version is no one's published work`,
+				`must be shared, because ${who} ${verb} ${what} and a named draft's version is no one's pushed work`,
 			);
 	}
 
@@ -299,10 +299,10 @@ function job(name: string, j: unknown, at: string, say: Say): Job | undefined {
 		say(`${at}.worker`, "names the Worker deploy ships, and is missing");
 	if (uses === "npm-publish") {
 		if (j.from === undefined)
-			say(`${at}.from`, "names the job whose kept .tgz files npm-publish publishes, and is missing");
+			say(`${at}.from`, "names the job whose kept .tgz files npm-publish pushes, and is missing");
 		const packages = j.packages;
 		if (!Array.isArray(packages) || packages.length === 0)
-			say(`${at}.packages`, "lists the npm packages npm-publish may publish, and is missing");
+			say(`${at}.packages`, "lists the npm packages npm-publish may push, and is missing");
 		else
 			packages.forEach((p, i) => {
 				if (typeof p !== "string" || p.length > 214 || !NPM_NAME.test(p))

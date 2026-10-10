@@ -246,7 +246,7 @@ async function main() {
 	console.log("");
 	for (const r of results)
 		console.log(`${r.code === 0 ? "ok  " : "FAIL"} ${(r.ms / 1000).toFixed(1).padStart(6)} s  ${r.name}`);
-	console.log(`${((Date.now() - started) / 1000).toFixed(1)} s in all. The full check runs when you publish.`);
+	console.log(`${((Date.now() - started) / 1000).toFixed(1)} s in all. The full check runs when you push.`);
 	if (results.some((r) => r.code !== 0)) process.exitCode = 1;
 }
 

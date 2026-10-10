@@ -232,7 +232,7 @@ export async function runJoin(args: Parsed, env: Env): Promise<Output> {
 	}
 	return {
 		text: [
-			`Joined ${project} as ${config.agent} at version ${synced.version}: wrote ${plural(synced.written.length, "file")} into ${root}.${reader ? " It is a reader: status, sync, log, show, files and export work, and nothing it does is recorded or published." : ""}${minted ? ` It signs in with its own key, ${minted.id}, made from this box's sign-in.` : ""}`,
+			`Joined ${project} as ${config.agent} at version ${synced.version}: wrote ${plural(synced.written.length, "file")} into ${root}.${reader ? " It is a reader: status, pull, log, show, files and export work, and nothing it does is recorded or pushed." : ""}${minted ? ` It signs in with its own key, ${minted.id}, made from this box's sign-in.` : ""}`,
 			...refusedText(synced.refused),
 			...(synced.kept.length > 0
 				? [

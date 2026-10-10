@@ -50,7 +50,7 @@ function notStarting(p: Pipeline, event: PipelineEvent, space: string): string |
 	if (p.only && !p.only.includes(space)) return `runs only for ${p.only.join(", ")}, not ${space}`;
 	// The file check refuses this already; the plan holds the line too.
 	if (event.kind === "draft" && p.jobs.some((j) => j.secrets.length > 0))
-		return "holds secrets, and a draft runs unpublished code";
+		return "holds secrets, and a draft runs unpushed code";
 	return undefined;
 }
 

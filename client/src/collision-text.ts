@@ -20,7 +20,7 @@ export function mergedLinesText(merged: readonly MergedLine[]): string[] {
 		`${m.file} line ${m.line}, with ${m.theirs.agent}'s version ${m.theirs.version} ("${m.theirs.message}"): ${m.text}`;
 	const who = new Set(merged.map((m) => m.theirs.agent)).size === 1 ? merged[0]!.theirs.agent : "others";
 	return [
-		`Merged ${merged.length === 1 ? "1 line" : `${merged.length} lines`} that both you and ${who} changed, item by item. Check ${merged.length === 1 ? "it reads" : "they read"} right, then publish:`,
+		`Merged ${merged.length === 1 ? "1 line" : `${merged.length} lines`} that both you and ${who} changed, item by item. Check ${merged.length === 1 ? "it reads" : "they read"} right, then push:`,
 		...merged.map((m) => `  ${one(m)}`),
 	];
 }
@@ -35,16 +35,16 @@ export function collisionsHeading(collisions: readonly Collision[]): string {
 		`${plural(collisions.length, "collision")}:`,
 		...(marked
 			? [
-					"where lines changed on both sides, the file now holds a marker block: yours, the lines you both started from, and theirs. Settle each before you publish: keep yours, theirs or a mix and delete the marker lines, or run abso settle <file> --yours|--theirs|--both. Box runs fail while markers are in the folder.",
+					"where lines changed on both sides, the file now holds a marker block: yours, the lines you both started from, and theirs. Settle each before you push: keep yours, theirs or a mix and delete the marker lines, or run abso settle <file> --yours|--theirs|--both. Box runs fail while markers are in the folder.",
 				]
 			: []),
 		...(lines
 			? [
-					"where lines changed on both sides, the files now hold both, with no markers. Edit them to what they should be before you publish; if both really belong, abso publish --as-is keeps both.",
+					"where lines changed on both sides, the files now hold both, with no markers. Edit them to what they should be before you push; if both really belong, abso push --as-is keeps both.",
 				]
 			: []),
-		...(twice ? ["a name defined twice needs one definition kept before you publish."] : []),
-		...(!marked && !lines && !twice ? ["read each one, edit what needs it, then publish."] : []),
+		...(twice ? ["a name defined twice needs one definition kept before you push."] : []),
+		...(!marked && !lines && !twice ? ["read each one, edit what needs it, then push."] : []),
 	].join(" ");
 }
 
@@ -54,15 +54,13 @@ export function mergedText(
 ): string {
 	const which = merged.map((m) => `version ${m.version} (${m.agent}: "${m.message}")`);
 	const list = which.length === 1 ? which[0]! : `${which.slice(0, -1).join(", ")} and ${which[which.length - 1]}`;
-	return `It went on top of ${list}, which your folder doesn't have yet. Nothing of theirs was overwritten; run abso sync to see both.`;
+	return `It went on top of ${list}, which your folder doesn't have yet. Nothing of theirs was overwritten; run abso pull to see both.`;
 }
 
 export function collisionText(c: Collision): string {
 	// Theirs may still be waiting in the merge queue (#39): not a version yet.
 	const v =
-		c.theirs.queued !== undefined
-			? `queued publish ${c.theirs.queued} (not landed yet)`
-			: `version ${c.theirs.version}`;
+		c.theirs.queued !== undefined ? `queued push ${c.theirs.queued} (not landed yet)` : `version ${c.theirs.version}`;
 	const indent = (text: string): string =>
 		text
 			.replace(/\n$/, "")
@@ -98,7 +96,7 @@ export function collisionText(c: Collision): string {
 	}
 	if (c.kind === "duplicate") {
 		return [
-			`  ${c.file}: ${c.name ?? "a name"} is defined twice, yours (${describeLines(c.yours.lines)}) and ${c.theirs.agent}'s from ${v} ("${c.theirs.message}") (${describeLines(c.theirs.lines)}). Keep one, then publish.`,
+			`  ${c.file}: ${c.name ?? "a name"} is defined twice, yours (${describeLines(c.yours.lines)}) and ${c.theirs.agent}'s from ${v} ("${c.theirs.message}") (${describeLines(c.theirs.lines)}). Keep one, then push.`,
 			`    yours:`,
 			indent(c.yours.text),
 			`    theirs:`,

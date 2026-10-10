@@ -32,8 +32,8 @@ test("news carries its time after the who", () => {
 		"ann (as claimed) told you:\nSplit api.ts",
 	);
 	assert.equal(
-		newsWithTime('w1 published "x" (version 3), which changes a.txt line 2', at, now),
-		'w1 published "x" (version 3), which changes a.txt line 2 (08:34 UTC)',
+		newsWithTime('w1 pushed "x" (version 3), which changes a.txt line 2', at, now),
+		'w1 pushed "x" (version 3), which changes a.txt line 2 (08:34 UTC)',
 	);
 	assert.equal(newsWithTime("from before times", null, now), "from before times");
 });

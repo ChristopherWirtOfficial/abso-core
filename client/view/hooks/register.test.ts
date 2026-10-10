@@ -83,7 +83,7 @@ test("in an abso folder it keeps a status line, and refreshes on a timer", async
 	await w.clock.advance(1);
 	expect(w.fetched).toEqual(["https://avcs.test/p/p/status", "https://avcs.test/p/p/where"]);
 	expect(w.statuses.at(-1)).toBe(
-		"abso: shared · 2 files unpublished · shared is 2 ahead (abso sync) · bob also on your files · 1 news item (/abso-view)",
+		"abso: shared · 2 files unpushed · shared is 2 ahead (abso pull) · bob also on your files · 1 news item (/abso-view)",
 	);
 	await w.clock.advance(31_000);
 	expect(w.fetched.length).toBe(4);

@@ -105,7 +105,7 @@ for (let i = start; i < line.length; i++) {
 	const argv =
 		i === 0
 			? ["init", dir, "--server", values.server!, "--project", values.project!, "--agent", values.agent!, "--as-is"]
-			: ["publish", "-m", message];
+			: ["push", "-m", message];
 	let r = await main(argv, env);
 	// A lost connection: try again. If the lost publish did land, the next try finds nothing to publish.
 	for (
@@ -120,7 +120,7 @@ for (let i = start; i < line.length; i++) {
 		fail(
 			`[${i + 1}/${line.length}] ${sha.slice(0, 12)} ${subject}: ${argv[0]} failed (exit ${r.exit}).\n${r.stdout}${r.stderr}\nGo on from the commit before it with --after ${i === 0 ? "(none: start again in an empty folder)" : line[i - 1]!.slice(0, 12)} --dir ${dir}`,
 		);
-	const empty = /^Nothing (to publish|published)/m.test(r.stdout);
+	const empty = /^Nothing (to push|pushed)/m.test(r.stdout);
 	if (empty) skipped++;
 	const version = /(?:version|at version) (\d+)/.exec(r.stdout)?.[1];
 	if (version !== undefined) await skipCi(Number(version));

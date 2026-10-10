@@ -10,7 +10,7 @@
 //
 // Outside an abso folder it costs one cached lookup. It never throws into a
 // chat: on any error it logs to .avcs/hook.log and forgets the file's known
-// copy, so the next `abso record` (publish and sync run one) sends it whole.
+// copy, so the next `abso record` (push and pull run one) sends it whole.
 
 import type { Register } from "claude-code";
 import {
@@ -345,7 +345,7 @@ async function send($: Engine, job: Job, who: Who): Promise<{ outcome: string; n
 	if (disk === undefined) {
 		if (job.nul !== undefined && knownRaw !== undefined && !looksBinary(knownRaw)) {
 			// A text file an edit left with a NUL byte: tell the agent now, not forty minutes later (#25).
-			const warning = `${rel} now has a NUL byte at line ${job.nul.line} (character ${job.nul.at}), so it reads as binary. abso will not send or publish it, and the other agents keep its last text, until the NUL is gone.`;
+			const warning = `${rel} now has a NUL byte at line ${job.nul.line} (character ${job.nul.at}), so it reads as binary. abso will not send or push it, and the other agents keep its last text, until the NUL is gone.`;
 			return { outcome: `not sent: a NUL byte at line ${job.nul.line}`, news: [warning] };
 		}
 		return { outcome: "skipped: file is missing or not text; abso record catches up", news: [] };

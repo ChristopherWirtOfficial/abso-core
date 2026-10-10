@@ -538,7 +538,7 @@ export async function startFake(port = 0, token = "fake-token"): Promise<Fake> {
 			if (op === "publish") {
 				const message = body.message;
 				if (typeof message !== "string" || !message.trim())
-					return send(res, 400, { error: "publish needs {message} saying why" });
+					return send(res, 400, { error: "push needs {message} saying why" });
 				const fail = fake.failPublish;
 				fake.failPublish = undefined;
 				const storageReset = { error: "Internal error in Durable Object storage caused object to be reset." };

@@ -51,7 +51,7 @@ test("an empty queue is idle and runs no check", async () => {
 	assert.equal(c.runs.length, 0);
 });
 
-test("a passing batch lands whole, each publish its own version, in one check", async () => {
+test("a passing batch lands whole, each push its own version, in one check", async () => {
 	const project = setup();
 	for (const a of AGENTS.slice(0, 3)) queue(project, a, "1");
 	const c = checker();
@@ -80,7 +80,7 @@ test("a batch is capped; the rest waits for the next round", async () => {
 	);
 });
 
-test("a failing batch is halved to the first publish that fails; the prefix before it lands, the rest waits", async () => {
+test("a failing batch is halved to the first push that fails; the prefix before it lands, the rest waits", async () => {
 	const project = setup();
 	for (const [i, a] of AGENTS.slice(0, 8).entries()) queue(project, a, i === 5 ? '"BAD"' : "1");
 	const c = checker();
@@ -113,7 +113,7 @@ test("a failing batch is halved to the first publish that fails; the prefix befo
 	});
 });
 
-test("a lone failing publish is pulled after failing twice", async () => {
+test("a lone failing push is turned back after failing twice", async () => {
 	const project = setup();
 	queue(project, "b1", '"BAD"');
 	const c = checker();
@@ -153,7 +153,7 @@ test("a box failure is retried once; twice in a row pauses the queue and blames 
 	);
 });
 
-test("while shared is red, prefixes grow one publish at a time; the first that passes lands, nobody is pulled", async () => {
+test("while shared is red, prefixes grow one push at a time; the first that passes lands, nobody is turned back", async () => {
 	const project = setup();
 	queue(project, "b1", "1");
 	queue(project, "b2", "2");
@@ -189,6 +189,6 @@ test("while shared is red and nothing fixes it, the queue holds everyone", async
 	assert.deepEqual(
 		project.queue().items.map((q) => q.id),
 		[1, 2],
-		"nobody pulled",
+		"nobody turned back",
 	);
 });

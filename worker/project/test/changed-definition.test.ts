@@ -44,7 +44,7 @@ function userCalls(project: Project) {
 	);
 }
 
-test("a signature change published first refuses a draft that calls it", () => {
+test("a signature change pushed first refuses a draft that calls it", () => {
 	const project = setup();
 	userCalls(project);
 	project.edit(
@@ -93,8 +93,8 @@ test("the drafting agent hears about it with its next edit", () => {
 	project.publish("lib", "Rename the parameter", 3);
 	const answer = project.edit("user", { file: "src/match.ts", old: "return tree;", new: "return tree ;" }, 4);
 	assert.deepEqual(answer.ok && answer.news, [
-		'lib published "Rename the parameter" (version 1), which changes the definition of parsePattern (src/parse.ts line 1), ' +
-			"and your draft uses parsePattern in src/match.ts line 4; run abso sync to see the new definition.",
+		'lib pushed "Rename the parameter" (version 1), which changes the definition of parsePattern (src/parse.ts line 1), ' +
+			"and your draft uses parsePattern in src/match.ts line 4; run abso pull to see the new definition.",
 	]);
 	assert.deepEqual(project.edit("user", { file: "src/match.ts", old: "return tree ;", new: "return tree;" }, 5), {
 		ok: true,
@@ -171,7 +171,7 @@ test("a name the draft defines itself is its own, and prose doesn't count", () =
 	assert.equal(project.publish("user", "Local helper", 4).ok, true);
 });
 
-test("my own published change to a definition never refuses my next publish", () => {
+test("my own pushed change to a definition never refuses my next push", () => {
 	const project = setup();
 	project.edit(
 		"lib",

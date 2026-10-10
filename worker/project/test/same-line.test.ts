@@ -44,7 +44,7 @@ function setup() {
 const markerLines = (text: string) =>
 	text.split("\n").filter((l) => /^(<<<<<<< yours|\|\|\|\|\|\|\| before|=======$|>>>>>>> theirs)/.test(l));
 
-test("a same-line collision a sync showed, with markers, still stands after the next sync brings unrelated work", () => {
+test("a same-line collision a pull showed, with markers, still stands after the next pull brings unrelated work", () => {
 	const project = setup();
 	const first = project.sync("builder5");
 	assert.deepEqual(
@@ -65,7 +65,7 @@ test("a same-line collision a sync showed, with markers, still stands after the 
 	assert.equal(project.publish("builder5", "Third case", 6).ok, false);
 });
 
-test("settling it by editing the block to one line lets the publish through, and writer1 hears what was kept", () => {
+test("settling it by editing the block to one line lets the push through, and writer1 hears what was kept", () => {
 	const project = setup();
 	project.sync("builder5");
 	const text = project.draftOf("builder5")!.view.text("src/smoke/gauge.ts");
@@ -93,7 +93,7 @@ test("settling it by editing the block to one line lets the publish through, and
 	const heard = project.news("writer1").news;
 	assert.ok(
 		heard.includes(
-			"builder5 settled its collision with your version 1 in src/smoke/gauge.ts, publishing version 2: it kept part of each side or rewrote them. abso show 2:src/smoke/gauge.ts shows the file.",
+			"builder5 settled its collision with your version 1 in src/smoke/gauge.ts, pushing version 2: it kept part of each side or rewrote them. abso show 2:src/smoke/gauge.ts shows the file.",
 		),
 		heard.join("\n"),
 	);

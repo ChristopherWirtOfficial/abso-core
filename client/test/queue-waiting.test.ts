@@ -9,7 +9,7 @@ import { queuedLines } from "../src/queue.ts";
 const item = (id: number, agent: string, checking = false): QueueItem => ({
 	id,
 	agent,
-	message: `publish ${id}`,
+	message: `push ${id}`,
 	time: 0,
 	changes: 1,
 	checking,
@@ -17,7 +17,7 @@ const item = (id: number, agent: string, checking = false): QueueItem => ({
 const state = (items: QueueItem[], paused: QueueState["paused"] = null): QueueState =>
 	({ items, paused }) as unknown as QueueState;
 
-describe("waiting: your publishes in the merge queue", () => {
+describe("waiting: your pushes in the merge queue", () => {
 	it("says nothing when none of yours waits, or there's no queue to read", () => {
 		assert.deepEqual(queuedLines(undefined, "ann"), []);
 		assert.deepEqual(queuedLines(state([]), "ann"), []);
@@ -26,13 +26,13 @@ describe("waiting: your publishes in the merge queue", () => {
 
 	it("says where yours stands, and how the outcome comes", () => {
 		assert.deepEqual(queuedLines(state([item(1, "bob", true), item(2, "ann")]), "ann"), [
-			'Your publish 2 ("publish 2") is in the merge queue: waiting, 1 publish ahead of it.',
-			"It lands or is pulled once the project's check runs on it; the outcome comes as news, and abso unqueue takes it back.",
+			'Your push 2 ("push 2") is in the merge queue: waiting, 1 push ahead of it.',
+			"It lands or is turned back once the project's check runs on it; the outcome comes as news, and abso unqueue takes it back.",
 		]);
 		assert.deepEqual(queuedLines(state([item(3, "ann", true), item(4, "bob", true), item(5, "ann")]), "ann"), [
-			'Your publish 3 ("publish 3") is in the merge queue: being checked in a batch of 2.',
-			'Your publish 5 ("publish 5") is in the merge queue: waiting, 2 publishes ahead of it.',
-			"Each lands or is pulled once the project's check runs on it; the outcome comes as news, and abso unqueue takes them back.",
+			'Your push 3 ("push 3") is in the merge queue: being checked in a batch of 2.',
+			'Your push 5 ("push 5") is in the merge queue: waiting, 2 pushes ahead of it.',
+			"Each lands or is turned back once the project's check runs on it; the outcome comes as news, and abso unqueue takes them back.",
 		]);
 	});
 

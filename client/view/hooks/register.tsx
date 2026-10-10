@@ -2,7 +2,7 @@
 //
 // A status line entry, kept current: the space the folder is in, how many
 // files the draft changes, how far shared has moved on, who else has
-// unpublished changes in the same files, and news not yet looked at.
+// unpushed changes in the same files, and news not yet looked at.
 // `/abso-view` opens a pane with the whole picture.
 //
 // Outside an abso folder it costs one folder lookup at session start and
@@ -199,9 +199,9 @@ function unread(v: AvcsView, seen: string): number {
 
 function statusLine(v: AvcsView, seen: string): string {
 	const parts = [`abso: ${v.space === "shared" ? "shared" : `draft ${v.space}`}`];
-	parts.push(v.files.length === 0 ? "nothing unpublished" : `${plural(v.files.length, "file")} unpublished`);
+	parts.push(v.files.length === 0 ? "nothing unpushed" : `${plural(v.files.length, "file")} unpushed`);
 	if (v.base !== null && v.base < v.version)
-		parts.push(`${v.space === "shared" ? "shared" : "the draft"} is ${v.version - v.base} ahead (abso sync)`);
+		parts.push(`${v.space === "shared" ? "shared" : "the draft"} is ${v.version - v.base} ahead (abso pull)`);
 	if (v.overlap.length > 0) parts.push(`${v.overlap.map((o) => o.agent).join(", ")} also on your files`);
 	const fresh = unread(v, seen);
 	if (fresh > 0) parts.push(`${plural(fresh, "news item")} (/abso-view)`);
@@ -257,11 +257,11 @@ export const register: Register = (on) => {
 				<Text bold>
 					{v.space === "shared" ? "Working in shared" : `Working in draft ${v.space}`}, at version {v.version}
 					{v.base !== null && v.base < v.version
-						? ` (your draft builds on ${v.base}; abso sync brings in the rest)`
+						? ` (your draft builds on ${v.base}; abso pull brings in the rest)`
 						: ""}
 				</Text>
 				<Text> </Text>
-				<Text bold>Your unpublished changes</Text>
+				<Text bold>Your unpushed changes</Text>
 				{v.files.length === 0 ? (
 					<Text dimColor> None.</Text>
 				) : (
@@ -286,7 +286,7 @@ export const register: Register = (on) => {
 				<Text> </Text>
 				<Text bold>Others on your files</Text>
 				{v.overlap.length === 0 ? (
-					<Text dimColor> Nobody else has unpublished changes in them.</Text>
+					<Text dimColor> Nobody else has unpushed changes in them.</Text>
 				) : (
 					v.overlap.map((o) => (
 						<Text>

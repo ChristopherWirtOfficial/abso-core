@@ -256,30 +256,30 @@ describe("init and join", () => {
 		writeFileSync(join(dir, "b.txt"), new Uint8Array([0, 1]));
 		const diff = await main(["diff", "pic.bin"], { cwd: dir, env: ENV, write: () => {} });
 		assert.match(diff.stdout, /Binary file pic\.bin changed: [0-9a-f]{12} -> [0-9a-f]{12}/);
-		const refused = await main(["publish", "-m", "new picture"], { cwd: dir, env: ENV, write: () => {} });
+		const refused = await main(["push", "-m", "new picture"], { cwd: dir, env: ENV, write: () => {} });
 		assert.equal(refused.exit, 2);
 		assert.match(
 			refused.stdout,
-			/NOT SENT: b\.txt was text and now has a NUL byte at line 1 \(byte 0\)\..*pass --binary b\.txt\.\nNot published\./,
+			/NOT SENT: b\.txt was text and now has a NUL byte at line 1 \(byte 0\)\..*pass --binary b\.txt\.\nNot pushed\./,
 		);
 		// The publish goes through, and still says the huge file was left out, with a non-zero exit.
-		const published = await avcs(dir, "publish", "-m", "new picture, b is binary now", "--binary", "b.txt");
+		const published = await avcs(dir, "push", "-m", "new picture, b is binary now", "--binary", "b.txt");
 		assert.equal(published.exit, 1, published.out);
-		assert.ok(published.json.version !== undefined, "the rest was published");
+		assert.ok(published.json.version !== undefined, "the rest was pushed");
 		assert.deepEqual(published.json.leftOut, [{ path: "huge.bin", reason: "too big" }]);
 		rmSync(join(dir, "huge.bin")); // the rest of the test is about the files that do go
 		assert.equal("b.txt" in shared("blobs"), false);
 		assert.ok("b.txt" in hosted.project.blobs());
-		assert.equal((await avcs(bob, "sync")).exit, 0);
+		assert.equal((await avcs(bob, "pull")).exit, 0);
 		assert.deepEqual(new Uint8Array(readFileSync(join(bob, "pic.bin"))), new Uint8Array([9, 0, 9]));
 		assert.deepEqual(new Uint8Array(readFileSync(join(bob, "b.txt"))), new Uint8Array([0, 1]));
 
 		// Unrecorded binary work is never overwritten by a sync.
 		writeFileSync(join(bob, "pic.bin"), new Uint8Array([7, 0, 7]));
 		writeFileSync(join(dir, "pic.bin"), new Uint8Array([8, 0, 8]));
-		assert.equal((await avcs(dir, "publish", "-m", "another picture")).exit, 0);
+		assert.equal((await avcs(dir, "push", "-m", "another picture")).exit, 0);
 		// sync records first, so bob's picture goes into his draft and collides with alice's rather than being lost.
-		const synced = JSON.parse((await main(["sync", "--json"], { cwd: bob, env: ENV, write: () => {} })).stdout);
+		const synced = JSON.parse((await main(["pull", "--json"], { cwd: bob, env: ENV, write: () => {} })).stdout);
 		assert.equal(synced.ok, true);
 		assert.deepEqual(new Uint8Array(readFileSync(join(bob, "pic.bin"))), new Uint8Array([7, 0, 7]), "bob's bytes stay");
 
@@ -414,15 +414,15 @@ describe("the hook", () => {
 		assert.match(read(root, ".avcs/hook.log"), /\tEdit\ta\.txt\terror: could not reach/);
 		writeFileSync(join(root, ".avcs", "config.json"), JSON.stringify(config));
 		assert.equal((await avcs(root, "record")).json.sent, 1);
-		assert.equal((await avcs(root, "publish", "-m", "caps")).exit, 0);
+		assert.equal((await avcs(root, "push", "-m", "caps")).exit, 0);
 		assert.equal(shared(name)["a.txt"], "ONE\n");
 	});
 
-	it("hands news back as additionalContext when someone publishes lines in the draft", async () => {
+	it("hands news back as additionalContext when someone pushes lines in the draft", async () => {
 		const { folders } = await project({ "a.txt": "one\ntwo\n", "b.txt": "b\n" }, "alice", "bob");
 		await edit(folders.bob!, "a.txt", "one\n", "uno\n");
 		await edit(folders.alice!, "a.txt", "one\n", "ONE\n");
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "shout one")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "shout one")).exit, 0);
 		const r = await edit(folders.bob!, "b.txt", "b\n", "bee\n");
 		const out = JSON.parse(r.stdout);
 		assert.equal(out.hookSpecificOutput.hookEventName, "PostToolUse");
@@ -449,7 +449,7 @@ describe("the hook", () => {
 	});
 });
 
-describe("record, publish and sync", () => {
+describe("record, push and pull", () => {
 	it("records changes and deletions made outside the hook", async () => {
 		const { name, folders } = await project({ "a.txt": "a\n", "gone.txt": "g\n" }, "alice");
 		write(folders.alice!, { "a.txt": "A\n", "new.txt": "n\n" });
@@ -462,22 +462,22 @@ describe("record, publish and sync", () => {
 		assert.equal((await avcs(folders.alice!, "record")).json.sent, 0);
 	});
 
-	it("publishes, syncs into another folder, refuses a collision, and settles it", async () => {
+	it("pushes, pulls into another folder, refuses a collision, and settles it", async () => {
 		const { folders } = await project({ "a.txt": "one\n", "b.txt": "b\n" }, "alice", "bob");
 		await edit(folders.alice!, "a.txt", "one\n", "alice one\n");
-		const pub = await avcs(folders.alice!, "publish", "-m", "alice was here");
+		const pub = await avcs(folders.alice!, "push", "-m", "alice was here");
 		assert.equal(pub.exit, 0, pub.out);
 		assert.equal(pub.json.version, 1);
 
 		await edit(folders.bob!, "a.txt", "one\n", "bob one\n");
 		write(folders.bob!, { "c.txt": "c\n" }); // not through the hook: publish records it first
-		const refused = await avcs(folders.bob!, "publish", "-m", "bob too");
+		const refused = await avcs(folders.bob!, "push", "-m", "bob too");
 		assert.equal(refused.exit, 2, refused.out);
 		assert.equal(refused.json.collisions[0].file, "a.txt");
 		assert.equal(refused.json.collisions[0].theirs.agent, "alice");
 		assert.equal(refused.json.recorded, 1);
 
-		const sync = await avcs(folders.bob!, "sync");
+		const sync = await avcs(folders.bob!, "pull");
 		assert.equal(sync.json.version, 1);
 		assert.deepEqual(
 			sync.json.collisions.map((c: any) => c.file),
@@ -488,11 +488,11 @@ describe("record, publish and sync", () => {
 		assert.match(both, /bob one/);
 
 		await put(folders.bob!, "a.txt", "alice one\nbob one\n");
-		const ok = await avcs(folders.bob!, "publish", "-m", "keep both");
+		const ok = await avcs(folders.bob!, "push", "-m", "keep both");
 		assert.equal(ok.exit, 0, ok.out);
 		assert.equal(ok.json.version, 2);
 
-		const back = await avcs(folders.alice!, "sync");
+		const back = await avcs(folders.alice!, "pull");
 		assert.deepEqual([...back.json.written].sort(), ["a.txt", "c.txt"]);
 		assert.equal(read(folders.alice!, "a.txt"), "alice one\nbob one\n");
 		assert.equal(read(folders.alice!, "c.txt"), "c\n");
@@ -502,19 +502,19 @@ describe("record, publish and sync", () => {
 		const { folders } = await project({ "a.txt": "a\n", "b.txt": "b\n" }, "alice", "bob");
 		unlinkSync(join(folders.alice!, "b.txt"));
 		write(folders.alice!, { "a.txt": "A\n" });
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "drop b")).exit, 0);
-		const s = await avcs(folders.bob!, "sync");
+		assert.equal((await avcs(folders.alice!, "push", "-m", "drop b")).exit, 0);
+		const s = await avcs(folders.bob!, "pull");
 		assert.deepEqual(s.json.deleted, ["b.txt"]);
 		assert.ok(!existsSync(join(folders.bob!, "b.txt")));
 		assert.equal(read(folders.bob!, "a.txt"), "A\n");
 	});
 
-	it("keeps CRLF line endings when sync rewrites a CRLF file", async () => {
+	it("keeps CRLF line endings when pull rewrites a CRLF file", async () => {
 		const { folders } = await project({ "w.txt": "one\r\ntwo\r\n" }, "alice", "bob");
 		assert.equal(read(folders.bob!, "w.txt"), "one\ntwo\n", "a new file comes in the server form");
 		await edit(folders.bob!, "w.txt", "two\n", "TWO\n");
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "caps")).exit, 0);
-		const s = await avcs(folders.alice!, "sync");
+		assert.equal((await avcs(folders.bob!, "push", "-m", "caps")).exit, 0);
+		const s = await avcs(folders.alice!, "pull");
 		assert.deepEqual(s.json.written, ["w.txt"]);
 		assert.equal(read(folders.alice!, "w.txt"), "one\r\nTWO\r\n");
 	});
@@ -529,8 +529,8 @@ describe("record, publish and sync", () => {
 		write(bob, { ".gitattributes": "*.txt eol=crlf\n*.bin -text\n" });
 		assert.equal((await avcs(bob, "join", name, "--agent", "bob", "--server", fake.url)).exit, 0);
 		write(folders.alice!, { "a.txt": "one\ntwo\n", "b.md": "one\ntwo\n", "c.bin": "x\ny\n" });
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "three files")).exit, 0);
-		assert.equal((await avcs(bob, "sync")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "three files")).exit, 0);
+		assert.equal((await avcs(bob, "pull")).exit, 0);
 		assert.equal(readFileSync(join(bob, "a.txt"), "utf8"), "one\r\ntwo\r\n", "eol=crlf");
 		assert.equal(
 			readFileSync(join(bob, "b.md"), "utf8"),
@@ -540,44 +540,44 @@ describe("record, publish and sync", () => {
 		assert.equal(readFileSync(join(bob, "c.bin"), "utf8"), "x\ny\n", "-text: left alone");
 		git("config", "core.autocrlf", "true");
 		write(folders.alice!, { "d.md": "x\n" });
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "d")).exit, 0);
-		assert.equal((await avcs(bob, "sync")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "d")).exit, 0);
+		assert.equal((await avcs(bob, "pull")).exit, 0);
 		assert.equal(readFileSync(join(bob, "d.md"), "utf8"), "x\r\n", "core.autocrlf true");
 		assert.equal((await avcs(bob, "record")).json.sent, 0, "CRLF on disk is the same text to the server");
 	});
 
-	it("keeps each line's own ending in a mixed-ending file when sync rewrites it (lone CR too)", async () => {
+	it("keeps each line's own ending in a mixed-ending file when pull rewrites it (lone CR too)", async () => {
 		const { folders } = await project({ "m.txt": "a\r\nb\nc\rd\r\ne\r\n" }, "alice", "bob");
 		await edit(folders.bob!, "m.txt", "b\n", "B\nnew\n");
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "change b, add a line")).exit, 0);
-		assert.equal((await avcs(folders.alice!, "sync")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "push", "-m", "change b, add a line")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "pull")).exit, 0);
 		// a, c, d and e keep their endings; the changed and the new line take the most common one (CRLF).
 		assert.equal(read(folders.alice!, "m.txt"), "a\r\nB\r\nnew\r\nc\rd\r\ne\r\n");
 		assert.equal((await avcs(folders.alice!, "record")).json.sent, 0);
 	});
 
-	it("keeps a missing final newline (LF or CRLF) when sync rewrites the file, with nothing left to record", async () => {
+	it("keeps a missing final newline (LF or CRLF) when pull rewrites the file, with nothing left to record", async () => {
 		const { folders } = await project({ "n.txt": "one\ntwo", "c.txt": "x\r\ny" }, "alice", "bob");
 		await edit(folders.bob!, "n.txt", "two\n", "TWO\n");
 		await edit(folders.bob!, "c.txt", "y\n", "Y\n");
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "caps")).exit, 0);
-		const s = await avcs(folders.alice!, "sync");
+		assert.equal((await avcs(folders.bob!, "push", "-m", "caps")).exit, 0);
+		const s = await avcs(folders.alice!, "pull");
 		assert.deepEqual(s.json.written.sort(), ["c.txt", "n.txt"]);
 		assert.equal(read(folders.alice!, "n.txt"), "one\nTWO");
 		assert.equal(read(folders.alice!, "c.txt"), "x\r\nY");
 		assert.equal((await avcs(folders.alice!, "record")).json.sent, 0);
 	});
 
-	it("says so when there is nothing to publish", async () => {
+	it("says so when there is nothing to push", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice");
-		const r = await main(["publish", "-m", "nothing"], { cwd: folders.alice!, env: ENV, write: () => {} });
+		const r = await main(["push", "-m", "nothing"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.equal(r.exit, 0);
-		assert.match(r.stdout, /Nothing to publish: your draft is empty\. Shared is at version 0\./);
+		assert.match(r.stdout, /Nothing to push: your draft is empty\. Shared is at version 0\./);
 	});
 
-	it("refuses publish without a message", async () => {
+	it("refuses push without a message", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice");
-		const r = await avcs(folders.alice!, "publish");
+		const r = await avcs(folders.alice!, "push");
 		assert.equal(r.exit, 1);
 		assert.equal(r.json.error.code, "usage");
 	});
@@ -611,17 +611,17 @@ describe(".claude/ stays local", () => {
 		assert.ok(LOCK in shared(name));
 
 		await edit(folders.lazy!, "a.txt", "one\n", "one lazy\n");
-		const refused = await main(["publish", "-m", "lazy work"], { cwd: folders.lazy!, env: ENV, write: () => {} });
+		const refused = await main(["push", "-m", "lazy work"], { cwd: folders.lazy!, env: ENV, write: () => {} });
 		assert.equal(refused.exit, 2);
 		assert.match(refused.stdout, /\.claude\/scheduled_tasks\.lock: local files that should never have been shared/);
-		assert.match(refused.stdout, /Run abso sync, then publish again\./);
+		assert.match(refused.stdout, /Run abso pull, then push again\./);
 
 		for (const agent of ["lazy", "pike", "prefix"]) {
-			const s = await avcs(folders[agent]!, "sync");
+			const s = await avcs(folders[agent]!, "pull");
 			assert.deepEqual(s.json.collisions, [], `${agent} sees no collision`);
 			assert.equal(read(folders[agent]!, LOCK), `lock ${agent}\n`, `${agent}'s lock file is untouched`);
 			if (agent === "pike") await edit(folders.pike!, "b.txt", "two\n", "two pike\n");
-			const pub = await avcs(folders[agent]!, "publish", "-m", `${agent} work`);
+			const pub = await avcs(folders[agent]!, "push", "-m", `${agent} work`);
 			assert.equal(pub.exit, 0, `${agent}: ${pub.out}`);
 		}
 		assert.ok(!(LOCK in shared(name)), "shared no longer has it");
@@ -630,22 +630,22 @@ describe(".claude/ stays local", () => {
 	});
 });
 
-describe("named drafts: switch, land and draft-sync", () => {
+describe("named drafts: switch, land and draft-pull", () => {
 	it("carries work into a new draft, parks and restores it, lands it, and moves it onto shared", async () => {
 		const { name, folders } = await project({ "a.txt": "a\n", "b.txt": "b\n", "c.txt": "c\n" }, "alice", "bob");
 		const alice = folders.alice!;
 
-		// Unpublished work carried into a new draft stays in the folder.
+		// Unpushed work carried into a new draft stays in the folder.
 		await edit(alice, "a.txt", "a\n", "a in exp\n");
 		const started = await avcs(alice, "switch", "-c", "exp");
 		assert.equal(started.exit, 0, started.out);
 		assert.equal(started.json.draft, "exp");
 		assert.equal(read(alice, "a.txt"), "a in exp\n");
-		assert.equal((await avcs(alice, "publish", "-m", "exp: change a")).exit, 0);
-		assert.equal(shared(name)["a.txt"], "a\n", "publishing into the draft leaves shared alone");
+		assert.equal((await avcs(alice, "push", "-m", "exp: change a")).exit, 0);
+		assert.equal(shared(name)["a.txt"], "a\n", "pushing into the draft leaves shared alone");
 
 		// A folder-only edit (no hook) is recorded before switching, so it is parked, not lost.
-		write(alice, { "b.txt": "b unpublished in exp\n" });
+		write(alice, { "b.txt": "b unpushed in exp\n" });
 		const back = await avcs(alice, "switch", "shared");
 		assert.equal(back.exit, 0, back.out);
 		assert.equal(back.json.draft, null);
@@ -659,22 +659,22 @@ describe("named drafts: switch, land and draft-sync", () => {
 		const again = await avcs(alice, "switch", "exp");
 		assert.equal(again.exit, 0, again.out);
 		assert.equal(read(alice, "a.txt"), "a in exp\n");
-		assert.equal(read(alice, "b.txt"), "b unpublished in exp\n", "the parked work came back");
+		assert.equal(read(alice, "b.txt"), "b unpushed in exp\n", "the parked work came back");
 
 		// Shared moves on; draft-sync brings it into the draft and this folder.
 		await edit(folders.bob!, "c.txt", "c\n", "c from bob\n");
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "bob: change c")).exit, 0);
-		const moved = await avcs(alice, "draft-sync");
+		assert.equal((await avcs(folders.bob!, "push", "-m", "bob: change c")).exit, 0);
+		const moved = await avcs(alice, "draft-pull");
 		assert.equal(moved.exit, 0, moved.out);
 		assert.equal(moved.json.sharedBase, 1);
 		assert.equal(read(alice, "c.txt"), "c from bob\n");
 
 		// Land the draft: its published work goes into shared as one unit.
-		assert.equal((await avcs(alice, "publish", "-m", "exp: change b")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "exp: change b")).exit, 0);
 		const landed = await avcs(alice, "land", "-m", "land exp");
 		assert.equal(landed.exit, 0, landed.out);
 		assert.equal(shared(name)["a.txt"], "a in exp\n");
-		assert.equal(shared(name)["b.txt"], "b unpublished in exp\n");
+		assert.equal(shared(name)["b.txt"], "b unpushed in exp\n");
 		assert.equal(shared(name)["c.txt"], "c from bob\n");
 
 		// Switching back syncs: the folder shows shared as it is now, landed work included.
@@ -693,7 +693,7 @@ describe("named drafts: switch, land and draft-sync", () => {
 		assert.equal((await avcs(alice, "switch", "exp")).exit, 0);
 		assert.equal(read(alice, "a.txt"), "one\ntwo\nthree\n", "the shared edit is parked");
 		await edit(folders.bob!, "a.txt", "two\n", "two bob\n");
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "bob: line two")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "push", "-m", "bob: line two")).exit, 0);
 
 		const back = await avcs(alice, "switch", "shared");
 		assert.equal(back.exit, 0, back.out);
@@ -712,21 +712,21 @@ describe("named drafts: switch, land and draft-sync", () => {
 describe("announcements", () => {
 	it("reach every other agent once, as news on their next edit or abso news", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "lead", "bob", "carol");
-		const sent = await avcs(folders.lead!, "announce", "Stop", "publishing", "until", "v12", "lands");
+		const sent = await avcs(folders.lead!, "announce", "Stop", "pushing", "until", "v12", "lands");
 		assert.equal(sent.exit, 0, sent.out);
 		assert.deepEqual([...sent.json.to].sort(), ["bob", "carol"]);
 
 		const bob = await avcs(folders.bob!, "news");
-		assert.deepEqual(bob.json.news, ["Announcement from lead (as claimed): Stop publishing until v12 lands"]);
+		assert.deepEqual(bob.json.news, ["Announcement from lead (as claimed): Stop pushing until v12 lands"]);
 		assert.match(
 			read(folders.bob!, ".avcs/news.log"),
-			/\tAnnouncement from lead \(as claimed\): Stop publishing until v12 lands\n$/,
+			/\tAnnouncement from lead \(as claimed\): Stop pushing until v12 lands\n$/,
 		);
 		assert.deepEqual((await avcs(folders.bob!, "news")).json.news, [], "each item comes once");
 
 		// carol gets it on her next edit instead.
 		const hooked = await edit(folders.carol!, "a.txt", "a\n", "a from carol\n");
-		assert.match(hooked.stdout, /lead \(as claimed\) told you:\\n {2}Stop publishing until v12 lands/);
+		assert.match(hooked.stdout, /lead \(as claimed\) told you:\\n {2}Stop pushing until v12 lands/);
 	});
 
 	it("go only to the agents named with --to, and refuse unknown ones", async () => {
@@ -748,7 +748,7 @@ describe("starting notes (#37, #13)", () => {
 		const started = await text(folders.builder6!, "start", "Storm cloud art", "storm.ts");
 		assert.equal(started.exit, 0, started.stderr);
 		assert.match(started.stdout, /Starting on "Storm cloud art", naming storm\.ts\./);
-		assert.match(started.stdout, /storm\.ts: builder3 \(1 unpublished change\)/);
+		assert.match(started.stdout, /storm\.ts: builder3 \(1 unpushed change\)/);
 		const where = await text(folders.builder3!, "where");
 		assert.match(where.stdout, /Starting on:\n {2}builder6: "Storm cloud art" \(storm\.ts\), since /);
 		assert.match(
@@ -768,17 +768,17 @@ describe("a text file that turns binary (#25, Fuzzer)", () => {
 		writeFileSync(join(alice, "fuzz.ts"), "one\ntwo\nth\u0000ree\n");
 		const status = await main(["status"], { cwd: alice, env: ENV, write: () => {} });
 		assert.match(status.stdout, /NOT SENT: fuzz\.ts was text and now has a NUL byte at line 3 \(byte 10\)/);
-		const refused = await avcs(alice, "publish", "-m", "oops");
+		const refused = await avcs(alice, "push", "-m", "oops");
 		assert.equal(refused.exit, 2);
 		assert.deepEqual(refused.json.turnedBinary, [{ path: "fuzz.ts", why: "a NUL byte", offset: 10, line: 3 }]);
 		assert.equal(shared(name)["fuzz.ts"], "one\ntwo\nthree\n", "the server keeps the text");
 
 		writeFileSync(join(alice, "fuzz.ts"), "one\ntwo\nthree, fixed\n");
-		assert.equal((await avcs(alice, "publish", "-m", "fixed")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "fixed")).exit, 0);
 		assert.equal(shared(name)["fuzz.ts"], "one\ntwo\nthree, fixed\n");
 
 		writeFileSync(join(alice, "fuzz.ts"), Buffer.concat([Buffer.from("ok\n"), Buffer.from([0xc3, 0x28])]));
-		assert.deepEqual((await avcs(alice, "publish", "-m", "bad utf-8")).json.turnedBinary, [
+		assert.deepEqual((await avcs(alice, "push", "-m", "bad utf-8")).json.turnedBinary, [
 			{ path: "fuzz.ts", why: "bytes that are not UTF-8", offset: 3, line: 2 },
 		]);
 	});
@@ -787,23 +787,23 @@ describe("a text file that turns binary (#25, Fuzzer)", () => {
 describe("drop, pluck, amend, labels and follow (#10, #27)", () => {
 	const text = async (cwd: string, ...argv: string[]) => main(argv, { cwd, env: ENV, write: () => {} });
 
-	it("drops a published version, refuses one others build on, and says so in the log", async () => {
+	it("drops a pushed version, refuses one others build on, and says so in the log", async () => {
 		const { name, folders } = await project({ "a.txt": "a\n", "b.txt": "b\n" }, "alice", "bob");
 		const [alice, bob] = [folders.alice!, folders.bob!];
 		write(alice, { "a.txt": "a, changed\n" });
-		assert.equal((await avcs(alice, "publish", "-m", "change a")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "change a")).exit, 0);
 		write(alice, { "a.txt": "a, changed again\n" });
-		assert.equal((await avcs(alice, "publish", "-m", "change a again")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "change a again")).exit, 0);
 		write(alice, { "b.txt": "b, changed\n" });
-		assert.equal((await avcs(alice, "publish", "-m", "change b")).exit, 0);
-		assert.equal((await avcs(bob, "sync")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "change b")).exit, 0);
+		assert.equal((await avcs(bob, "pull")).exit, 0);
 
 		// Version 2 builds on version 1: refused, then dropped together.
 		const refused = await text(alice, "drop", "1", "-m", "a was wrong");
 		assert.equal(refused.exit, 2);
 		assert.match(
 			refused.stdout,
-			/Not dropped\.\nLater published versions build on it:\n {2}version 2 by alice: change a again\nPass --with-dependents/,
+			/Not dropped\.\nLater pushed versions build on it:\n {2}version 2 by alice: change a again\nPass --with-dependents/,
 		);
 		assert.equal((await text(alice, "drop", "1")).exit, 1, "a drop needs a message");
 		const dropped = await avcs(alice, "drop", "1", "-m", "a was wrong", "--with-dependents");
@@ -814,7 +814,7 @@ describe("drop, pluck, amend, labels and follow (#10, #27)", () => {
 		assert.equal(shared(name)["b.txt"], "b, changed\n", "version 3 stays");
 
 		// The other agent's sync takes it out of their folder; the log says what happened.
-		assert.equal((await avcs(bob, "sync")).exit, 0);
+		assert.equal((await avcs(bob, "pull")).exit, 0);
 		assert.equal(read(bob, "a.txt"), "a\n");
 		const log = await text(bob, "log");
 		assert.match(log.stdout, /version 4 by alice, .*: a was wrong\n {2}1 file: a\.txt\n {2}drops versions 1, 2/);
@@ -824,12 +824,12 @@ describe("drop, pluck, amend, labels and follow (#10, #27)", () => {
 		);
 	});
 
-	it("refuses a publish that builds on lines a drop took out, plainly, with exit 2", async () => {
+	it("refuses a push that builds on lines a drop took out, plainly, with exit 2", async () => {
 		const { folders } = await project({ "a.txt": "one\ntwo\n" }, "alice", "bob");
 		const [alice, bob] = [folders.alice!, folders.bob!];
 		write(alice, { "a.txt": "one\nTWO\n" });
-		assert.equal((await avcs(alice, "publish", "-m", "shout two")).exit, 0);
-		assert.equal((await avcs(bob, "sync")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "shout two")).exit, 0);
+		assert.equal((await avcs(bob, "pull")).exit, 0);
 		// A drop never touches unpublished work.
 		write(bob, { "a.txt": "one\nTWO?\n" });
 		assert.equal((await avcs(bob, "record")).exit, 0);
@@ -837,44 +837,44 @@ describe("drop, pluck, amend, labels and follow (#10, #27)", () => {
 		assert.equal(blocked.exit, 2);
 		assert.match(
 			blocked.stdout,
-			/Unpublished work builds on it, and a drop never touches unpublished work:\n {2}agent bob: a\.txt/,
+			/Unpushed work builds on it, and a drop never touches unpushed work:\n {2}agent bob: a\.txt/,
 		);
 		assert.equal((await avcs(bob, "restore", "a.txt")).exit, 0);
 		// The drop lands before bob syncs; bob's edit still builds on the dropped line.
 		assert.equal((await avcs(alice, "drop", "1", "-m", "no shouting")).exit, 0);
 		write(bob, { "a.txt": "one\nTWO!\n" });
-		const publish = await text(bob, "publish", "-m", "more shouting");
+		const publish = await text(bob, "push", "-m", "more shouting");
 		assert.equal(publish.exit, 2);
 		assert.match(
 			publish.stderr,
-			/^abso publish: refused: your unpublished changes to a\.txt build on lines a drop took out of shared; restore those files \(abso restore a\.txt\)/,
+			/^abso push: refused: your unpushed changes to a\.txt build on lines a drop took out of shared; restore those files \(abso restore a\.txt\)/,
 		);
 	});
 
-	it("amends the newest publish, and the log keeps the first message", async () => {
+	it("amends the newest push, and the log keeps the first message", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice");
 		const alice = folders.alice!;
 		write(alice, { "a.txt": "a2\n" });
-		assert.equal((await avcs(alice, "publish", "-m", "chnage a")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "chnage a")).exit, 0);
 		const amended = await text(alice, "amend", "-m", "change a");
 		assert.equal(amended.exit, 0, amended.stderr);
 		assert.match(amended.stdout, /^Version 1 of shared now says: change a\n\(It said: chnage a\.\)/);
 		assert.match(
 			(await text(alice, "log")).stdout,
-			/version 1 by alice, .*: change a\n {2}1 file: a\.txt\n {2}amended; first published as: chnage a/,
+			/version 1 by alice, .*: change a\n {2}1 file: a\.txt\n {2}amended; first pushed as: chnage a/,
 		);
-		assert.match((await text(alice, "show", "1")).stdout, /: change a\n {2}amended; first published as: chnage a/);
+		assert.match((await text(alice, "show", "1")).stdout, /: change a\n {2}amended; first pushed as: chnage a/);
 	});
 
-	it("labels versions, and a folder that follows a label syncs to it", async () => {
+	it("labels versions, and a folder that follows a label pulls to it", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice", "bob");
 		const [alice, bob] = [folders.alice!, folders.bob!];
 		write(alice, { "a.txt": "a1\n" });
-		assert.equal((await avcs(alice, "publish", "-m", "one")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "one")).exit, 0);
 		const labeled = await text(alice, "label", "stable");
 		assert.equal(labeled.stdout, "Put label stable on version 1. It marks 1 version: 1.\n");
 		write(alice, { "a.txt": "a2\n" });
-		assert.equal((await avcs(alice, "publish", "-m", "two")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "two")).exit, 0);
 		assert.equal((await text(alice, "label", "bad name!")).exit, 1);
 		assert.deepEqual((await avcs(alice, "labels")).json.labels, { stable: [1] });
 		assert.match(
@@ -892,7 +892,7 @@ describe("drop, pluck, amend, labels and follow (#10, #27)", () => {
 
 		// Moving the label moves the folder on its next sync.
 		assert.equal((await avcs(alice, "label", "stable", "--version", "2")).exit, 0);
-		assert.equal((await avcs(bob, "sync")).exit, 0);
+		assert.equal((await avcs(bob, "pull")).exit, 0);
 		assert.equal(read(bob, "a.txt"), "a2\n");
 
 		assert.equal((await avcs(alice, "label", "stable", "--version", "2", "--remove")).json.versions.join(), "1");
@@ -908,9 +908,9 @@ describe("drop, pluck, amend, labels and follow (#10, #27)", () => {
 		const alice = folders.alice!;
 		assert.equal((await avcs(alice, "switch", "-c", "exp")).exit, 0);
 		write(alice, { "a.txt": "a in exp\n" });
-		assert.equal((await avcs(alice, "publish", "-m", "exp: a")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "exp: a")).exit, 0);
 		write(alice, { "b.txt": "b in exp\n" });
-		assert.equal((await avcs(alice, "publish", "-m", "exp: b")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "exp: b")).exit, 0);
 		const plucked = await text(folders.bob!, "pluck", "exp", "2", "-m", "just b");
 		assert.equal(plucked.exit, 0, plucked.stderr);
 		assert.match(plucked.stdout, /^Plucked 1 version of draft exp into shared as version 1/);
@@ -919,7 +919,7 @@ describe("drop, pluck, amend, labels and follow (#10, #27)", () => {
 		assert.equal((await text(folders.bob!, "pluck", "exp", "-m", "nothing")).exit, 1);
 	});
 
-	it("blames a named draft, and marks your own unpublished lines with --mine", async () => {
+	it("blames a named draft, and marks your own unpushed lines with --mine", async () => {
 		const { folders } = await project({ "a.txt": "one\ntwo\n" }, "alice");
 		const alice = folders.alice!;
 		write(alice, { "a.txt": "one\ntwo\nthree\n" });
@@ -928,7 +928,7 @@ describe("drop, pluck, amend, labels and follow (#10, #27)", () => {
 		assert.equal(mine.exit, 0, mine.stderr);
 		assert.match(mine.stdout, /^a\.txt as your view has it now \(lines 1-3 of 3\):/);
 		assert.match(mine.stdout, /\n {2}3 {2}\* {4}alice {2}three\n/);
-		assert.match(mine.stdout, /\* not published yet/);
+		assert.match(mine.stdout, /\* not pushed yet/);
 		assert.match((await text(alice, "blame", "a.txt")).stdout, /lines 1-2 of 2/, "shared does not have it");
 		assert.equal((await text(alice, "blame", "a.txt", "--mine", "--draft", "x")).exit, 1);
 		const why = await avcs(alice, "why", "a.txt:3", "--mine");
@@ -936,7 +936,7 @@ describe("drop, pluck, amend, labels and follow (#10, #27)", () => {
 		assert.equal(why.json.text, "three");
 
 		assert.equal((await avcs(alice, "switch", "-c", "exp")).exit, 0);
-		assert.equal((await avcs(alice, "publish", "-m", "exp: three")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "exp: three")).exit, 0);
 		assert.match(
 			(await text(alice, "blame", "a.txt", "--draft", "exp")).stdout,
 			/^a\.txt as draft exp has it at version 1 \(lines 1-3 of 3\):/,
@@ -948,11 +948,11 @@ describe("renames (#27)", () => {
 	const text = async (cwd: string, ...argv: string[]) => main(argv, { cwd, env: ENV, write: () => {} });
 	const SRC = "export function f() {\n  return 1;\n}\n\nexport const x = 2;\n";
 
-	it("shows a rename as one change in diff, show and sync, and log follows it back", async () => {
+	it("shows a rename as one change in diff, show and pull, and log follows it back", async () => {
 		const { name, folders } = await project({ "lib/old.ts": SRC, "keep.ts": "k\n" }, "alice", "bob");
 		const [alice, bob] = [folders.alice!, folders.bob!];
 		write(alice, { "lib/old.ts": SRC.replace("return 1", "return 2") });
-		assert.equal((await avcs(alice, "publish", "-m", "f returns 2")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "f returns 2")).exit, 0);
 
 		// Renamed with one line changed: one file, 1 line added and 1 removed.
 		renameSync(join(alice, "lib", "old.ts"), join(alice, "lib", "new.ts"));
@@ -967,7 +967,7 @@ describe("renames (#27)", () => {
 			/rename from lib\/old\.ts/,
 			"the old path picks the rename too",
 		);
-		assert.equal((await avcs(alice, "publish", "-m", "rename old to new")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "rename old to new")).exit, 0);
 		assert.equal(shared(name)["lib/new.ts"], SRC.replace("return 1", "return 2").replace("x = 2", "x = 3"));
 
 		const show = await text(alice, "show", "2");
@@ -976,7 +976,7 @@ describe("renames (#27)", () => {
 			/1 file \(1 renamed\), 1 line added, 1 removed\.\nsimilarity index 80%\nrename from lib\/old\.ts\nrename to lib\/new\.ts/,
 		);
 
-		const sync = await avcs(bob, "sync");
+		const sync = await avcs(bob, "pull");
 		assert.deepEqual(sync.json.renamed, [{ from: "lib/old.ts", to: "lib/new.ts" }]);
 		write(bob, { "keep.ts": "k\n" });
 
@@ -993,11 +993,11 @@ describe("renames (#27)", () => {
 			(await text(alice, "diff")).stdout,
 			/: 1 file \(1 renamed\), 0 lines added, 0 removed\.\nsimilarity index 100%\nrename from keep\.ts\nrename to kept\.ts\n$/,
 		);
-		assert.equal((await avcs(alice, "publish", "-m", "rename keep")).exit, 0);
-		const synced = await text(bob, "sync");
+		assert.equal((await avcs(alice, "push", "-m", "rename keep")).exit, 0);
+		const synced = await text(bob, "pull");
 		assert.match(
 			synced.stdout,
-			/Synced to version 3: 0 files updated, 0 deleted, 1 renamed\.\n {2}renamed: keep\.ts -> kept\.ts/,
+			/Pulled to version 3: 0 files updated, 0 deleted, 1 renamed\.\n {2}renamed: keep\.ts -> kept\.ts/,
 		);
 	});
 
@@ -1046,7 +1046,7 @@ describe("abso run -- <program> <arg...> (trial request, Pike VM)", () => {
 	});
 });
 
-describe("a quieter sync (trial request)", () => {
+describe("a quieter pull (trial request)", () => {
 	it("names up to 8 files per line, and --verbose lists every one", async () => {
 		const files: Record<string, string> = {};
 		for (let i = 0; i < 11; i++) files[`f${String(i).padStart(2, "0")}.txt`] = `${i}\n`;
@@ -1055,15 +1055,15 @@ describe("a quieter sync (trial request)", () => {
 		const changed: Record<string, string> = {};
 		for (const f of Object.keys(files)) changed[f] = `${files[f]}changed\n`;
 		write(alice, changed);
-		assert.equal((await avcs(alice, "publish", "-m", "change all")).exit, 0);
-		const quiet = await main(["sync"], { cwd: bob, env: ENV, write: () => {} });
+		assert.equal((await avcs(alice, "push", "-m", "change all")).exit, 0);
+		const quiet = await main(["pull"], { cwd: bob, env: ENV, write: () => {} });
 		assert.equal(
 			quiet.stdout,
-			"Synced to version 1: 11 files updated, 0 deleted.\n  updated: f00.txt, f01.txt, f02.txt, f03.txt, f04.txt, f05.txt, f06.txt, f07.txt, and 3 more\n  (abso sync --verbose lists every file)\n",
+			"Pulled to version 1: 11 files updated, 0 deleted.\n  updated: f00.txt, f01.txt, f02.txt, f03.txt, f04.txt, f05.txt, f06.txt, f07.txt, and 3 more\n  (abso pull --verbose lists every file)\n",
 		);
 		write(alice, files);
-		assert.equal((await avcs(alice, "publish", "-m", "change back")).exit, 0);
-		const loud = await main(["sync", "--verbose"], { cwd: bob, env: ENV, write: () => {} });
+		assert.equal((await avcs(alice, "push", "-m", "change back")).exit, 0);
+		const loud = await main(["pull", "--verbose"], { cwd: bob, env: ENV, write: () => {} });
 		assert.equal(loud.stdout.split("\n").filter((l) => l.startsWith("  updated f")).length, 11);
 	});
 });
@@ -1239,7 +1239,7 @@ describe("a name defined twice (#25)", () => {
 		assert.equal(
 			text,
 			[
-				`  src/re.ts: parse is defined twice, yours (lines 10-12) and bob's from version 7 ("add parse") (lines 3-4). Keep one, then publish.`,
+				`  src/re.ts: parse is defined twice, yours (lines 10-12) and bob's from version 7 ("add parse") (lines 3-4). Keep one, then push.`,
 				"    yours:",
 				"      export function parse(s) {",
 				"        return s;",
@@ -1251,30 +1251,30 @@ describe("a name defined twice (#25)", () => {
 		);
 	});
 
-	it("refuses a publish that defines a name another agent defined in the same file", async () => {
+	it("refuses a push that defines a name another agent defined in the same file", async () => {
 		const { folders } = await project({ "a.ts": "export const x = 1;\n" }, "alice", "bob");
 		const [alice, bob] = [folders.alice!, folders.bob!];
 		write(alice, { "a.ts": "export const x = 1;\nexport function parseClassSet() {\n  return 1;\n}\n" });
-		assert.equal((await avcs(alice, "publish", "-m", "add parse")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "add parse")).exit, 0);
 		write(bob, { "a.ts": "export function parseClassSet() {\n  return 2;\n}\nexport const x = 1;\n" });
 		// Sync brings alice's parse into bob's view, where it is defined twice: sync lists it, publish refuses.
-		const synced = await main(["sync"], { cwd: bob, env: ENV, write: () => {} });
+		const synced = await main(["pull"], { cwd: bob, env: ENV, write: () => {} });
 		assert.match(
 			synced.stdout,
-			/1 collision: a name defined twice needs one definition kept before you publish\.\n/,
+			/1 collision: a name defined twice needs one definition kept before you push\.\n/,
 			"no talk of both sides' lines: none changed",
 		);
 		// Where each definition is: the declaration line, or (engine after e94f772) the whole definition.
 		assert.match(
 			synced.stdout,
-			/a\.ts: parseClassSet is defined twice, yours \((line 1|lines 1-3)\) and alice's from version 1 \("add parse"\) \((line 5|lines 5-7)\)\. Keep one, then publish\./,
+			/a\.ts: parseClassSet is defined twice, yours \((line 1|lines 1-3)\) and alice's from version 1 \("add parse"\) \((line 5|lines 5-7)\)\. Keep one, then push\./,
 		);
-		const refused = await main(["publish", "-m", "my parse"], { cwd: bob, env: ENV, write: () => {} });
+		const refused = await main(["push", "-m", "my parse"], { cwd: bob, env: ENV, write: () => {} });
 		assert.equal(refused.exit, 2, refused.stdout + refused.stderr);
-		assert.match(refused.stdout, /^Not published: 1 collision\.\n {2}a\.ts: parseClassSet is defined twice/);
+		assert.match(refused.stdout, /^Not pushed: 1 collision\.\n {2}a\.ts: parseClassSet is defined twice/);
 		assert.match(
 			refused.stdout,
-			/\nKeep one definition of each name defined twice \(delete yours, or theirs\), then publish again\.\n$/,
+			/\nKeep one definition of each name defined twice \(delete yours, or theirs\), then push again\.\n$/,
 		);
 	});
 });
@@ -1333,7 +1333,7 @@ describe("paths from the server never leave the folder", () => {
 		const files = Object.fromEntries([...HOSTILE.map((p) => [p, "pwned\n"] as const), ["fine/new.txt", "fine\n"]]);
 		const parent = dirname(bob);
 		fake.injectSync = { files };
-		const sync = await main(["sync", "--json"], { cwd: bob, env: ENV, write: () => {} });
+		const sync = await main(["pull", "--json"], { cwd: bob, env: ENV, write: () => {} });
 		const json = JSON.parse(sync.stdout);
 		assert.equal(json.ok, true, sync.stdout);
 		assert.deepEqual(json.refused.map((r: { path: string }) => r.path).sort(), [...HOSTILE].sort());
@@ -1345,7 +1345,7 @@ describe("paths from the server never leave the folder", () => {
 		assert.equal(existsSync(join(bob, ".claude")), false);
 		assert.equal(existsSync(join(bob, "abs.txt")), false);
 		fake.injectSync = { files };
-		const text = await main(["sync"], { cwd: folders.carol!, env: ENV, write: () => {} });
+		const text = await main(["pull"], { cwd: folders.carol!, env: ENV, write: () => {} });
 		assert.match(text.stdout, /REFUSED 15 paths from the server, and wrote nothing there/);
 		assert.match(text.stdout, /\n {2}"\.\.\/escape\.txt": it has a "\.\." part\n/);
 		assert.match(
@@ -1414,7 +1414,7 @@ describe("paths from the server never leave the folder", () => {
 		fake.injectSync = {
 			files: { "CLAUDE~1/settings.json": '{"hooks":"pwned"}\n', "GIT~1/config": "pwned\n", "fine.txt": "fine\n" },
 		};
-		const json = JSON.parse((await main(["sync", "--json"], { cwd: bob, env: ENV, write: () => {} })).stdout);
+		const json = JSON.parse((await main(["pull", "--json"], { cwd: bob, env: ENV, write: () => {} })).stdout);
 		assert.deepEqual(json.refused.map((r: { path: string }) => r.path).sort(), [
 			"CLAUDE~1/settings.json",
 			"GIT~1/config",
@@ -1446,29 +1446,29 @@ describe("paths from the server never leave the folder", () => {
 		assert.deepEqual(readdirSync(dir), ["a.txt"], "the temporary file is gone");
 	});
 
-	it("a write the disk refuses is named, and the rest of the sync still lands", async () => {
+	it("a write the disk refuses is named, and the rest of the pull still lands", async () => {
 		const { folders } = await project({ "ok.txt": "ok\n" }, "alice", "bob");
 		const bob = folders.bob!;
 		// "block" is a file here, so block/x.txt can't be written; z.txt after it still is.
 		write(bob, { block: "a file, not a folder\n" });
 		fake.injectSync = { files: { "block/x.txt": "x\n", "z.txt": "z\n" } };
-		const sync = await main(["sync", "--json"], { cwd: bob, env: ENV, write: () => {} });
+		const sync = await main(["pull", "--json"], { cwd: bob, env: ENV, write: () => {} });
 		const json = JSON.parse(sync.stdout);
 		assert.equal(json.ok, true, sync.stdout + sync.stderr);
 		assert.equal(json.refused.length, 1);
 		assert.equal(json.refused[0].path, "block/x.txt");
 		assert.match(json.refused[0].why, /^writing it here failed \(/);
-		assert.equal(read(bob, "z.txt"), "z\n", "the rest of the sync still lands");
+		assert.equal(read(bob, "z.txt"), "z\n", "the rest of the pull still lands");
 
 		// Remembered (#51): no later sync sends it again, so status and every sync name it until a write works.
 		const stale =
-			/Stale here: a sync couldn't write this file, and no later sync sends it again\. Close whatever holds it, then abso sync --full: block\/x\.txt \(version \d+: [A-Z]+\)/;
+			/Stale here: a pull couldn't write this file, and no later pull sends it again\. Close whatever holds it, then abso pull --full: block\/x\.txt \(version \d+: [A-Z]+\)/;
 		assert.match((await main(["status"], { cwd: bob, env: ENV, write: () => {} })).stdout, stale);
-		const again = await main(["sync"], { cwd: bob, env: ENV, write: () => {} });
+		const again = await main(["pull"], { cwd: bob, env: ENV, write: () => {} });
 		assert.match(again.stdout, stale);
 		rmSync(join(bob, "block"));
 		fake.injectSync = { files: { "block/x.txt": "x\n" } };
-		assert.equal((await main(["sync"], { cwd: bob, env: ENV, write: () => {} })).exit, 0);
+		assert.equal((await main(["pull"], { cwd: bob, env: ENV, write: () => {} })).exit, 0);
 		assert.equal(read(bob, "block/x.txt"), "x\n");
 		assert.doesNotMatch((await main(["status"], { cwd: bob, env: ENV, write: () => {} })).stdout, /Stale here/);
 	});
@@ -1480,7 +1480,7 @@ describe("paths from the server never leave the folder", () => {
 			files: { up: "", "in-folder": "" },
 			modes: { up: { link: "../../.ssh" }, "in-folder": { link: "ok.txt" } },
 		};
-		const json = JSON.parse((await main(["sync", "--json"], { cwd: bob, env: ENV, write: () => {} })).stdout);
+		const json = JSON.parse((await main(["pull", "--json"], { cwd: bob, env: ENV, write: () => {} })).stdout);
 		assert.deepEqual(json.refused, [{ path: "up", why: "it links to ../../.ssh, outside this folder" }]);
 		assert.equal(existsSync(join(bob, "up")), false);
 
@@ -1631,10 +1631,10 @@ describe("abso run --at <version> [--files <glob>] (trial request, Backtracker)"
 		const { folders } = await project({ "v.txt": "one\n", "show.js": SHOW }, "alice");
 		const alice = folders.alice!;
 		write(alice, { "v.txt": "two\n" });
-		assert.equal((await avcs(alice, "publish", "-m", "two")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "two")).exit, 0);
 		write(alice, { "v.txt": "three\n", "new.txt": "n\n" });
-		assert.equal((await avcs(alice, "publish", "-m", "three, and new")).exit, 0);
-		write(alice, { "v.txt": "four, unpublished\n" });
+		assert.equal((await avcs(alice, "push", "-m", "three, and new")).exit, 0);
+		write(alice, { "v.txt": "four, unpushed\n" });
 		const run = async (...a: string[]) => {
 			let out = "";
 			let err = "";
@@ -1648,7 +1648,7 @@ describe("abso run --at <version> [--files <glob>] (trial request, Backtracker)"
 		};
 
 		const now = await run("node", "show.js");
-		assert.equal(now.out, "four, unpublished new -\n");
+		assert.equal(now.out, "four, unpushed new -\n");
 		const v1 = await run("--at", "1", "node", "show.js");
 		assert.equal(v1.out, "two no new 1\n", v1.err);
 		assert.match(v1.err, /^abso: running version 1 of shared in the box \(3 files\); your folder is untouched\.\n/);
@@ -1663,7 +1663,7 @@ describe("abso run --at <version> [--files <glob>] (trial request, Backtracker)"
 		assert.equal(gone.out, "two no new 1 files new.txt,v.txt\n", gone.err);
 		assert.match(gone.err, /left out, not there at version 1: new\.txt/);
 
-		assert.equal(read(alice, "v.txt"), "four, unpublished\n", "the folder is untouched");
+		assert.equal(read(alice, "v.txt"), "four, unpushed\n", "the folder is untouched");
 		assert.equal((await avcs(alice, "record")).json.sent, 0, "nothing old was recorded");
 		assert.equal((await run("--files", "v.txt", "node", "show.js")).exit, 1);
 		assert.equal((await run("--at", "two", "node", "show.js")).exit, 1);
@@ -1698,16 +1698,16 @@ describe("pause, named records, and the hint toward -- (trial requests, Backtrac
 		assert.equal(hooked.outcome, "skipped: recording is paused (abso resume)");
 		const record = await avcs(alice, "record");
 		assert.equal(record.exit, 2);
-		const publish = await main(["publish", "-m", "nothing"], { cwd: alice, env: ENV, write: () => {} });
+		const publish = await main(["push", "-m", "nothing"], { cwd: alice, env: ENV, write: () => {} });
 		assert.match(
 			publish.stdout,
-			/^Recording is paused \(abso resume\): your folder's changes were not sent first\.\nNothing to publish/,
+			/^Recording is paused \(abso resume\): your folder's changes were not sent first\.\nNothing to push/,
 		);
 		assert.equal(shared(name)["a.txt"], "one\n");
 		assert.match((await main(["resume"], { cwd: alice, env: ENV, write: () => {} })).stdout, /^Recording again\./);
 		write(alice, { "b.txt": "b2\n" });
-		const sent = await main(["publish", "-m", "now"], { cwd: alice, env: ENV, write: () => {} });
-		assert.match(sent.stdout, /^Recorded first: 2 changed \(a\.txt, b\.txt\)\.\nPublished version 1\./);
+		const sent = await main(["push", "-m", "now"], { cwd: alice, env: ENV, write: () => {} });
+		assert.match(sent.stdout, /^Recorded first: 2 changed \(a\.txt, b\.txt\)\.\nPushed version 1\./);
 		assert.equal(shared(name)["a.txt"], "old copy\n");
 	});
 
@@ -1725,36 +1725,36 @@ describe("pause, named records, and the hint toward -- (trial requests, Backtrac
 	});
 });
 
-describe("publish and sync say what happened to others' work (#37, the game trial)", () => {
-	it("a publish on top of versions the folder lacks says nothing was overwritten", async () => {
+describe("push and pull say what happened to others' work (#37, the game trial)", () => {
+	it("a push on top of versions the folder lacks says nothing was overwritten", async () => {
 		const { folders } = await project({ "a.txt": "a\n", "b.txt": "b\n" }, "alice", "bob");
 		write(folders.bob!, { "a.txt": "a by bob\n" });
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "Pitch five")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "push", "-m", "Pitch five")).exit, 0);
 		write(folders.alice!, { "b.txt": "b by alice\n" });
-		const r = await main(["publish", "-m", "mine"], { cwd: folders.alice!, env: ENV, write: () => {} });
+		const r = await main(["push", "-m", "mine"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.match(
 			r.stdout,
-			/Published version 2\. It went on top of version 1 \(bob: "Pitch five"\), which your folder doesn't have yet\. Nothing of theirs was overwritten; run abso sync to see both\.\n/,
+			/Pushed version 2\. It went on top of version 1 \(bob: "Pitch five"\), which your folder doesn't have yet\. Nothing of theirs was overwritten; run abso pull to see both\.\n/,
 		);
 	});
 
-	it("lines changed on both sides: sync writes a marker block, publish refuses it, --as-is keeps both (#11)", async () => {
+	it("lines changed on both sides: pull writes a marker block, push refuses it, --as-is keeps both (#11)", async () => {
 		const { folders } = await project({ "a.txt": "one\ntwo\nthree\n" }, "alice", "bob");
 		write(folders.bob!, { "a.txt": "one\nTWO by bob\nthree\n" });
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "bob")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "push", "-m", "bob")).exit, 0);
 		write(folders.alice!, { "a.txt": "one\ntwo by alice\nthree\n" });
-		const synced = await main(["sync"], { cwd: folders.alice!, env: ENV, write: () => {} });
+		const synced = await main(["pull"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.match(synced.stdout, /1 collision: where lines changed on both sides, the file now holds a marker block/);
 		assert.equal(
 			read(folders.alice!, "a.txt"),
 			'one\n<<<<<<< yours (unpublished)\ntwo by alice\n||||||| before (version 0)\ntwo\n=======\nTWO by bob\n>>>>>>> theirs: bob, version 1 "bob"\nthree\n',
 		);
-		const refused = await main(["publish", "-m", "both kept"], { cwd: folders.alice!, env: ENV, write: () => {} });
+		const refused = await main(["push", "-m", "both kept"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.equal(refused.exit, 2);
 		assert.equal(
-			(await avcs(folders.alice!, "publish", "-m", "both kept", "--as-is")).exit,
+			(await avcs(folders.alice!, "push", "-m", "both kept", "--as-is")).exit,
 			0,
-			"--as-is publishes both and settles it",
+			"--as-is pushes both and settles it",
 		);
 		assert.equal(read(folders.alice!, "a.txt"), "one\ntwo by alice\nTWO by bob\nthree\n");
 	});
@@ -1763,9 +1763,9 @@ describe("publish and sync say what happened to others' work (#37, the game tria
 		const { folders } = await project({ "a.txt": "one\ntwo\nthree\n", "b.txt": "b\n" }, "alice", "bob");
 		const [alice, bob] = [folders.alice!, folders.bob!];
 		write(bob, { "a.txt": "one\nTWO by bob\nthree\n" });
-		assert.equal((await avcs(bob, "publish", "-m", "Bob says TWO")).exit, 0);
+		assert.equal((await avcs(bob, "push", "-m", "Bob says TWO")).exit, 0);
 		write(alice, { "a.txt": "one\ntwo by alice\nthree\n" });
-		const synced = await main(["sync"], { cwd: alice, env: ENV, write: () => {} });
+		const synced = await main(["pull"], { cwd: alice, env: ENV, write: () => {} });
 		assert.match(
 			synced.stdout,
 			/Box runs fail while markers are in the folder\.\n {2}a\.txt lines 2-8: yours against bob's version 1 \("Bob says TWO"\)\.\n/,
@@ -1773,13 +1773,13 @@ describe("publish and sync say what happened to others' work (#37, the game tria
 		const status = await main(["status"], { cwd: alice, env: ENV, write: () => {} });
 		assert.match(
 			status.stdout,
-			/\n1 collision to settle before you publish \(keep yours, theirs or a mix and delete the marker lines, or abso settle <file> --yours\|--theirs\|--both\):\n {2}a\.txt lines 2-8, with bob's version 1 \("Bob says TWO"\)\n/,
+			/\n1 collision to settle before you push \(keep yours, theirs or a mix and delete the marker lines, or abso settle <file> --yours\|--theirs\|--both\):\n {2}a\.txt lines 2-8, with bob's version 1 \("Bob says TWO"\)\n/,
 		);
-		const refused = await main(["publish", "-m", "mine"], { cwd: alice, env: ENV, write: () => {} });
+		const refused = await main(["push", "-m", "mine"], { cwd: alice, env: ENV, write: () => {} });
 		assert.equal(refused.exit, 2);
 		assert.match(
 			refused.stdout,
-			/Not published: a\.txt still has collision markers \(1 block\)\.\n {2}a\.txt lines 2-8: yours against bob's version 1 \("Bob says TWO"\)\.\nSettle each: keep yours, theirs or a mix and delete the marker lines, or abso settle <file> --yours\|--theirs\|--both\./,
+			/Not pushed: a\.txt still has collision markers \(1 block\)\.\n {2}a\.txt lines 2-8: yours against bob's version 1 \("Bob says TWO"\)\.\nSettle each: keep yours, theirs or a mix and delete the marker lines, or abso settle <file> --yours\|--theirs\|--both\./,
 		);
 		// Settle: a file with no markers is refused, and settles nothing.
 		assert.match(
@@ -1803,7 +1803,7 @@ describe("publish and sync say what happened to others' work (#37, the game tria
 			[],
 		);
 		write(alice, { "b.txt": "b by alice\n" });
-		const published = await main(["publish", "-m", "Alice"], { cwd: alice, env: ENV, write: () => {} });
+		const published = await main(["push", "-m", "Alice"], { cwd: alice, env: ENV, write: () => {} });
 		assert.equal(published.exit, 0, published.stdout + published.stderr);
 		assert.match(
 			published.stdout,
@@ -1812,19 +1812,19 @@ describe("publish and sync say what happened to others' work (#37, the game tria
 		const heard = await avcs(bob, "news");
 		assert.match(
 			JSON.stringify(heard.json),
-			/alice settled its collision with your version 1 in a\.txt, publishing version 2: it kept your lines\. abso show 2:a\.txt shows the file\./,
+			/alice settled its collision with your version 1 in a\.txt, pushing version 2: it kept your lines\. abso show 2:a\.txt shows the file\./,
 		);
 	});
 
 	it("a settle that loses lines both sides had says which, under the Settled line (#37)", async () => {
 		const { folders } = await project({ "a.txt": "one\nx\nthree\n" }, "alice", "bob");
 		write(folders.bob!, { "a.txt": "one\nB1\nshared line\nthree\n" });
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "bob")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "push", "-m", "bob")).exit, 0);
 		write(folders.alice!, { "a.txt": "one\nA1\nshared line\nthree\n" });
-		assert.equal((await avcs(folders.alice!, "sync")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "pull")).exit, 0);
 		// Settled by hand, keeping only A1: "shared line", which both had, is gone.
 		write(folders.alice!, { "a.txt": "one\nA1\nthree\n" });
-		const r = await main(["publish", "-m", "mine"], { cwd: folders.alice!, env: ENV, write: () => {} });
+		const r = await main(["push", "-m", "mine"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.equal(r.exit, 0, r.stdout + r.stderr);
 		assert.match(r.stdout, /\n {2}a\.txt: lost 1 line you both had: "shared line"; check abso show 2:a\.txt\n/);
 	});
@@ -1832,12 +1832,12 @@ describe("publish and sync say what happened to others' work (#37, the game tria
 	it("a marker line left behind after settling is named on its own line, to delete (#11)", async () => {
 		const { folders } = await project({ "a.txt": "one\ntwo\nthree\n" }, "alice", "bob");
 		write(folders.bob!, { "a.txt": "one\nTWO by bob\nthree\n" });
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "bob")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "push", "-m", "bob")).exit, 0);
 		write(folders.alice!, { "a.txt": "one\ntwo by alice\nthree\n" });
-		assert.equal((await avcs(folders.alice!, "sync")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "pull")).exit, 0);
 		// Settled by hand, but one marker line stays.
 		write(folders.alice!, { "a.txt": 'one\ntwo by alice\n=======\n>>>>>>> theirs: bob, version 1 "bob"\nthree\n' });
-		const refused = await main(["publish", "-m", "mine"], { cwd: folders.alice!, env: ENV, write: () => {} });
+		const refused = await main(["push", "-m", "mine"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.equal(refused.exit, 2);
 		assert.match(refused.stdout, /\n {2}a\.txt line 4: a marker line left from a collision; delete it\.\n/);
 	});
@@ -1887,7 +1887,7 @@ describe("abso fetch and run --fetch (#37)", () => {
 		);
 	});
 
-	it("screens the box's paths as a sync's: nothing outside the folder, in .git, or a link", async () => {
+	it("screens the box's paths as a pull's: nothing outside the folder, in .git, or a link", async () => {
 		const { folders } = await project({ "make.js": `${MAKE}\n` }, "alice");
 		const alice = folders.alice!;
 		writeFileSync(join(alice, ".absoignore"), `${read(alice, ".absoignore")}out/\n`);
@@ -1917,7 +1917,7 @@ describe("recording first says what was deleted (#37)", () => {
 		rmSync(join(alice, "gone1.ts"));
 		rmSync(join(alice, "gone2.ts"));
 		write(alice, { "a.txt": "a2\n" });
-		const synced = await main(["sync"], { cwd: alice, env: ENV, write: () => {} });
+		const synced = await main(["pull"], { cwd: alice, env: ENV, write: () => {} });
 		assert.match(synced.stdout, /^Recorded first: 1 changed \(a\.txt\), 2 deleted \(gone1\.ts, gone2\.ts\)\.\n/);
 		write(alice, { "a.txt": "a3\n" });
 		assert.match(
@@ -1935,22 +1935,22 @@ describe("abso export and status --short (#37)", () => {
 			.map((e) => relative(dir, join(e.parentPath, e.name)).split(sep).join("/"))
 			.sort();
 
-	it("writes one published version to its own folder, stamped, and leaves the folder and the agent alone", async () => {
+	it("writes one pushed version to its own folder, stamped, and leaves the folder and the agent alone", async () => {
 		const { folders } = await project(FILES, "alice", "tester");
 		write(folders.alice!, { "src/game.ts": "game v1\n", "src/new.ts": "new\n" });
 		rmSync(join(folders.alice!, "src", "old.ts"));
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "v1")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "v1")).exit, 0);
 		write(folders.alice!, { "src/game.ts": "game v2\n" });
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "v2")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "v2")).exit, 0);
 		const tester = folders.tester!;
-		write(tester, { "index.html": "<p>mine, unpublished</p>\n" });
+		write(tester, { "index.html": "<p>mine, unpushed</p>\n" });
 		const out = join(temp(), "build");
 		const one = await avcs(tester, "export", out, "--version", "1");
 		assert.equal(one.exit, 0, one.out);
 		assert.equal(one.json.version, 1);
 		assert.deepEqual(listAll(out), [".abso-export", ".absoignore", "index.html", "src/game.ts", "src/new.ts"]);
 		assert.equal(read(out, "src/game.ts"), "game v1\n");
-		assert.equal(read(out, "index.html"), "<p>v0</p>\n", "published files, not the unpublished edit");
+		assert.equal(read(out, "index.html"), "<p>v0</p>\n", "pushed files, not the unpushed edit");
 		// One line, no extension: the exported project's own formatter has nothing to say about it.
 		const stamp = read(out, ".abso-export");
 		assert.equal(stamp.split("\n").length, 2, stamp);
@@ -1979,10 +1979,10 @@ describe("abso export and status --short (#37)", () => {
 		assert.equal(existsSync(join(out, "stray.txt")), false);
 		assert.equal(read(out, "src/game.ts"), "game v2\n");
 		// The folder is untouched, and so is the agent: still on version 0 with its unpublished edit.
-		assert.equal(read(tester, "index.html"), "<p>mine, unpublished</p>\n");
+		assert.equal(read(tester, "index.html"), "<p>mine, unpushed</p>\n");
 		assert.equal(read(tester, "src/game.ts"), "game v0\n");
 		const short = await main(["status", "--short"], { cwd: tester, env: ENV, write: () => {} });
-		assert.equal(short.stdout, "0+unpublished\n");
+		assert.equal(short.stdout, "0+unpushed\n");
 	});
 
 	it("refuses a folder with other files in it, and one inside the abso folder that abso would record", async () => {
@@ -2002,10 +2002,10 @@ describe("abso export and status --short (#37)", () => {
 		assert.equal(read(folders.alice!, "build/src/game.ts"), "game v0\n");
 	});
 
-	it("status --short is the version alone when the folder holds nothing unpublished", async () => {
+	it("status --short is the version alone when the folder holds nothing unpushed", async () => {
 		const { folders } = await project(FILES, "alice", "bob");
 		write(folders.alice!, { "src/game.ts": "game v1\n" });
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "v1")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "v1")).exit, 0);
 		assert.equal((await main(["status", "--short"], { cwd: folders.alice!, env: ENV, write: () => {} })).stdout, "1\n");
 		assert.equal((await main(["status", "--short"], { cwd: folders.bob!, env: ENV, write: () => {} })).stdout, "0\n");
 	});
@@ -2022,7 +2022,7 @@ describe("a folder missing files its view has (#37)", () => {
 	it("a join under an agent name the server already knows writes every file, not only what changed since", async () => {
 		const { name, folders } = await project(FILES, "alice", "bob");
 		write(folders.alice!, { "src/main.ts": "main v1\n" });
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "v1")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "v1")).exit, 0);
 		const again = temp();
 		const joined = await avcs(again, "join", name, "--agent", "bob", "--server", fake.url);
 		assert.equal(joined.exit, 0, joined.out);
@@ -2032,7 +2032,7 @@ describe("a folder missing files its view has (#37)", () => {
 		assert.deepEqual((await avcs(again, "status")).json.missing, []);
 	});
 
-	it("status names files the folder lacks, files marks them, and sync --full writes them", async () => {
+	it("status names files the folder lacks, files marks them, and pull --full writes them", async () => {
 		const { folders } = await project(FILES, "alice", "bob");
 		const bob = folders.bob!;
 		// What a partial join leaves: neither the file nor avcs's copy of it.
@@ -2043,13 +2043,13 @@ describe("a folder missing files its view has (#37)", () => {
 		const status = await main(["status"], { cwd: bob, env: ENV, write: () => {} });
 		assert.match(
 			status.stdout,
-			/Everything in this folder is recorded\.\nMissing from this folder though your view has them \(abso sync --full writes them; abso files lists them all\): src\/state\.ts, vite\.config\.ts\n/,
+			/Everything in this folder is recorded\.\nMissing from this folder though your view has them \(abso pull --full writes them; abso files lists them all\): src\/state\.ts, vite\.config\.ts\n/,
 		);
 		const listed = await main(["files"], { cwd: bob, env: ENV, write: () => {} });
 		assert.equal(
 			listed.stdout,
 			[
-				"Your view holds 5 files: shared at version 0, with your unpublished changes. 2 of them are missing from this folder (abso sync --full writes them).",
+				"Your view holds 5 files: shared at version 0, with your unpushed changes. 2 of them are missing from this folder (abso pull --full writes them).",
 				".absoignore",
 				"src/main.ts",
 				"src/state.ts  (missing from this folder)",
@@ -2060,8 +2060,8 @@ describe("a folder missing files its view has (#37)", () => {
 		);
 		assert.deepEqual((await avcs(bob, "files", "src/**")).json.files, ["src/main.ts", "src/state.ts"]);
 		// A plain sync has nothing new to send; --full writes them.
-		assert.equal((await avcs(bob, "sync")).json.written.length, 0);
-		const full = await avcs(bob, "sync", "--full");
+		assert.equal((await avcs(bob, "pull")).json.written.length, 0);
+		const full = await avcs(bob, "pull", "--full");
 		assert.deepEqual(full.json.written.sort(), ["src/state.ts", "vite.config.ts"]);
 		assert.equal(read(bob, "vite.config.ts"), "vite\n");
 		const after = await avcs(bob, "status");
@@ -2069,20 +2069,20 @@ describe("a folder missing files its view has (#37)", () => {
 		assert.deepEqual(after.json.unrecorded, []);
 	});
 
-	it("a file deleted and not yet recorded is not called missing, and sync --full leaves the deletion alone", async () => {
+	it("a file deleted and not yet recorded is not called missing, and pull --full leaves the deletion alone", async () => {
 		const { folders } = await project(FILES, "alice", "bob");
 		rmSync(join(folders.bob!, "tools", "play.mjs"));
 		const status = await avcs(folders.bob!, "status");
 		assert.deepEqual(status.json.missing, []);
 		assert.deepEqual(status.json.unrecorded, ["tools/play.mjs"]);
-		await avcs(folders.bob!, "sync", "--full");
-		assert.equal(existsSync(join(folders.bob!, "tools", "play.mjs")), false, "sync records the deletion first");
+		await avcs(folders.bob!, "pull", "--full");
+		assert.equal(existsSync(join(folders.bob!, "tools", "play.mjs")), false, "pull records the deletion first");
 	});
 
 	it("files --draft shared --version N lists shared's files at that version", async () => {
 		const { folders } = await project(FILES, "alice", "bob");
 		write(folders.alice!, { "src/new.ts": "new\n" });
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "new")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "new")).exit, 0);
 		assert.equal((await avcs(folders.bob!, "files", "--version", "0")).json.files.length, 5, "4 files and .absoignore");
 		const now = await main(["files", "--draft", "shared"], { cwd: folders.bob!, env: ENV, write: () => {} });
 		assert.match(now.stdout, /^shared at version 1 holds 6 files\.\n/);
@@ -2090,29 +2090,25 @@ describe("a folder missing files its view has (#37)", () => {
 	});
 });
 
-describe("lines merged item by item at sync (#37)", () => {
-	it("names the merged line, so the agent reads it before publishing", async () => {
+describe("lines merged item by item at pull (#37)", () => {
+	it("names the merged line, so the agent reads it before pushing", async () => {
 		const { folders } = await project({ "src/main.ts": "const SYSTEMS = [input, physics, render];\n" }, "alice", "bob");
 		write(folders.bob!, { "src/main.ts": "const SYSTEMS = [input, physics, audio, render];\n" });
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "Audio system")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "push", "-m", "Audio system")).exit, 0);
 		write(folders.alice!, { "src/main.ts": "const SYSTEMS = [input, physics, render, hud];\n" });
-		const synced = await main(["sync"], { cwd: folders.alice!, env: ENV, write: () => {} });
+		const synced = await main(["pull"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.match(
 			synced.stdout,
-			/\nMerged 1 line that both you and bob changed, item by item\. Check it reads right, then publish:\n {2}src\/main\.ts line 1, with bob's version 1 \("Audio system"\): const SYSTEMS = \[[^\]]*\];\n/,
+			/\nMerged 1 line that both you and bob changed, item by item\. Check it reads right, then push:\n {2}src\/main\.ts line 1, with bob's version 1 \("Audio system"\): const SYSTEMS = \[[^\]]*\];\n/,
 		);
 		const text = read(folders.alice!, "src/main.ts");
 		assert.match(text, /audio/);
 		assert.match(text, /hud/);
-		assert.equal(
-			(await avcs(folders.alice!, "publish", "-m", "hud")).exit,
-			0,
-			"a merged line does not hold up a publish",
-		);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "hud")).exit, 0, "a merged line does not hold up a push");
 	});
 });
 
-describe("a failing publish --check says whose it is (#36)", () => {
+describe("a failing push --check says whose it is (#36)", () => {
 	const CHECK =
 		"const fs = require('fs'); const t = fs.readFileSync('state.txt', 'utf8') + fs.readFileSync('mine.txt', 'utf8'); process.exit(t.includes('bad') ? 1 : 0);\n";
 
@@ -2123,9 +2119,9 @@ describe("a failing publish --check says whose it is (#36)", () => {
 			"bob",
 		);
 		write(folders.bob!, { "state.txt": "bad, by bob\n" });
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "Bob breaks the test")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "push", "-m", "Bob breaks the test")).exit, 0);
 		write(folders.alice!, { "a.txt": "a by alice\n" });
-		const theirs = await main(["publish", "-m", "mine", "--check", "node check.cjs"], {
+		const theirs = await main(["push", "-m", "mine", "--check", "node check.cjs"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
@@ -2138,9 +2134,9 @@ describe("a failing publish --check says whose it is (#36)", () => {
 		);
 		// bob fixes it; now alice's own draft is what breaks it.
 		write(folders.bob!, { "state.txt": "ok again\n" });
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "Bob fixes it")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "push", "-m", "Bob fixes it")).exit, 0);
 		write(folders.alice!, { "mine.txt": "bad, by alice\n" });
-		const mine = await main(["publish", "-m", "mine", "--check", "node check.cjs"], {
+		const mine = await main(["push", "-m", "mine", "--check", "node check.cjs"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
@@ -2162,37 +2158,37 @@ describe("the merge queue (#39)", () => {
 	};
 	const publish = async (cwd: string, ...more: string[]) => {
 		let err = "";
-		const r = await main(["publish", ...more], { cwd, env: QENV, write: () => {}, writeErr: (t) => (err += t) });
+		const r = await main(["push", ...more], { cwd, env: QENV, write: () => {}, writeErr: (t) => (err += t) });
 		return { ...r, err };
 	};
 
-	it("publish waits for its publish to land, or to be pulled with the check's output", async () => {
+	it("push waits for its push to land, or to be turned back with the check's output", async () => {
 		const { folders } = await project(files, "alice", "bob");
 		write(folders.alice!, { "state.txt": "ok, by alice\n" });
 		const landed = await publish(folders.alice!, "-m", "fine");
 		assert.equal(landed.exit, 0, landed.stdout + landed.stderr);
 		assert.equal(
 			landed.stdout,
-			"Recorded first: 1 changed (state.txt).\nPublished version 1: it passed the project's check in the merge queue.\n",
+			"Recorded first: 1 changed (state.txt).\nPushed version 1: it passed the project's check in the merge queue.\n",
 		);
 		assert.match(
 			landed.err,
-			/^abso: Queued as publish 1: it lands once the project's check passes on it in the merge queue\. Waiting up to 100 s for it \(--no-wait returns at once\)\.\n/,
+			/^abso: Queued as push 1: it lands once the project's check passes on it in the merge queue\. Waiting up to 100 s for it \(--no-wait returns at once\)\.\n/,
 		);
 		assert.doesNotMatch(landed.stdout, /landed as version/, "the outcome is said once, not again as news");
 
-		await avcs(folders.bob!, "sync");
+		await avcs(folders.bob!, "pull");
 		write(folders.bob!, { "state.txt": "bad, by bob\n" });
 		const pulled = await publish(folders.bob!, "-m", "breaks it");
 		assert.equal(pulled.exit, 2, pulled.stdout + pulled.stderr);
 		assert.equal(
 			pulled.stdout,
-			`Recorded first: 1 changed (state.txt).\nNot published: your queued publish "breaks it" was pulled: the project's check failed on it on top of version 1. Its changes are still in your draft; fix them, then publish again.\n`,
+			`Recorded first: 1 changed (state.txt).\nNot pushed: your queued push "breaks it" was turned back: the project's check failed on it on top of version 1. Its changes are still in your draft; fix them, then push again.\n`,
 		);
 		assert.equal((await avcs(folders.bob!, "status")).json.version, 1, "shared stayed at version 1");
 	});
 
-	it("--done takes the start note back only once the queued publish lands", async () => {
+	it("--done takes the start note back only once the queued push lands", async () => {
 		const { folders } = await project(files, "alice");
 		const noted = async () =>
 			/Starting on:/.test((await main(["where"], { cwd: folders.alice!, env: QENV, write: () => {} })).stdout);
@@ -2204,9 +2200,9 @@ describe("the merge queue (#39)", () => {
 			assert.equal(queued.exit, 0, queued.stdout + queued.stderr);
 			assert.match(
 				queued.stdout,
-				/\nYour start note stays \(--done\): publish 1 hasn't landed yet\. Once it has, abso start --done takes the note back and abso issue <N> --done closes the issue it names\.\n$/,
+				/\nYour start note stays \(--done\): push 1 hasn't landed yet\. Once it has, abso start --done takes the note back and abso issue <N> --done closes the issue it names\.\n$/,
 			);
-			assert.equal(await noted(), true, "a queued publish may yet be pulled");
+			assert.equal(await noted(), true, "a queued push may yet be turned back");
 			assert.equal((await main(["unqueue"], { cwd: folders.alice!, env: QENV, write: () => {} })).exit, 0);
 		} finally {
 			fake.queueHold = false;
@@ -2215,18 +2211,18 @@ describe("the merge queue (#39)", () => {
 		const pulled = await publish(folders.alice!, "-m", "breaks it", "--done");
 		assert.equal(pulled.exit, 2, pulled.stdout + pulled.stderr);
 		assert.doesNotMatch(pulled.stdout, /start note/);
-		assert.equal(await noted(), true, "a pulled publish leaves the note");
+		assert.equal(await noted(), true, "a pulled push leaves the note");
 		write(folders.alice!, { "state.txt": "ok, fixed\n" });
 		const landed = await publish(folders.alice!, "-m", "fixed", "--done");
 		assert.equal(landed.exit, 0, landed.stdout + landed.stderr);
 		assert.match(
 			landed.stdout,
-			/\nPublished version 1: it passed the project's check in the merge queue\.\nYour start note is taken back \(--done\): this work is finished\.\n$/,
+			/\nPushed version 1: it passed the project's check in the merge queue\.\nYour start note is taken back \(--done\): this work is finished\.\n$/,
 		);
 		assert.equal(await noted(), false);
 	});
 
-	it("--no-wait and --wait, status shows the queue, unqueue takes it back, and a collision names the queued publish", async () => {
+	it("--no-wait and --wait, status shows the queue, unqueue takes it back, and a collision names the queued push", async () => {
 		const { folders } = await project(files, "alice", "bob");
 		fake.queueHold = true;
 		try {
@@ -2235,13 +2231,13 @@ describe("the merge queue (#39)", () => {
 			assert.equal(queued.exit, 0, queued.stdout + queued.stderr);
 			assert.match(
 				queued.stdout,
-				/^Recorded first: 1 changed \(other\.txt\)\.\nQueued as publish 1: it lands once the project's check passes on it in the merge queue\.\nNot waiting \(--no-wait\)\. The outcome comes as news on your next edit; abso status shows the queue, and abso unqueue takes it back\.\n$/,
+				/^Recorded first: 1 changed \(other\.txt\)\.\nQueued as push 1: it lands once the project's check passes on it in the merge queue\.\nNot waiting \(--no-wait\)\. The outcome comes as news on your next edit; abso status shows the queue, and abso unqueue takes it back\.\n$/,
 			);
 			const status = await main(["status"], { cwd: folders.alice!, env: QENV, write: () => {} });
 			assert.match(status.stdout, /\nMerge queue: waiting: yours \(1\)\.\n/);
 			assert.equal(
 				(await main(["status", "--short"], { cwd: folders.alice!, env: QENV, write: () => {} })).stdout,
-				"0+unpublished+queued\n",
+				"0+unpushed+queued\n",
 			);
 			// waiting --mine lists it beside the asks (an Issues stand-in with none open).
 			const stub = createHttpServer((_req, res) =>
@@ -2258,7 +2254,7 @@ describe("the merge queue (#39)", () => {
 				assert.equal(waiting.exit, 0, waiting.stdout + waiting.stderr);
 				assert.match(
 					waiting.stdout,
-					/^Your publish 1 \("two"\) is in the merge queue: [^\n]+\.\nIt lands or is pulled once the project's check runs on it; the outcome comes as news, and abso unqueue takes it back\.\nNo open asks of alice\.\n$/,
+					/^Your push 1 \("two"\) is in the merge queue: [^\n]+\.\nIt lands or is turned back once the project's check runs on it; the outcome comes as news, and abso unqueue takes it back\.\nNo open asks of alice\.\n$/,
 				);
 			} finally {
 				await new Promise((ok) => stub.close(ok));
@@ -2268,7 +2264,7 @@ describe("the merge queue (#39)", () => {
 			write(folders.bob!, { "other.txt": "two, by bob\n" });
 			const refused = await publish(folders.bob!, "-m", "mine");
 			assert.equal(refused.exit, 2);
-			assert.match(refused.stdout, /theirs, by alice in queued publish 1 \(not landed yet\) \("two"\)/);
+			assert.match(refused.stdout, /theirs, by alice in queued push 1 \(not landed yet\) \("two"\)/);
 			assert.match(refused.stdout, /\nSome of theirs are still in the merge queue, not in shared: once they land/);
 
 			write(folders.alice!, { "state.txt": "ok again\n" });
@@ -2276,19 +2272,16 @@ describe("the merge queue (#39)", () => {
 			assert.equal(still.exit, 3, still.stdout + still.stderr);
 			assert.match(
 				still.stdout,
-				/^Recorded first: 1 changed \(state\.txt\)\.\nStill queued after 1 s: publish 2 is waiting, 1 publish ahead of it\. The outcome comes as news/,
+				/^Recorded first: 1 changed \(state\.txt\)\.\nStill queued after 1 s: push 2 is waiting, 1 push ahead of it\. The outcome comes as news/,
 			);
 			assert.match(
 				still.err,
-				/^abso: Queued as publish 2, 1 publish ahead of it: [^\n]*\nabso: your publish is waiting, 1 publish ahead of it\.\n/,
+				/^abso: Queued as push 2, 1 push ahead of it: [^\n]*\nabso: your push is waiting, 1 push ahead of it\.\n/,
 			);
 
 			const back = await main(["unqueue"], { cwd: folders.alice!, env: QENV, write: () => {} });
 			assert.equal(back.exit, 0, back.stdout + back.stderr);
-			assert.equal(
-				back.stdout,
-				"Took back queued publishes 1, 2: their changes are still in your draft, unpublished.\n",
-			);
+			assert.equal(back.stdout, "Took back queued pushes 1, 2: their changes are still in your draft, unpushed.\n");
 			const none = await main(["unqueue"], { cwd: folders.alice!, env: QENV, write: () => {} });
 			assert.equal(none.exit, 1);
 			assert.match(none.stderr, /alice has nothing queued/);
@@ -2298,27 +2291,27 @@ describe("the merge queue (#39)", () => {
 	});
 
 	it("a pull puts the check's output first and the verdict last", () => {
-		const news = `Your queued publish "breaks it" was pulled: the project's check failed on it on top of version 1:\n== check\n== check exited 1\n. Its changes are still in your draft.`;
+		const news = `Your queued push "breaks it" was turned back: the project's check failed on it on top of version 1:\n== check\n== check exited 1\n. Its changes are still in your draft.`;
 		assert.equal(
 			pulledText(news),
-			`The check's output ends:\n== check\n== check exited 1\nNot published: your queued publish "breaks it" was pulled: the project's check failed on it on top of version 1. Its changes are still in your draft; fix them, then publish again.`,
+			`The check's output ends:\n== check\n== check exited 1\nNot pushed: your queued push "breaks it" was turned back: the project's check failed on it on top of version 1. Its changes are still in your draft; fix them, then push again.`,
 		);
 		assert.equal(
 			pulledText(
-				'Your queued publish "x" was pulled: it builds on queued publish 3, which was pulled. Its changes are still in your draft.',
+				'Your queued push "x" was turned back: it builds on queued push 3, which was turned back. Its changes are still in your draft.',
 			),
-			'Not published: your queued publish "x" was pulled: it builds on queued publish 3, which was pulled. Its changes are still in your draft; fix them, then publish again.',
+			'Not pushed: your queued push "x" was turned back: it builds on queued push 3, which was turned back. Its changes are still in your draft; fix them, then push again.',
 		);
 	});
 
-	it("--check alone skipped for a queue that is only in the draft says the publish landed directly, unchecked", async () => {
+	it("--check alone skipped for a queue that is only in the draft says the push landed directly, unchecked", async () => {
 		const { folders } = await project({ "avcs.json": '{"check": "node -e 0"}\n', "a.txt": "a\n" }, "alice");
 		write(folders.alice!, { "avcs.json": '{"check": "node -e 0", "queue": true}\n' });
 		const r = await publish(folders.alice!, "-m", "turn the queue on", "--check");
 		assert.equal(r.exit, 0, r.stdout + r.stderr);
 		assert.match(
 			r.stdout,
-			/\nPublished version 1\.\nIt landed directly, with no check: your avcs\.json says "queue": true, but shared's doesn't yet, so the merge queue isn't on and --check alone was skipped\./,
+			/\nPushed version 1\.\nIt landed directly, with no check: your avcs\.json says "queue": true, but shared's doesn't yet, so the merge queue isn't on and --check alone was skipped\./,
 		);
 	});
 
@@ -2331,7 +2324,7 @@ describe("the merge queue (#39)", () => {
 		assert.equal(fake.runStarts.length, startsBefore, "no box run");
 		assert.match(
 			r.stdout,
-			/^Recorded first: 1 changed \(other\.txt\)\.\nThe merge queue runs the project's check on what lands, so --check alone was skipped\.\nPublished version 1: /,
+			/^Recorded first: 1 changed \(other\.txt\)\.\nThe merge queue runs the project's check on what lands, so --check alone was skipped\.\nPushed version 1: /,
 		);
 	});
 });
@@ -2345,7 +2338,7 @@ describe("one writer at a time for a folder's records (#51)", () => {
 		const holder = spawn(process.execPath, ["-e", "setTimeout(() => {}, 20000)"]);
 		try {
 			// Renewed a minute ago, and its process runs: held.
-			writeFileSync(lock, JSON.stringify({ pid: holder.pid, time: Date.now() - 60_000, what: "sync" }));
+			writeFileSync(lock, JSON.stringify({ pid: holder.pid, time: Date.now() - 60_000, what: "pull" }));
 			write(root, { "a.txt": "two\n" });
 			process.env.AVCS_LOCK_WAIT_MS = "200";
 			const blocked = await main(["record"], { cwd: root, env: ENV, write: () => {} });
@@ -2353,7 +2346,7 @@ describe("one writer at a time for a folder's records (#51)", () => {
 			assert.match(
 				blocked.stderr,
 				new RegExp(
-					`another abso command \\(sync, process ${holder.pid}, since [0-9:]+ UTC\\) is changing this folder's records; run this again when it has finished\\. If none is running, delete \\.avcs/lock\\.`,
+					`another abso command \\(pull, process ${holder.pid}, since [0-9:]+ UTC\\) is changing this folder's records; run this again when it has finished\\. If none is running, delete \\.avcs/lock\\.`,
 				),
 			);
 			const hooked = await hook(root, "Write", { file_path: join(root, "a.txt"), content: "two\n" });
@@ -2377,10 +2370,10 @@ describe("one writer at a time for a folder's records (#51)", () => {
 
 	it("the mod's check: a lock renewed in the last 2 minutes is held, and so is one it can't read", () => {
 		const now = Date.parse("2026-10-07T04:00:00Z");
-		assert.equal(lockHeld(JSON.stringify({ pid: 1, time: now - 5_000, what: "sync" }), now), true);
-		assert.equal(lockHeld(JSON.stringify({ pid: 1, time: now - 100_000, what: "sync" }), now), true);
+		assert.equal(lockHeld(JSON.stringify({ pid: 1, time: now - 5_000, what: "pull" }), now), true);
+		assert.equal(lockHeld(JSON.stringify({ pid: 1, time: now - 100_000, what: "pull" }), now), true);
 		assert.equal(
-			lockHeld(JSON.stringify({ pid: 1, time: now - 3 * 60_000, what: "sync" }), now),
+			lockHeld(JSON.stringify({ pid: 1, time: now - 3 * 60_000, what: "pull" }), now),
 			false,
 			"not renewed: left behind",
 		);
@@ -2405,7 +2398,7 @@ describe("one writer at a time for a folder's records (#51)", () => {
 		letGo();
 		assert.equal(existsSync(lock), false);
 		// A running process's id (this one's), but not renewed for 3 minutes: left behind, as when a pid is reused.
-		writeFileSync(lock, JSON.stringify({ pid: process.pid, time: Date.now() - 3 * 60_000, what: "sync" }));
+		writeFileSync(lock, JSON.stringify({ pid: process.pid, time: Date.now() - 3 * 60_000, what: "pull" }));
 		const again = tryFolderLock(root, "hook");
 		assert.ok(again);
 		again();
@@ -2418,7 +2411,7 @@ describe("one writer at a time for a folder's records (#51)", () => {
 });
 
 describe("files the server keeps whole (#46, found in the #56 import rehearsal)", () => {
-	it("are recorded after init, and a sync brings another agent's change to one", async () => {
+	it("are recorded after init, and a pull brings another agent's change to one", async () => {
 		const files = {
 			"avcs.json": '{"whole": ["package-lock.json", "logs/**"]}\n',
 			"package-lock.json": '{\n  "v": 1\n}\n',
@@ -2434,9 +2427,9 @@ describe("files the server keeps whole (#46, found in the #56 import rehearsal)"
 
 		write(folders.bob!, { "package-lock.json": '{\n  "v": 2\n}\n' });
 		assert.deepEqual((await avcs(folders.bob!, "status")).json.unrecorded, ["package-lock.json"]);
-		const published = await main(["publish", "-m", "lock two"], { cwd: folders.bob!, env: ENV, write: () => {} });
+		const published = await main(["push", "-m", "lock two"], { cwd: folders.bob!, env: ENV, write: () => {} });
 		assert.equal(published.exit, 0, published.stdout + published.stderr);
-		const synced = await main(["sync"], { cwd: folders.alice!, env: ENV, write: () => {} });
+		const synced = await main(["pull"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.equal(synced.exit, 0, synced.stderr);
 		assert.equal(
 			readFileSync(join(folders.alice!, "package-lock.json"), "utf8"),
@@ -2460,9 +2453,9 @@ describe("review and notes (#44)", () => {
 		const { folders } = await project({ "a.ts": "one\ntwo\nthree\n" }, "alice", "bob");
 		assert.equal((await run(folders.alice!, "start", "Sign-in", "a.ts")).exit, 0);
 		write(folders.alice!, { "a.ts": "one\ntwo, checked\nthree\n" });
-		assert.equal((await run(folders.alice!, "publish", "-m", "check two")).exit, 0);
+		assert.equal((await run(folders.alice!, "push", "-m", "check two")).exit, 0);
 		write(folders.alice!, { "a.ts": "one\ntwo, checked\nthree, too\n" });
-		assert.equal((await run(folders.alice!, "publish", "-m", "and three", "--done")).exit, 0);
+		assert.equal((await run(folders.alice!, "push", "-m", "and three", "--done")).exit, 0);
 
 		const first = await run(folders.bob!, "review");
 		assert.equal(first.exit, 0, first.stderr);
@@ -2487,7 +2480,7 @@ describe("review and notes (#44)", () => {
 		assert.match((await run(folders.bob!, "review")).stdout, /^No changes lately/);
 		for (let i = 1; i <= 5; i++) {
 			write(folders.alice!, { "a.ts": `a${i}\n` });
-			assert.equal((await run(folders.alice!, "publish", "-m", `p${i}`)).exit, 0);
+			assert.equal((await run(folders.alice!, "push", "-m", `p${i}`)).exit, 0);
 		}
 		process.env.AVCS_REVIEW_PAGE = "2";
 		try {
@@ -2633,7 +2626,7 @@ describe("review and notes (#44)", () => {
 		}
 	});
 
-	it("waits for a publish and a land as long as the server may work on them, past the base timeout", async () => {
+	it("waits for a push and a land as long as the server may work on them, past the base timeout", async () => {
 		assert.ok(PUBLISH_TIMEOUT_MS > 120_000, "longer than the server's 2 minutes for one request");
 		// Every answer comes after 300 ms; the client's base timeout here is 100 ms.
 		const slow = createHttpServer((_req, res) => {
@@ -2669,8 +2662,8 @@ describe("review and notes (#44)", () => {
 	it("abso note leaves a note on the lines as your folder shows them, and replies and closing work", async () => {
 		const { folders } = await project({ "a.ts": "one\ntwo\nthree\n" }, "alice", "bob");
 		write(folders.alice!, { "a.ts": "one\ntwo, by alice\nthree\n" });
-		assert.equal((await run(folders.alice!, "publish", "-m", "two")).exit, 0);
-		await run(folders.bob!, "sync");
+		assert.equal((await run(folders.alice!, "push", "-m", "two")).exit, 0);
+		await run(folders.bob!, "pull");
 		// bob's own unpublished edit puts two lines on top: his line 4 is shared's line 2.
 		write(folders.bob!, { "a.ts": "zero\nzero again\none\ntwo, by alice\nthree\n" });
 		const noted = await run(folders.bob!, "note", "a.ts:4", "the state isn't checked", "--object");
@@ -2759,11 +2752,11 @@ describe("abso mcp (#44): the commands as MCP tools", () => {
 				inputSchema: { properties: Record<string, unknown> };
 			}[];
 			const names = tools.map((t) => t.name);
-			for (const name of ["status", "log", "diff", "why", "publish", "check_ignore", "unqueue"])
+			for (const name of ["status", "log", "diff", "why", "push", "check_ignore", "unqueue"])
 				assert.ok(names.includes(name), name);
 			for (const name of ["run", "shot", "init", "hook", "drop"])
 				assert.ok(!names.includes(name), `${name} stays in the shell`);
-			assert.ok("message" in tools.find((t) => t.name === "publish")!.inputSchema.properties);
+			assert.ok("message" in tools.find((t) => t.name === "push")!.inputSchema.properties);
 
 			write(folders.alice!, { "a.txt": "two\n" });
 			const status = await server.call("tools/call", { name: "status", arguments: {} });
@@ -2775,10 +2768,10 @@ describe("abso mcp (#44): the commands as MCP tools", () => {
 			assert.equal(JSON.parse(asJson.result.content[0].text).command, "status");
 
 			const published = await server.call("tools/call", {
-				name: "publish",
+				name: "push",
 				arguments: { message: "two, through MCP" },
 			});
-			assert.match(published.result.content[0].text, /Published version 1\./);
+			assert.match(published.result.content[0].text, /Pushed version 1\./);
 			const shown = await server.call("tools/call", { name: "show", arguments: { args: ["1"] } });
 			assert.match(shown.result.content[0].text, /^version 1 of shared by alice, [0-9 :-]+ UTC: two, through MCP\n/);
 			const bad = await server.call("tools/call", { name: "show", arguments: { args: ["nope"] } });
@@ -2791,17 +2784,17 @@ describe("abso mcp (#44): the commands as MCP tools", () => {
 	});
 
 	it("turns a tool call into the command line, flags first and the words after --", () => {
-		assert.deepEqual(argvFor("publish", { message: "why", "as-is": true, check: "", args: [] }), [
-			"publish",
+		assert.deepEqual(argvFor("push", { message: "why", "as-is": true, check: "", args: [] }), [
+			"push",
 			"--message=why",
 			"--as-is",
 			"--check=",
 		]);
 		assert.deepEqual(argvFor("log", { args: ["-weird.txt"], limit: "3" }), ["log", "--limit=3", "--", "-weird.txt"]);
 		// An input can't add a flag of its own: a value stays one entry, and a free word comes after --.
-		const argv = argvFor("publish", { message: "--server=x", args: ["--server=x"] });
-		assert.deepEqual(argv, ["publish", "--message=--server=x", "--", "--server=x"]);
-		const parsed = parseArgs("publish", argv.slice(1), commandTable().publish!.flags);
+		const argv = argvFor("push", { message: "--server=x", args: ["--server=x"] });
+		assert.deepEqual(argv, ["push", "--message=--server=x", "--", "--server=x"]);
+		const parsed = parseArgs("push", argv.slice(1), commandTable().push!.flags);
 		assert.equal(parsed.flags.get("message"), "--server=x");
 		assert.deepEqual(parsed.positionals, ["--server=x"]);
 	});
@@ -2861,15 +2854,15 @@ describe("abso mcp (#44): the commands as MCP tools", () => {
 		}
 	});
 
-	it("publish --done takes the start note back once it is published", async () => {
+	it("push --done takes the start note back once it is pushed", async () => {
 		const { folders } = await project({ "a.txt": "one\n" }, "alice");
 		assert.equal((await avcs(folders.alice!, "start", "Two", "a.txt")).exit, 0);
 		write(folders.alice!, { "a.txt": "two\n" });
-		const r = await main(["publish", "-m", "two", "--done"], { cwd: folders.alice!, env: ENV, write: () => {} });
+		const r = await main(["push", "-m", "two", "--done"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.equal(r.exit, 0, r.stdout + r.stderr);
 		assert.match(
 			r.stdout,
-			/\nPublished version 1\.\nYour start note is taken back \(--done\): this work is finished\.\n$/,
+			/\nPushed version 1\.\nYour start note is taken back \(--done\): this work is finished\.\n$/,
 		);
 		assert.doesNotMatch(
 			(await main(["where"], { cwd: folders.alice!, env: ENV, write: () => {} })).stdout,
@@ -2878,34 +2871,34 @@ describe("abso mcp (#44): the commands as MCP tools", () => {
 	});
 });
 
-describe("a publish whose answer is lost (a storage reset after the publish landed)", () => {
-	it("looks at shared before saying it failed, and never publishes again by itself", async () => {
+describe("a push whose answer is lost (a storage reset after the push landed)", () => {
+	it("looks at shared before saying it failed, and never pushes again by itself", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice");
 		write(folders.alice!, { "a.txt": "b\n" });
 		fake.failPublish = "after";
-		const landed = await main(["publish", "-m", "lands anyway"], { cwd: folders.alice!, env: ENV, write: () => {} });
+		const landed = await main(["push", "-m", "lands anyway"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.equal(landed.exit, 0, landed.stdout + landed.stderr);
 		assert.match(
 			landed.stdout,
-			/\nPublished version 1\. The server's answer was lost \(POST \/a\/alice\/publish answered 500: Internal error in Durable Object storage caused object to be reset\.?\), but shared's log shows your publish landed\.\n$/,
+			/\nPushed version 1\. The server's answer was lost \(POST \/a\/alice\/publish answered 500: Internal error in Durable Object storage caused object to be reset\.?\), but shared's log shows your push landed\.\n$/,
 		);
 
 		write(folders.alice!, { "a.txt": "c\n" });
 		fake.failPublish = "before";
-		const lost = await main(["publish", "-m", "never landed"], { cwd: folders.alice!, env: ENV, write: () => {} });
+		const lost = await main(["push", "-m", "never landed"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.equal(lost.exit, 1);
 		assert.match(
 			lost.stdout,
-			/\nNot published: POST \/a\/alice\/publish answered 500: [^\n]*\. Shared's newest versions and the merge queue don't have it, so it's safe to publish again\.\n$/,
+			/\nNot pushed: POST \/a\/alice\/publish answered 500: [^\n]*\. Shared's newest versions and the merge queue don't have it, so it's safe to push again\.\n$/,
 		);
-		assert.equal((await avcs(folders.alice!, "status")).json.version, 1, "nothing was published again by itself");
+		assert.equal((await avcs(folders.alice!, "status")).json.version, 1, "nothing was pushed again by itself");
 		// The same message as an earlier publish doesn't count when it's an older version: only this attempt's.
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "never landed")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "never landed")).exit, 0);
 	});
 });
 
 describe("a server that can't be reached (#37, GAME - UI/UX)", () => {
-	it("tries a connection that never opened once more, and says nothing reached the server and how far publish got", async () => {
+	it("tries a connection that never opened once more, and says nothing reached the server and how far push got", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice");
 		write(folders.alice!, { "a.txt": "b\n" });
 		// A port nothing listens on: the connection is refused before any request goes out.
@@ -2922,9 +2915,9 @@ describe("a server that can't be reached (#37, GAME - UI/UX)", () => {
 			status.stderr,
 			/Can't reach http:\/\/127\.0\.0\.1:\d+: .*Tried twice, the second time IPv4 first; the connection never opened, so nothing reached the server\. Check your connection; abso doctor checks the rest\.\n$/,
 		);
-		const plain = await main(["publish", "-m", "x"], { cwd: folders.alice!, env: ENV, write: () => {} });
-		assert.match(plain.stderr, /nothing reached the server\. Nothing was published\. Run the same command again\.\n$/);
-		const checked = await main(["publish", "-m", "x", "--check", "node -e 0"], {
+		const plain = await main(["push", "-m", "x"], { cwd: folders.alice!, env: ENV, write: () => {} });
+		assert.match(plain.stderr, /nothing reached the server\. Nothing was pushed\. Run the same command again\.\n$/);
+		const checked = await main(["push", "-m", "x", "--check", "node -e 0"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
@@ -2932,7 +2925,7 @@ describe("a server that can't be reached (#37, GAME - UI/UX)", () => {
 		});
 		assert.match(
 			checked.stderr,
-			/nothing reached the server\. Nothing was published, and the check didn't run\. Run the same command again\.\n$/,
+			/nothing reached the server\. Nothing was pushed, and the check didn't run\. Run the same command again\.\n$/,
 		);
 	});
 });
@@ -2986,7 +2979,7 @@ describe("the project file, avcs.json (#39)", () => {
 		assert.equal(existsSync(join(bare, "abso.json")), false);
 		assert.match(
 			off.stdout,
-			/\nNo abso.json written: package\.json gives no check or build to guess, so CI has nothing to run on each new version\. To give it a check, publish an abso.json like \{"check": "npm test"\}/,
+			/\nNo abso.json written: package\.json gives no check or build to guess, so CI has nothing to run on each new version\. To give it a check, push an abso.json like \{"check": "npm test"\}/,
 		);
 		// --as-is (an import, #58): the folder goes up exactly as it is, with nothing of avcs's own added.
 		const asIs = temp();
@@ -3002,7 +2995,7 @@ describe("the project file, avcs.json (#39)", () => {
 		assert.doesNotMatch(imported.stdout, /Wrote|No avcs\.json written/);
 	});
 
-	it("publish --check alone runs the check in the draft's avcs.json, wherever --check sits", async () => {
+	it("push --check alone runs the check in the draft's avcs.json, wherever --check sits", async () => {
 		const CHECK = "process.exit(require('fs').readFileSync('state.txt', 'utf8').includes('bad') ? 1 : 0);\n";
 		const { folders } = await project(
 			{ "avcs.json": '{"check": "node check.cjs"}\n', "check.cjs": CHECK, "state.txt": "ok\n" },
@@ -3011,7 +3004,7 @@ describe("the project file, avcs.json (#39)", () => {
 		write(folders.alice!, { "state.txt": "bad\n" });
 		let err = "";
 		const startsBefore = fake.runStarts.length;
-		const bad = await main(["publish", "--check", "-m", "breaks it"], {
+		const bad = await main(["push", "--check", "-m", "breaks it"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
@@ -3029,7 +3022,7 @@ describe("the project file, avcs.json (#39)", () => {
 		assert.equal(fake.runStarts.at(-1)!.kind, "run");
 		// The draft's copy of avcs.json is the one that runs.
 		write(folders.alice!, { "avcs.json": '{"check": "node -e 0"}\n' });
-		const ok = await main(["publish", "-m", "a new check", "--check"], {
+		const ok = await main(["push", "-m", "a new check", "--check"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
@@ -3043,7 +3036,7 @@ describe("the project file, avcs.json (#39)", () => {
 			"avcs.json": '{"build": "node build.cjs", "check": "node check.cjs"}\n',
 		});
 		err = "";
-		const broken = await main(["publish", "-m", "breaks the build", "--check"], {
+		const broken = await main(["push", "-m", "breaks the build", "--check"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
@@ -3053,11 +3046,11 @@ describe("the project file, avcs.json (#39)", () => {
 		assert.match(err, /in the box: node build\.cjs && node check\.cjs\n/);
 	});
 
-	it("publish --check alone refuses when there is no check to run", async () => {
+	it("push --check alone refuses when there is no check to run", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice");
 		assert.equal(existsSync(join(folders.alice!, "avcs.json")), false, "nothing to guess: no avcs.json");
 		write(folders.alice!, { "a.txt": "b\n" });
-		const missing = await main(["publish", "-m", "x", "--check"], {
+		const missing = await main(["push", "-m", "x", "--check"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
@@ -3069,7 +3062,7 @@ describe("the project file, avcs.json (#39)", () => {
 			/--check alone runs the project's check, but there is no abso.json\. Set "check" in abso.json/,
 		);
 		write(folders.alice!, { "avcs.json": '{"build": "", "check": ""}\n' });
-		const none = await main(["publish", "-m", "x", "--check"], {
+		const none = await main(["push", "-m", "x", "--check"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
@@ -3081,21 +3074,21 @@ describe("the project file, avcs.json (#39)", () => {
 			/--check alone runs the project's check, but avcs\.json has no "check"\. Set "check" in avcs\.json/,
 		);
 		write(folders.alice!, { "avcs.json": '{"check": ' });
-		const broken = await main(["publish", "-m", "x", "--check"], {
+		const broken = await main(["push", "-m", "x", "--check"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
 			writeErr: () => {},
 		});
 		assert.match(broken.stdout + broken.stderr, /but avcs\.json isn't valid JSON/);
-		assert.equal((await avcs(folders.alice!, "status")).json.version, 0, "nothing was published");
+		assert.equal((await avcs(folders.alice!, "status")).json.version, 0, "nothing was pushed");
 	});
 
 	it("status says whether shared is green or red, log marks shared versions, and abso ci shows a job (#39)", async () => {
 		const { name, folders } = await project({ "a.txt": "a\n" }, "alice", "bob");
 		for (const n of [1, 2, 3]) {
 			write(folders.bob!, { "a.txt": `a ${n}\n` });
-			assert.equal((await avcs(folders.bob!, "publish", "-m", `step ${n}`)).exit, 0);
+			assert.equal((await avcs(folders.bob!, "push", "-m", `step ${n}`)).exit, 0);
 		}
 		const plain = await main(["status"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.doesNotMatch(plain.stdout, /Shared is|checked|Preview/, "a server without CI adds nothing");
@@ -3237,9 +3230,9 @@ describe("the project file, avcs.json (#39)", () => {
 
 	it("an optional flag takes the next word unless it is another option or missing", () => {
 		const spec = { check: "optional", message: "string" } as const;
-		assert.equal(parseArgs("publish", ["--check", "npm test", "-m", "x"], spec).flags.get("check"), "npm test");
-		assert.equal(parseArgs("publish", ["--check", "-m", "x"], spec).flags.get("check"), "");
-		assert.equal(parseArgs("publish", ["-m", "x", "--check"], spec).flags.get("check"), "");
+		assert.equal(parseArgs("push", ["--check", "npm test", "-m", "x"], spec).flags.get("check"), "npm test");
+		assert.equal(parseArgs("push", ["--check", "-m", "x"], spec).flags.get("check"), "");
+		assert.equal(parseArgs("push", ["-m", "x", "--check"], spec).flags.get("check"), "");
 	});
 });
 
@@ -3279,10 +3272,10 @@ describe("abso start names whose note it meets (#37)", () => {
 });
 
 describe("Recorded first names new files on their own, in full (#37)", () => {
-	it("a file a script made, which no hook saw, is listed as new at publish", async () => {
+	it("a file a script made, which no hook saw, is listed as new at push", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice");
 		write(folders.alice!, { "a.txt": "a, edited\n", "tests/made-by-a-script.test.ts": "test\n" });
-		const r = await main(["publish", "-m", "x"], { cwd: folders.alice!, env: ENV, write: () => {} });
+		const r = await main(["push", "-m", "x"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.equal(r.exit, 0);
 		assert.match(r.stdout, /^Recorded first: 1 new \(tests\/made-by-a-script\.test\.ts\), 1 changed \(a\.txt\)\.\n/);
 	});
@@ -3355,13 +3348,13 @@ describe("CEO's roundup: --check without a prep, run --quiet, restore some lines
 		assert.match(r.stderr, /^News:\n {2}bob \(as claimed\) told you:\n {4}heads up\n$/);
 	});
 
-	it("publish --check refuses when the box has no prep and the project has a package-lock", async () => {
+	it("push --check refuses when the box has no prep and the project has a package-lock", async () => {
 		const { folders } = await project(
 			{ "a.txt": "a\n", "package-lock.json": "{}\n", "ok.cjs": "process.exit(0);\n" },
 			"alice",
 		);
 		write(folders.alice!, { "a.txt": "a by alice\n" });
-		const r = await main(["publish", "-m", "x", "--check", "node ok.cjs"], {
+		const r = await main(["push", "-m", "x", "--check", "node ok.cjs"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
@@ -3370,11 +3363,11 @@ describe("CEO's roundup: --check without a prep, run --quiet, restore some lines
 		assert.equal(r.exit, 2);
 		assert.match(
 			r.stdout,
-			/Not published: your box has no prep, so the check ran without node_modules and its result can't be trusted\. Run abso prep 'npm ci --ignore-scripts' once/,
+			/Not pushed: your box has no prep, so the check ran without node_modules and its result can't be trusted\. Run abso prep 'npm ci --ignore-scripts' once/,
 		);
 		// Now the folder knows: the next --check refuses before running anything (#37).
 		const runs = fake.runStarts.length;
-		const again = await main(["publish", "-m", "x", "--check", "node ok.cjs"], {
+		const again = await main(["push", "-m", "x", "--check", "node ok.cjs"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
@@ -3383,11 +3376,11 @@ describe("CEO's roundup: --check without a prep, run --quiet, restore some lines
 		assert.equal(again.exit, 2);
 		assert.match(
 			again.stdout,
-			/Not published: your box has no prep, so a check would run without node_modules .*\(Nothing was run: this folder's last run in that box said it had no prep\.\)/,
+			/Not pushed: your box has no prep, so a check would run without node_modules .*\(Nothing was run: this folder's last run in that box said it had no prep\.\)/,
 		);
 		assert.equal(fake.runStarts.length, runs, "no run started");
 		// Another box, never heard of: it runs, as the first time.
-		const other = await main(["publish", "-m", "x", "--check", "node ok.cjs", "--box", "b2"], {
+		const other = await main(["push", "-m", "x", "--check", "node ok.cjs", "--box", "b2"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
@@ -3397,15 +3390,15 @@ describe("CEO's roundup: --check without a prep, run --quiet, restore some lines
 	});
 });
 
-describe("abso bisect and publish --check (#37)", () => {
+describe("abso bisect and push --check (#37)", () => {
 	const CHECK = "const t = require('fs').readFileSync('state.txt', 'utf8'); process.exit(t.includes('bad') ? 1 : 0);\n";
 
 	it("bisect names the first failing version, its author and message", async () => {
 		const { folders } = await project({ "state.txt": "ok 0\n", "check.cjs": CHECK }, "alice", "bob");
 		const pub = async (who: string, text: string) => {
-			await avcs(folders[who]!, "sync");
+			await avcs(folders[who]!, "pull");
 			write(folders[who]!, { "state.txt": text });
-			assert.equal((await avcs(folders[who]!, "publish", "-m", text.trim())).exit, 0);
+			assert.equal((await avcs(folders[who]!, "push", "-m", text.trim())).exit, 0);
 		};
 		await pub("alice", "ok 1\n");
 		await pub("alice", "ok 2\n");
@@ -3433,7 +3426,7 @@ describe("abso bisect and publish --check (#37)", () => {
 			const { folders } = await project({ "state.txt": "ok 0\n", "check.cjs": SKIPPING }, "alice");
 			for (const s of states) {
 				write(folders.alice!, { "state.txt": `${s}\n` });
-				assert.equal((await avcs(folders.alice!, "publish", "-m", s)).exit, 0);
+				assert.equal((await avcs(folders.alice!, "push", "-m", s)).exit, 0);
 			}
 			let err = "";
 			const r = await main(["bisect", "--", "node", "check.cjs"], {
@@ -3457,13 +3450,13 @@ describe("abso bisect and publish --check (#37)", () => {
 		);
 	});
 
-	it("publish --check says when shared moved during the check, and paths the sync didn't write don't block it", async () => {
+	it("push --check says when shared moved during the check, and paths the pull didn't write don't block it", async () => {
 		const WAIT = "setTimeout(() => process.exit(0), 1500);\n";
 		const { folders } = await project({ "a.txt": "a\n", "b.txt": "b\n", "wait.cjs": WAIT }, "alice", "bob");
 		write(folders.alice!, { "a.txt": "a by alice\n" });
 		fake.injectSync = { files: { "../outside.txt": "x\n" } };
 		let err = "";
-		const publishing = main(["publish", "-m", "alice", "--check", "node wait.cjs"], {
+		const publishing = main(["push", "-m", "alice", "--check", "node wait.cjs"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
@@ -3473,45 +3466,45 @@ describe("abso bisect and publish --check (#37)", () => {
 		const started = fake.runStarts.length;
 		for (let i = 0; i < 200 && fake.runStarts.length === started; i++) await new Promise((r) => setTimeout(r, 10));
 		write(folders.bob!, { "b.txt": "b by bob\n" });
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "bob meanwhile")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "push", "-m", "bob meanwhile")).exit, 0);
 		const r = await publishing;
 		assert.equal(r.exit, 0, r.stdout + err);
-		assert.match(err, /abso: the sync didn't write these: \.\.\/outside\.txt; the check runs without them\./);
+		assert.match(err, /abso: the pull didn't write these: \.\.\/outside\.txt; the check runs without them\./);
 		assert.match(r.stdout, /\nShared moved during the check: version 1 merged in without being checked\.\n/);
 	});
 
-	it("publish --check publishes only when the check passes on the draft with newest shared", async () => {
+	it("push --check pushes only when the check passes on the draft with newest shared", async () => {
 		const { folders } = await project({ "state.txt": "ok\n", "check.cjs": CHECK }, "alice");
 		write(folders.alice!, { "state.txt": "bad\n" });
-		const refused = await main(["publish", "-m", "breaks it", "--check", "node check.cjs"], {
+		const refused = await main(["push", "-m", "breaks it", "--check", "node check.cjs"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
 			writeErr: () => {},
 		});
 		assert.equal(refused.exit, 2);
-		assert.match(refused.stdout, /Not published: the check failed \(exit 1\)/);
+		assert.match(refused.stdout, /Not pushed: the check failed \(exit 1\)/);
 		assert.equal((await avcs(folders.alice!, "log")).json.version, 0, "shared did not move");
 		write(folders.alice!, { "state.txt": "ok, better\n" });
-		const ok = await main(["publish", "-m", "fine", "--check", "node check.cjs"], {
+		const ok = await main(["push", "-m", "fine", "--check", "node check.cjs"], {
 			cwd: folders.alice!,
 			env: ENV,
 			write: () => {},
 			writeErr: () => {},
 		});
 		assert.equal(ok.exit, 0, ok.stdout);
-		assert.match(ok.stdout, /Published version 1\./);
+		assert.match(ok.stdout, /Pushed version 1\./);
 	});
 });
 
 describe("every command that takes news prints it (#37, News Report)", () => {
-	it("sync and diff print the news their record took, --json carries it, a command that records nothing leaves it waiting, and it prints once", async () => {
+	it("pull and diff print the news their record took, --json carries it, a command that records nothing leaves it waiting, and it prints once", async () => {
 		const { folders } = await project({ "a.txt": "a\n", "b.txt": "b\n" }, "alice", "bob");
 		const [alice, bob] = [folders.alice!, folders.bob!];
 		const say = async (text: string) => assert.equal((await avcs(alice, "announce", text)).exit, 0);
 		await say("Ruling: playtest builds come from v40 only.");
 		write(bob, { "a.txt": "a by bob\n" });
-		const synced = await main(["sync"], { cwd: bob, env: ENV, write: () => {} });
+		const synced = await main(["pull"], { cwd: bob, env: ENV, write: () => {} });
 		assert.match(
 			synced.stdout,
 			/\nNews:\n {2}alice \(as claimed\) told you:\n {4}Ruling: playtest builds come from v40 only\.\n$/,
@@ -3535,33 +3528,33 @@ describe("every command that takes news prints it (#37, News Report)", () => {
 	});
 });
 
-describe("wishlist: publish clarity, who, fix-eol, one-version hint (#37)", () => {
-	it("an empty publish says shared already has the file and who changed it, not that work vanished", async () => {
+describe("wishlist: push clarity, who, fix-eol, one-version hint (#37)", () => {
+	it("an empty push says shared already has the file and who changed it, not that work vanished", async () => {
 		const { folders } = await project({ "tools/look.mjs": "look\n" }, "artist", "builder2");
 		write(folders.builder2!, { "tools/look.mjs": "look --mute-audio\n" });
-		assert.equal((await avcs(folders.builder2!, "publish", "-m", "Mute audio in look")).exit, 0);
+		assert.equal((await avcs(folders.builder2!, "push", "-m", "Mute audio in look")).exit, 0);
 		// The same change, made here before syncing: sync merges it away, and the draft is empty.
 		await edit(folders.artist!, "tools/look.mjs", "look\n", "look --mute-audio\n");
-		assert.equal((await avcs(folders.artist!, "sync")).exit, 0);
-		const r = await main(["publish", "-m", "mute"], { cwd: folders.artist!, env: ENV, write: () => {} });
+		assert.equal((await avcs(folders.artist!, "pull")).exit, 0);
+		const r = await main(["push", "-m", "mute"], { cwd: folders.artist!, env: ENV, write: () => {} });
 		assert.equal(r.exit, 0, r.stdout + r.stderr);
 		assert.match(
 			r.stdout,
-			/Nothing published: shared already has the file you changed as you have it, so nothing of yours is lost\. Last changed in tools\/look\.mjs \(version 1, builder2: "Mute audio in look"\)\./,
+			/Nothing pushed: shared already has the file you changed as you have it, so nothing of yours is lost\. Last changed in tools\/look\.mjs \(version 1, builder2: "Mute audio in look"\)\./,
 		);
 	});
 
 	it("who names the last change, the drafts, and the starting notes for a file", async () => {
 		const { folders } = await project({ "a.txt": "a\n", "b.txt": "b\n" }, "alice", "bob");
 		write(folders.alice!, { "a.txt": "a1\n" });
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "alice a1")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "alice a1")).exit, 0);
 		write(folders.bob!, { "a.txt": "a by bob\n" });
 		assert.equal((await avcs(folders.bob!, "record")).exit, 0);
 		assert.equal((await avcs(folders.bob!, "start", "tidy the texts", "*.txt")).exit, 0);
 		const r = await main(["who", "a.txt", "b.txt"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.match(
 			r.stdout,
-			/^a\.txt:\n {2}last changed in version 1 by alice, .*: alice a1\n {2}bob has unpublished changes at lines 1, last at .*\n {2}bob started "tidy the texts", .*\nb\.txt:\n {2}last changed in version 0 by .*\n {2}nobody has unpublished changes in it\n {2}bob started "tidy the texts"/,
+			/^a\.txt:\n {2}last changed in version 1 by alice, .*: alice a1\n {2}bob has unpushed changes at lines 1, last at .*\n {2}bob started "tidy the texts", .*\nb\.txt:\n {2}last changed in version 0 by .*\n {2}nobody has unpushed changes in it\n {2}bob started "tidy the texts"/,
 		);
 	});
 
@@ -3642,8 +3635,8 @@ describe("wishlist: publish clarity, who, fix-eol, one-version hint (#37)", () =
 		// A sync writes the file and its known copy, so what was kept for them no longer holds.
 		writeFileSync(join(root, "b.txt"), "b\n");
 		write(folders.bob!, { "a.txt": "a2\n" });
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "a2")).exit, 0);
-		assert.equal((await avcs(root, "sync")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "push", "-m", "a2")).exit, 0);
+		assert.equal((await avcs(root, "pull")).exit, 0);
 		assert.equal(readFileSync(join(root, "a.txt"), "utf8"), "a2\n");
 		swap("a.txt", "a3\n");
 		assert.deepEqual((await avcs(root, "status")).json.unrecorded, ["a.txt"]);
@@ -3676,7 +3669,7 @@ describe("reader folders (#37, Reporter)", () => {
 		assert.equal(joined.exit, 0, joined.stdout + joined.stderr);
 		assert.match(
 			joined.stdout,
-			/It is a reader: status, sync, log, show, files and export work, and nothing it does is recorded or published\./,
+			/It is a reader: status, pull, log, show, files and export work, and nothing it does is recorded or pushed\./,
 		);
 		assert.equal(read(dir, "a.txt"), "a\n");
 		// Edits: the command hook stands down, record and publish refuse here, sync skips its record step.
@@ -3684,18 +3677,18 @@ describe("reader folders (#37, Reporter)", () => {
 		write(dir, { "notes.md": "mine\n" });
 		const recorded = await main(["record"], { cwd: dir, env: ENV, write: () => {} });
 		assert.equal(recorded.exit, 1);
-		assert.match(recorded.stdout + recorded.stderr, /this folder is a reader: it records and publishes nothing/);
-		assert.equal((await main(["publish", "-m", "x"], { cwd: dir, env: ENV, write: () => {} })).exit, 1);
+		assert.match(recorded.stdout + recorded.stderr, /this folder is a reader: it records and pushes nothing/);
+		assert.equal((await main(["push", "-m", "x"], { cwd: dir, env: ENV, write: () => {} })).exit, 1);
 		write(folders.alice!, { "a.txt": "a by alice\n" });
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "alice")).exit, 0);
-		assert.equal((await avcs(dir, "sync")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "alice")).exit, 0);
+		assert.equal((await avcs(dir, "pull")).exit, 0);
 		const status = await avcs(dir, "status");
 		const rep = status.json.agents.find((a: { agent: string }) => a.agent === "rep");
 		assert.equal(rep.reader, true);
 		assert.equal(rep.draftChanges, 0, "nothing reached a draft");
 		assert.match(
 			(await main(["status"], { cwd: dir, env: ENV, write: () => {} })).stdout,
-			/This folder is rep, a reader \(it records and publishes nothing\)/,
+			/This folder is rep, a reader \(it records and pushes nothing\)/,
 		);
 		assert.match(read(dir, ".avcs/hook.log"), /\tskipped: this folder is a reader\t/);
 		// The server refuses too, whatever the folder says.
@@ -3709,12 +3702,12 @@ describe("reader folders (#37, Reporter)", () => {
 		assert.equal((await avcs(dir, "reader", "off")).exit, 0);
 		assert.equal(JSON.parse(read(dir, ".avcs/config.json")).reader, undefined);
 		write(dir, { "notes.md": "now recorded\n" });
-		assert.equal((await avcs(dir, "publish", "-m", "rep writes")).exit, 0);
+		assert.equal((await avcs(dir, "push", "-m", "rep writes")).exit, 0);
 	});
 
-	it("reader on is refused while the agent has unpublished work, and changes nothing here", async () => {
+	it("reader on is refused while the agent has unpushed work, and changes nothing here", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice");
-		write(folders.alice!, { "a.txt": "a, unpublished\n" });
+		write(folders.alice!, { "a.txt": "a, unpushed\n" });
 		assert.equal((await avcs(folders.alice!, "record")).exit, 0);
 		const on = await main(["reader", "on"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.equal(on.exit, 2);
@@ -3778,12 +3771,12 @@ describe("log --since, --by and --count (#37, Reporter)", () => {
 		const { folders } = await project({ "a.txt": "a\n", "b.txt": "b\n" }, "alice", "bob");
 		const pub = async (who: string, file: string, text: string) => {
 			write(folders[who]!, { [file]: text });
-			assert.equal((await avcs(folders[who]!, "publish", "-m", `${who} ${text.trim()}`)).exit, 0);
-			await avcs(folders[who]!, "sync");
+			assert.equal((await avcs(folders[who]!, "push", "-m", `${who} ${text.trim()}`)).exit, 0);
+			await avcs(folders[who]!, "pull");
 		};
 		await pub("alice", "a.txt", "a1\n");
 		await pub("bob", "b.txt", "b1\n");
-		await avcs(folders.alice!, "sync");
+		await avcs(folders.alice!, "pull");
 		await pub("alice", "a.txt", "a2\n");
 		await pub("alice", "b.txt", "b2\n");
 		const since = await avcs(folders.alice!, "log", "--since", "1");
@@ -3827,7 +3820,7 @@ describe("scratch files for a run (#37)", () => {
 		const said = await main(["status"], { cwd: alice, env: ENV, write: () => {} });
 		assert.match(
 			said.stdout,
-			/\nEverything in this folder is recorded\.\nAdded to your draft by an earlier record and deleted since, so they never reach shared; the next record \(sync, publish, run\) takes them out of your draft: _ab\/x\.ts, tools\/_perf\.sh\n/,
+			/\nEverything in this folder is recorded\.\nAdded to your draft by an earlier record and deleted since, so they never reach shared; the next record \(pull, push, run\) takes them out of your draft: _ab\/x\.ts, tools\/_perf\.sh\n/,
 		);
 		assert.equal((await avcs(alice, "record")).exit, 0);
 		assert.deepEqual((await avcs(alice, "diff")).json.files, [], "the next record clears the draft");
@@ -3978,14 +3971,14 @@ describe("files that differ from the record only in line endings (#37)", () => {
 });
 
 describe("ignored files an old edit mod put in the draft (#37, Reporter)", () => {
-	it("sync and publish drop new ones from the draft and keep them on disk; a file shared has stays", async () => {
+	it("pull and push drop new ones from the draft and keep them on disk; a file shared has stays", async () => {
 		const { folders } = await project({ "a.txt": "a\n", "out/keep.txt": "keep\n" }, "alice");
 		const alice = folders.alice!;
 		// What a mod without nested ignore files does: the files reach the draft, then out/.avcsignore says "*".
 		write(alice, { "out/cards.mjs": "cards\n", "out/keep.txt": "keep, edited\n" });
 		assert.equal((await avcs(alice, "record")).exit, 0);
 		write(alice, { "out/.avcsignore": "# scratch\n*\n" });
-		const synced = await main(["sync"], { cwd: alice, env: ENV, write: () => {} });
+		const synced = await main(["pull"], { cwd: alice, env: ENV, write: () => {} });
 		assert.match(
 			synced.stdout,
 			/Dropped from your draft, kept on disk \(your ignore rules leave it out; abso check-ignore says which line\): out\/cards\.mjs\n/,
@@ -4002,7 +3995,7 @@ describe("ignored files an old edit mod put in the draft (#37, Reporter)", () =>
 		rmSync(join(alice, "out", ".avcsignore"));
 		assert.equal((await avcs(alice, "record")).exit, 0);
 		write(alice, { "out/.avcsignore": "*\n" });
-		const published = await avcs(alice, "publish", "-m", "keep");
+		const published = await avcs(alice, "push", "-m", "keep");
 		assert.equal(published.exit, 0, published.out);
 		const shown = await avcs(alice, "show", "1");
 		assert.deepEqual(shown.json.files, ["out/keep.txt"]);
@@ -4156,22 +4149,22 @@ describe("abso run when the connection drops", () => {
 });
 
 describe("empty files", () => {
-	it('are files: a Write of "" empties a file without deleting it, and sync brings empty files', async () => {
+	it('are files: a Write of "" empties a file without deleting it, and pull brings empty files', async () => {
 		const { name, folders } = await project({ "a.txt": "a\n" }, "alice", "bob");
 		const alice = folders.alice!;
 		assert.match((await put(alice, "new.txt", "")).outcome, /^sent/);
 		assert.match((await put(alice, "a.txt", "")).outcome, /^sent/);
 		assert.equal((await avcs(alice, "record")).json.sent, 0, "the hook kept the known copies in step");
-		assert.equal((await avcs(alice, "publish", "-m", "empty two files")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "empty two files")).exit, 0);
 		assert.equal(shared(name)["a.txt"], "");
 		assert.equal(shared(name)["new.txt"], "");
 
 		const bob = folders.bob!;
-		assert.equal((await avcs(bob, "sync")).exit, 0);
+		assert.equal((await avcs(bob, "pull")).exit, 0);
 		assert.equal(read(bob, "a.txt"), "");
 		assert.equal(read(bob, "new.txt"), "");
 		unlinkSync(join(bob, "new.txt"));
-		assert.equal((await avcs(bob, "publish", "-m", "remove the empty file")).exit, 0);
+		assert.equal((await avcs(bob, "push", "-m", "remove the empty file")).exit, 0);
 		assert.equal("new.txt" in shared(name), false, "deleting an empty file removes it");
 	});
 });
@@ -4202,7 +4195,7 @@ describe("the executable bit and links", () => {
 		assert.deepEqual(hosted.project.modes()["run.sh"], { exec: true });
 
 		const alice = folders.alice!;
-		const synced = await avcs(alice, "sync");
+		const synced = await avcs(alice, "pull");
 		assert.equal(synced.exit, 0, synced.out);
 		assert.deepEqual(JSON.parse(read(alice, ".avcs/modes.json")), { "run.sh": { exec: true } });
 		if (process.platform !== "win32")
@@ -4218,7 +4211,7 @@ describe("the executable bit and links", () => {
 		hosted.project.publish("bob", "link to a", Date.now());
 
 		const alice = folders.alice!;
-		assert.equal((await avcs(alice, "sync")).exit, 0);
+		assert.equal((await avcs(alice, "pull")).exit, 0);
 		assert.equal(linkOnDisk(alice, "to-a"), "a.txt");
 		assert.equal((await avcs(alice, "record")).json.sent, 0, "the link (or its stand-in) matches what the server has");
 		const path = join(alice, "to-a");
@@ -4240,7 +4233,7 @@ describe("the executable bit and links", () => {
 			writeFileSync(path, "b.txt");
 		}
 		writeFileSync(join(alice, "a.txt"), "a\n");
-		assert.equal((await avcs(alice, "publish", "-m", "point the link at b")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "point the link at b")).exit, 0);
 		assert.deepEqual(hosted.project.modes()["to-a"], { link: "b.txt" });
 		assert.equal(shared(name)["a.txt"], "a\n");
 	});
@@ -4250,7 +4243,7 @@ describe("the executable bit and links", () => {
 	}, async () => {
 		const { name, folders } = await project({ "a.txt": "a\n" }, "alice");
 		symlinkSync("a.txt", join(folders.alice!, "link"));
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "add a link")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "add a link")).exit, 0);
 		assert.equal(shared(name).link, "");
 		assert.deepEqual(fake.projects.get(name)!.project.modes().link, { link: "a.txt" });
 	});
@@ -4279,7 +4272,7 @@ describe("the executable bit and links", () => {
 });
 
 describe("diff, log, show and restore", () => {
-	it("shows unpublished changes line by line, the versions, one version, and a file at a version", async () => {
+	it("shows unpushed changes line by line, the versions, one version, and a file at a version", async () => {
 		const { folders } = await project({ "a.txt": "one\ntwo\nthree\n", "b.txt": "b\n" }, "alice", "bob");
 		const alice = folders.alice!;
 		await edit(alice, "a.txt", "two\n", "TWO\n");
@@ -4299,7 +4292,7 @@ describe("diff, log, show and restore", () => {
 		const text = await main(["diff", "a.txt"], { cwd: alice, env: ENV, write: () => {} });
 		assert.match(
 			text.stdout,
-			/^Your unpublished changes to a\.txt in shared \(on version 0\): 1 file, 1 line added, 1 removed\.\n--- a\/a\.txt/,
+			/^Your unpushed changes to a\.txt in shared \(on version 0\): 1 file, 1 line added, 1 removed\.\n--- a\/a\.txt/,
 		);
 
 		// bob reviews alice's draft: what she recorded, read only.
@@ -4307,7 +4300,7 @@ describe("diff, log, show and restore", () => {
 		assert.equal(theirs.exit, 0, theirs.stderr);
 		assert.match(
 			theirs.stdout,
-			/^alice's recorded, unpublished changes to a\.txt in shared \(on version 0\): 1 file, 1 line added, 1 removed\.\n--- a\/a\.txt\n\+\+\+ b\/a\.txt\n@@ -1,3 \+1,3 @@\n one\n-two\n\+TWO\n three/,
+			/^alice's recorded, unpushed changes to a\.txt in shared \(on version 0\): 1 file, 1 line added, 1 removed\.\n--- a\/a\.txt\n\+\+\+ b\/a\.txt\n@@ -1,3 \+1,3 @@\n one\n-two\n\+TWO\n three/,
 		);
 		assert.deepEqual((await avcs(folders.bob!, "diff", "--agent", "alice")).json.files.map((f: any) => f.path).sort(), [
 			"a.txt",
@@ -4315,7 +4308,7 @@ describe("diff, log, show and restore", () => {
 		]);
 		assert.match(
 			(await main(["diff", "--agent", "bob"], { cwd: folders.bob!, env: ENV, write: () => {} })).stdout,
-			/^bob has no recorded, unpublished changes in shared/,
+			/^bob has no recorded, unpushed changes in shared/,
 		);
 		const nobody = await main(["diff", "--agent", "carol"], { cwd: folders.bob!, env: ENV, write: () => {} });
 		assert.notEqual(nobody.exit, 0);
@@ -4325,9 +4318,9 @@ describe("diff, log, show and restore", () => {
 			1,
 		);
 
-		assert.equal((await avcs(alice, "publish", "-m", "alice: shout two, add c")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "alice: shout two, add c")).exit, 0);
 		await edit(folders.bob!, "b.txt", "b\n", "b from bob\n");
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "bob: change b")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "push", "-m", "bob: change b")).exit, 0);
 
 		const log = await avcs(alice, "log");
 		assert.equal(log.exit, 0, log.out);
@@ -4378,7 +4371,7 @@ describe("diff, log, show and restore", () => {
 		);
 		const alice = folders.alice!;
 		write(alice, { "src/a.ts": "a2\n", "src/deep/b.ts": "b2\n", "top.txt": "y\n" });
-		assert.equal((await avcs(alice, "publish", "-m", "change src and top")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "change src and top")).exit, 0);
 
 		const between = await avcs(alice, "diff", "0", "1", "src/", "test/", "nope/");
 		assert.deepEqual(between.json.files.map((f: any) => f.path).sort(), ["src/a.ts", "src/deep/b.ts"]);
@@ -4418,7 +4411,7 @@ describe("diff, log, show and restore", () => {
 		const alice = folders.alice!;
 		await edit(alice, "a.txt", "a\n", "a in exp\n");
 		assert.equal((await avcs(alice, "switch", "-c", "exp")).exit, 0);
-		assert.equal((await avcs(alice, "publish", "-m", "exp: a")).exit, 0);
+		assert.equal((await avcs(alice, "push", "-m", "exp: a")).exit, 0);
 		const inDraft = await avcs(alice, "log");
 		assert.equal(inDraft.json.draft, "exp");
 		assert.equal(inDraft.json.versions[0].message, "exp: a");
@@ -4464,10 +4457,10 @@ function caseInsensitiveDisk(): boolean {
 }
 
 describe("renames that change only case", { skip: !caseInsensitiveDisk() && "this disk is case-sensitive" }, () => {
-	it("records the rename, and a sync brings it in without deleting the file", async () => {
+	it("records the rename, and a pull brings it in without deleting the file", async () => {
 		const { name, folders } = await project({ "a.ts": "one\n", "b.ts": "b\n" }, "alice", "bob");
 		renameSync(join(folders.alice!, "a.ts"), join(folders.alice!, "A.ts"));
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "rename a.ts to A.ts")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "rename a.ts to A.ts")).exit, 0);
 		assert.deepEqual(Object.keys(shared(name)).sort(), [".absoignore", "A.ts", "b.ts"]);
 		assert.equal(
 			(await avcs(folders.alice!, "status")).json.unrecorded?.length ?? 0,
@@ -4475,26 +4468,26 @@ describe("renames that change only case", { skip: !caseInsensitiveDisk() && "thi
 			"nothing left to record after the rename",
 		);
 
-		const synced = await avcs(folders.bob!, "sync");
+		const synced = await avcs(folders.bob!, "pull");
 		assert.equal(synced.exit, 0, synced.out);
 		assert.ok(
 			readdirSync(folders.bob!).includes("A.ts"),
 			`bob's folder has A.ts: ${readdirSync(folders.bob!).join(", ")}`,
 		);
 		assert.equal(read(folders.bob!, "A.ts"), "one\n");
-		assert.equal((await avcs(folders.bob!, "record")).json.sent, 0, "the known copy matches after the sync");
+		assert.equal((await avcs(folders.bob!, "record")).json.sent, 0, "the known copy matches after the pull");
 	});
 });
 
 describe("one file whatever its spelling, and abso mv (#49)", () => {
-	it("abso mv changes a file's case and moves a file, keeping its history, and others sync it in", async () => {
+	it("abso mv changes a file's case and moves a file, keeping its history, and others pull it in", async () => {
 		const { name, folders } = await project({ "readme.md": "one\ntwo\n", "src/a.ts": "a\n" }, "alice", "bob");
 		const run = (cwd: string, ...argv: string[]) => main(argv, { cwd, env: ENV, write: () => {} });
 		const cased = await run(folders.alice!, "mv", "readme.md", "README.md");
 		assert.equal(cased.exit, 0, cased.stderr);
 		assert.equal(
 			cased.stdout,
-			"Moved readme.md to README.md in your draft; its lines keep their history. It reaches shared with your next publish.\n",
+			"Moved readme.md to README.md in your draft; its lines keep their history. It reaches shared with your next push.\n",
 		);
 		assert.ok(readdirSync(folders.alice!).includes("README.md"), readdirSync(folders.alice!).join(", "));
 		assert.equal((await run(folders.alice!, "mv", "src/a.ts", "lib/a.ts")).exit, 0);
@@ -4505,11 +4498,11 @@ describe("one file whatever its spelling, and abso mv (#49)", () => {
 			0,
 			"nothing left to record: the moves are in the draft",
 		);
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "renames")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "renames")).exit, 0);
 		assert.deepEqual(Object.keys(shared(name)).sort(), [".absoignore", "README.md", "lib/a.ts"]);
 		// The lines kept their history: blame still names the init version.
 		assert.match((await run(folders.alice!, "blame", "README.md")).stdout, /\binit\b/);
-		assert.equal((await avcs(folders.bob!, "sync")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "pull")).exit, 0);
 		assert.ok(readdirSync(folders.bob!).includes("README.md"), readdirSync(folders.bob!).join(", "));
 		assert.equal(read(folders.bob!, "lib/a.ts"), "a\n");
 
@@ -4597,12 +4590,12 @@ describe("blame, why and where", () => {
 		await edit(folders.alice!, "src/a.txt", "two\n", "alice two\n");
 		const where = await main(["where"], { cwd: folders.bob!, env: ENV, write: () => {} });
 		assert.match(where.stdout, /src\/a\.txt\n {4}alice: lines 2, at shared lines 2; 1 change/);
-		assert.equal((await avcs(folders.alice!, "publish", "-m", "alice changes two")).exit, 0);
+		assert.equal((await avcs(folders.alice!, "push", "-m", "alice changes two")).exit, 0);
 		await edit(folders.bob!, "src/a.txt", "two\n", "bob two\n");
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "bob changes two")).exit, 2);
-		await avcs(folders.bob!, "sync");
+		assert.equal((await avcs(folders.bob!, "push", "-m", "bob changes two")).exit, 2);
+		await avcs(folders.bob!, "pull");
 		await put(folders.bob!, "src/a.txt", "one\nsettled two\nthree\n");
-		assert.equal((await avcs(folders.bob!, "publish", "-m", "settle two")).exit, 0);
+		assert.equal((await avcs(folders.bob!, "push", "-m", "settle two")).exit, 0);
 
 		// From inside src/, the path is relative to where the command runs.
 		const inSrc = join(folders.alice!, "src");
@@ -4625,7 +4618,7 @@ describe("blame, why and where", () => {
 		assert.match(bad.stderr, /has 3 lines; ask for one in 1-3/);
 		assert.match(
 			(await main(["where"], { cwd: inSrc, env: ENV, write: () => {} })).stdout,
-			/^Nobody has unpublished changes\. Shared is at version 2\./,
+			/^Nobody has unpushed changes\. Shared is at version 2\./,
 		);
 	});
 });
@@ -4674,7 +4667,7 @@ describe("git conflict markers typed or left by hand", () => {
 		assert.equal(gitMarkerLine(mine), undefined, "abso's own blocks are settled with abso settle");
 	});
 
-	it("record and publish say so, once, and still send the file", async () => {
+	it("record and push say so, once, and still send the file", async () => {
 		const { folders } = await project({ "a.txt": "a\n" }, "alice");
 		const dir = folders.alice!;
 		writeFileSync(join(dir, "a.txt"), "a\n<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> feature\n");

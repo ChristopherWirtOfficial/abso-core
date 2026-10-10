@@ -102,7 +102,7 @@ export async function runExport(args: Parsed, env: Env): Promise<Output> {
 			else
 				skipped.push({
 					path: rel,
-					why: "a binary file this folder has no copy of; abso sync --full, then export again",
+					why: "a binary file this folder has no copy of; abso pull --full, then export again",
 				});
 		}
 	}

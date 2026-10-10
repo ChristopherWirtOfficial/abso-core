@@ -24,7 +24,7 @@ interface Plan {
 	lines: string[];
 }
 
-test("changes that do not collide give the same files in every publish order", () => {
+test("changes that do not collide give the same files in every push order", () => {
 	for (let seed = 1; seed <= 60; seed++) {
 		const rand = rng(seed);
 		const pick = (n: number): number => Math.floor(rand() * n);

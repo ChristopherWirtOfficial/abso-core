@@ -106,7 +106,7 @@ export function startingProjectFileText(wrote: ProjectFile | "exists" | "nothing
 	if (wrote === "exists") return [];
 	if (wrote === "nothing") {
 		return [
-			`No ${PROJECT_FILE} written: package.json gives no check or build to guess, so CI has nothing to run on each new version. To give it a check, publish an ${PROJECT_FILE} like {"check": "npm test"} (abso ci --help says what it runs).`,
+			`No ${PROJECT_FILE} written: package.json gives no check or build to guess, so CI has nothing to run on each new version. To give it a check, push an ${PROJECT_FILE} like {"check": "npm test"} (abso ci --help says what it runs).`,
 		];
 	}
 	const set = KEYS.filter((k) => wrote[k] !== "").map((k) => `${k} "${wrote[k]}"`);
@@ -115,7 +115,7 @@ export function startingProjectFileText(wrote: ProjectFile | "exists" | "nothing
 		[
 			`Wrote ${PROJECT_FILE}: CI will run on every new version of shared (${set.join(", ")}).`,
 			empty.length > 0 ? ` Fill in ${empty.join(", ")} when the project has them.` : "",
-			" abso publish --check with no command runs its build and check.",
+			" abso push --check with no command runs its build and check.",
 		].join(""),
 	];
 }

@@ -46,14 +46,14 @@ export async function runStart(args: Parsed, env: Env): Promise<Output> {
 		throw new UsageError('--issue takes an issue number: abso start "<what>" --issue 12');
 	const answer = await api.starting(text, files, issue !== undefined ? { issue } : {});
 	const lines = [
-		`Starting on "${text}"${files.length > 0 ? `, naming ${files.join(", ")}` : ""}${issue !== undefined ? ` for issue ${issue}` : ""}. abso where shows it to everyone until you publish (or abso start --done).` +
-			(issue !== undefined ? ` abso publish --done closes issue ${issue}.` : ""),
+		`Starting on "${text}"${files.length > 0 ? `, naming ${files.join(", ")}` : ""}${issue !== undefined ? ` for issue ${issue}` : ""}. abso where shows it to everyone until you push (or abso start --done).` +
+			(issue !== undefined ? ` abso push --done closes issue ${issue}.` : ""),
 	];
 	if (answer.overlaps.length > 0) {
 		lines.push("Already there:");
 		for (const o of answer.overlaps) {
 			const what = [
-				o.changes ? plural(o.changes, "unpublished change") : "",
+				o.changes ? plural(o.changes, "unpushed change") : "",
 				o.starting ? `starting on "${o.starting}"` : "",
 			]
 				.filter((w) => w !== "")

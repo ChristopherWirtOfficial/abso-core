@@ -52,7 +52,7 @@ for (const order of ["delete first", "write first"] as const) {
 	});
 }
 
-test("an edit published after the move, made against the old place, lands at the new one", () => {
+test("an edit pushed after the move, made against the old place, lands at the new one", () => {
 	const { project } = setup();
 	annMovesArea(project);
 	project.edit("bob", { file: "src/shapes.ts", old: "const pi = 3.14;", new: "const pi = 3.1416;" }, 1);
@@ -60,7 +60,7 @@ test("an edit published after the move, made against the old place, lands at the
 	// bob hears that the lines it changed moved, with its change.
 	const news = project.edit("bob", { file: "src/shapes.ts", old: "return 1;", new: "return 1; // other" }, 2);
 	assert.deepEqual(news.ok && news.news, [
-		'ann published "Move area" (version 1), which moved lines your draft changes from src/shapes.ts to src/geometry.ts; your changes moved with them. Run abso sync to see them there.',
+		'ann pushed "Move area" (version 1), which moved lines your draft changes from src/shapes.ts to src/geometry.ts; your changes moved with them. Run abso pull to see them there.',
 	]);
 	project.restore("bob", null, 2);
 	project.edit("bob", { file: "src/shapes.ts", old: "return pi * r * r;", new: "return pi * r ** 2;" }, 3);
@@ -80,7 +80,7 @@ test("a file renamed with record, while someone edits it", () => {
 	assert.equal(files["src/figures.ts"], START["src/shapes.ts"].replace("return 1;", "return 2;"));
 });
 
-test("publishing a move leaves the mover's own files exactly as they were", () => {
+test("pushing a move leaves the mover's own files exactly as they were", () => {
 	const { project } = setup();
 	annMovesArea(project);
 	project.edit("ann", { file: "src/geometry.ts", old: "3.14", new: "3.14159" }, 2);
@@ -179,7 +179,7 @@ test("a function re-indented on its way to another file is not a move: someone's
 	assert.equal(bob.ok, false, "the lines bob edited are gone, not moved");
 });
 
-test("a move split across two publishes is a delete and a fresh write: the moved lines are new", () => {
+test("a move split across two pushes is a delete and a fresh write: the moved lines are new", () => {
 	const { project } = setup();
 	project.edit("ann", { file: "src/shapes.ts", old: AREA, new: "" }, 1);
 	assert.equal(project.publish("ann", "Take area out", 2).ok, true);
@@ -189,7 +189,7 @@ test("a move split across two publishes is a delete and a fresh write: the moved
 	assert.equal(project.publishOf(lines[1]!.atom)?.version, 2, "written fresh in version 2, not carried from version 0");
 });
 
-test("past the move limit only the longest blocks move: a rewrite of many single lines still publishes, and a block moved whole keeps someone's edit (abso issue 137)", () => {
+test("past the move limit only the longest blocks move: a rewrite of many single lines still pushes, and a block moved whole keeps someone's edit (abso issue 137)", () => {
 	const keys = Array.from({ length: 200 }, (_, i) => `  "k${i}": ${i},`);
 	const block = ["  // block", '  "b1": "one",', '  "b2": "two",', '  "b3": "three",', "  // end block"];
 	const before = `${["{", ...block, ...keys, "}"].join("\n")}\n`;

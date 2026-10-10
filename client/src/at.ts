@@ -44,7 +44,7 @@ function applyBefore(s: Snapshot, changes: readonly FileChange[]): void {
 /** The folder's space as it was at `version`: every file, and its mode. */
 export async function snapshotAt(root: string, api: Api, version: number): Promise<Snapshot> {
 	const diff = await api.diff();
-	if (diff.base === null) throw new UsageError("this folder has no version yet: run abso sync first");
+	if (diff.base === null) throw new UsageError("this folder has no version yet: run abso pull first");
 	const where: Where = { draft: diff.draft };
 	// This agent's view, from its known copies.
 	const s: Snapshot = { version, files: new Map(), modes: new Map() };

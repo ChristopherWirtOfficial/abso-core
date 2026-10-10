@@ -32,7 +32,7 @@ const publishOf = (store: MemoryStore, version: number) =>
 		(e): e is Extract<Entry, { type: "publish" }> => e.type === "publish" && e.version === version && !e.space,
 	)!;
 
-test("a start note's publishes are one change, with its versions, files and title", () => {
+test("a start note's pushes are one change, with its versions, files and title", () => {
 	const { project, store, at } = setup();
 	at(1);
 	project.starting("ann", "Bigger numbers", ["a.ts", "b.ts"], 1);
@@ -141,7 +141,7 @@ test("since you last looked: the changes with anything new after a log position,
 	assert.equal(project.changes(0).changes.length, 3);
 });
 
-test("changes come back the same from the log, and old publishes without a change still group and end the note", () => {
+test("changes come back the same from the log, and old pushes without a change still group and end the note", () => {
 	const { project, store } = setup();
 	project.starting("ann", "Note", undefined, 1);
 	edit(project, "ann", { file: "a.ts", old: "1", new: "2" }, 2);
@@ -151,7 +151,7 @@ test("changes come back the same from the log, and old publishes without a chang
 	// The same log as written before changes: no `change` on the publish.
 	const old = store.entries.map((e) => (e.type === "publish" ? (({ change: _, ...rest }) => rest)(e) : e)) as Entry[];
 	const replayed = Project.load(old, new MemoryStore(), { now: () => 3 });
-	assert.equal(replayed.startingNotes().length, 0, "an old publish ended the note");
+	assert.equal(replayed.startingNotes().length, 0, "an old push ended the note");
 	const noteAt = store.entries.findIndex((e) => e.type === "starting");
 	assert.deepEqual(
 		replayed.change(noteAt).versions.map((v) => v.message),

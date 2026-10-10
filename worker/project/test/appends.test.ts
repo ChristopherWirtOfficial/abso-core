@@ -19,7 +19,7 @@ function setup(files: Record<string, string> = { "notes/pitches.md": PITCHES }) 
 	return { project, builders };
 }
 
-test("five builders appending to the same file at once all publish on the first try, and nothing is lost", () => {
+test("five builders appending to the same file at once all push on the first try, and nothing is lost", () => {
 	const { project, builders } = setup();
 	builders.forEach((b, i) =>
 		project.edit(
@@ -36,7 +36,7 @@ test("five builders appending to the same file at once all publish on the first 
 	for (const b of builders) assert.deepEqual(project.sync(b).collisions, [], b);
 });
 
-test("a publish says what it went on top of that the folder did not have yet", () => {
+test("a push says what it went on top of that the folder did not have yet", () => {
 	const { project } = setup();
 	project.edit("b5", { file: "notes/pitches.md", old: "# Pitches\n", new: "# Pitches\nfive\n" }, 1);
 	project.publish("b5", "Pitch five", 2);
@@ -90,7 +90,7 @@ test("an insertion next to a line the other side changed still collides", () => 
 	assert.equal(project.publish("b2", "Mine", 3).ok, false);
 });
 
-test("a one-line list both sides added to is merged at sync, told, and publishes; no doubled declaration", () => {
+test("a one-line list both sides added to is merged at pull, told, and pushes; no doubled declaration", () => {
 	const { project } = setup({ "src/main.ts": "const SYSTEMS = [input, physics];\nrun(SYSTEMS);\n" });
 	project.edit("b1", { file: "src/main.ts", old: "[input, physics]", new: "[input, physics, audio]" }, 1);
 	project.publish("b1", "Audio system", 2);
@@ -110,7 +110,7 @@ test("a one-line list both sides added to is merged at sync, told, and publishes
 	assert.equal(project.files()["src/main.ts"], "const SYSTEMS = [input, physics, audio, render];\nrun(SYSTEMS);\n");
 });
 
-test("news about a collision is dropped once the agent syncs past it; announcements stay", () => {
+test("news about a collision is dropped once the agent pulls past it; announcements stay", () => {
 	const { project } = setup({ "a.ts": "x\n" });
 	project.edit("b2", { file: "a.ts", old: "x", new: "y" }, 1);
 	project.edit("b4", { file: "a.ts", old: "x", new: "z" }, 1);

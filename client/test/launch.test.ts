@@ -104,7 +104,7 @@ describe("client/launch.mjs", () => {
 	it("doesn't run a command twice when it fails inside a bundle that loaded", () => {
 		const c = checkout();
 		bundle(c.repo, 'throw new Error("the command failed");\n', c.head);
-		const r = launch(c, ["publish"]);
+		const r = launch(c, ["push"]);
 		assert.notEqual(r.status, 0);
 		assert.doesNotMatch(r.stdout, /^ts /m);
 		assert.equal(existsSync(join(c.home, ".abso", "launcher.log")), false);
@@ -113,7 +113,7 @@ describe("client/launch.mjs", () => {
 	it("doesn't run a command twice when it throws a SyntaxError after the bundle started", () => {
 		const c = checkout();
 		bundle(c.repo, 'globalThis.__absoBundleStarted = true;\nJSON.parse("{");\n', c.head);
-		const r = launch(c, ["publish"]);
+		const r = launch(c, ["push"]);
 		assert.notEqual(r.status, 0);
 		assert.doesNotMatch(r.stdout, /^ts /m);
 		assert.equal(existsSync(join(c.home, ".abso", "launcher.log")), false);

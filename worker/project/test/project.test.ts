@@ -23,7 +23,7 @@ function apply(folder: Record<string, string>, files: Files): void {
 	}
 }
 
-test("a first sync hands back every file, empty ones included", () => {
+test("a first pull hands back every file, empty ones included", () => {
 	const store = new MemoryStore();
 	const project = new Project(store);
 	assert.deepEqual(project.init({ ...START, "empty.txt": "" }, 1), { version: 0, skipped: [] });
@@ -34,7 +34,7 @@ test("a first sync hands back every file, empty ones included", () => {
 	assert.deepEqual(project.sync("backtracker").files, {});
 });
 
-test("an edit joins the draft, publish adds it to shared, and sync brings it to others", () => {
+test("an edit joins the draft, push adds it to shared, and pull brings it to others", () => {
 	const { project } = setup();
 	project.sync("a");
 	project.sync("b");
@@ -121,7 +121,7 @@ test("Write and MultiEdit, and record creates, changes and deletes files", () =>
 	});
 });
 
-test("changes that do not collide publish in any order and give the same files", () => {
+test("changes that do not collide push in any order and give the same files", () => {
 	const edits: [string, string, string, string][] = [
 		["a", "notes.md", "one\n", "uno\n"],
 		["b", "notes.md", "four\n", "cuatro\n"],
@@ -147,7 +147,7 @@ test("changes that do not collide publish in any order and give the same files",
 		}
 		for (const i of order) {
 			const [agent] = edits[i]!;
-			assert.equal(project.publish(agent, `from ${agent}`, 3).ok, true, `publish by ${agent}`);
+			assert.equal(project.publish(agent, `from ${agent}`, 3).ok, true, `push by ${agent}`);
 		}
 		return project.files();
 	});
@@ -159,7 +159,7 @@ test("changes that do not collide publish in any order and give the same files",
 	});
 });
 
-test("a collision refuses the publish, sends news, and sync then an edit settles it", () => {
+test("a collision refuses the push, sends news, and pull then an edit settles it", () => {
 	const { project } = setup();
 	const folderB: Record<string, string> = {};
 	apply(folderB, project.sync("a").files);
@@ -173,7 +173,7 @@ test("a collision refuses the publish, sends news, and sync then an edit settles
 	const heard = project.edit("b", { file: "engine.ts", old: "return null", new: "return undefined" }, 5);
 	assert.equal(heard.ok, true);
 	assert.deepEqual(heard.ok && heard.news, [
-		'a published "Mark three for a" (version 1), which changes notes.md lines 3-3, where your draft also changes lines; run abso sync to see both versions.',
+		'a pushed "Mark three for a" (version 1), which changes notes.md lines 3-3, where your draft also changes lines; run abso pull to see both versions.',
 	]);
 	assert.deepEqual(project.edit("b", { file: "engine.ts", old: "undefined", new: "void 0" }, 5), {
 		ok: true,
@@ -218,7 +218,7 @@ test("a collision refuses the publish, sends news, and sync then an edit settles
 	assert.deepEqual(unresolvedConflicts(project.graph, shared), []);
 });
 
-test("publishing with the markers still in is refused; asIs publishes both and settles it (#37, #11)", () => {
+test("pushing with the markers still in is refused; asIs pushes both and settles it (#37, #11)", () => {
 	const { project } = setup();
 	project.sync("a");
 	project.sync("b");
@@ -235,7 +235,7 @@ test("publishing with the markers still in is refused; asIs publishes both and s
 	assert.deepEqual(unresolvedConflicts(project.graph, shared), []);
 });
 
-test("after publishing without syncing, the agent keeps editing its own folder", () => {
+test("after pushing without pulling, the agent keeps editing its own folder", () => {
 	const { project } = setup();
 	project.sync("a");
 	project.sync("b");
@@ -345,7 +345,7 @@ test("a log already missing a join loads: the join is put back at the version it
 	assert.deepEqual(loaded.files(), project.files());
 });
 
-test("a refused publish is logged and counted, and the counts survive a reload", () => {
+test("a refused push is logged and counted, and the counts survive a reload", () => {
 	const store = new MemoryStore();
 	const project = new Project(store);
 	project.init({ "a.txt": "a\n" }, 0);
@@ -362,7 +362,7 @@ test("a refused publish is logged and counted, and the counts survive a reload",
 	assert.deepEqual(Project.load(store.entries, new MemoryStore()).refusals(), project.refusals());
 });
 
-test("a full sync answers every file in the view, even for an agent that synced before; file listings change nothing (#37)", () => {
+test("a full pull answers every file in the view, even for an agent that pulled before; file listings change nothing (#37)", () => {
 	const store = new MemoryStore();
 	const project = new Project(store);
 	project.init({ "a.txt": "a\n", "src/b.ts": "b\n" }, 0);
