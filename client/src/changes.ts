@@ -29,10 +29,10 @@ import { byWhom } from "./history-answers.ts";
 import { applyMode, PLAIN, readKnownModes, writeKnownModes } from "./modes.ts";
 import { refusedText, screenAnswer } from "./safety.ts";
 
-/** The space to read: --draft (where "shared" means shared), else the one this agent is in. */
+/** The space to read: --draft (where "shared" means shared), else the one this agent is in (shared, in a folder with no agent). */
 function space(args: Parsed, agent: string): Where {
 	const named = str(args, "draft");
-	if (named === undefined) return { agent };
+	if (named === undefined) return agent === "" ? { draft: null } : { agent };
 	return { draft: named === "shared" ? null : named };
 }
 

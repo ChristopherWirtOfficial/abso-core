@@ -128,19 +128,52 @@ export function joinFolder(args: Parsed, env: Pick<Env, "cwd">, project: string)
 const SITE_OWNER = "christopher";
 
 /**
- * Why a join failed signed out. The client reads only as an agent, which needs a
- * sign-in; a public project is read signed out on the website. Whether the
- * project is public is asked of the server with no credentials.
+ * Whether anyone can read the project: its status answers with no credentials. Only the answer's code
+ * counts, never its body, and no redirect is followed. A private project and a missing one look the same.
+ */
+export async function isPublic(server: string, project: string): Promise<boolean> {
+	try {
+		const response = await fetch(new URL(`/p/${encodeURIComponent(project)}/status`, server), {
+			redirect: "error",
+			credentials: "omit",
+			signal: AbortSignal.timeout(3000),
+		});
+		return response.status === 200;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Why a join failed signed out. Without --reader, the client reads only as an agent, which needs a
+ * sign-in; a public project is read signed out on the website, or with abso join --reader.
  */
 async function signedOut(server: string, project: string): Promise<string> {
-	let open = false;
-	try {
-		const response = await fetch(new URL(`/p/${project}/status`, server), { signal: AbortSignal.timeout(3000) });
-		open = response.ok;
-	} catch {}
-	return open
-		? `${project} is public: read it at ${siteOf(server)}/${SITE_OWNER}/${project} (every page is also JSON). The client needs a sign-in, even to read: abso login.`
+	return (await isPublic(server, project))
+		? `${project} is public: read it at ${siteOf(server)}/${SITE_OWNER}/${project} (every page is also JSON), or here with abso join ${project} --reader. To work on it: abso login.`
 		: `This box isn't signed in to ${server}. abso login signs it in.`;
+}
+
+/** A folder that reads a public project signed out: no agent, no key, no copy of the files. */
+async function joinAsVisitor(root: string, server: string, project: string, env: Env): Promise<Output> {
+	writeConfig(root, { server, project, agent: "", visitor: true });
+	const api = new Api(readConfig(root, env.env));
+	let version: number;
+	try {
+		version = (await api.status()).version;
+	} catch (error) {
+		rmSync(stateDir(root), { recursive: true, force: true });
+		throw error;
+	}
+	return {
+		text: [
+			`Joined ${project} to read it signed out, at version ${version}, in ${root}. Nothing is sent with a sign-in, and nothing here is recorded.`,
+			`This folder holds no copy of the files: abso files lists them, abso show ${version}:<file> prints one, and status, log, blame, why, where, issues, issue and search read the rest.`,
+			`To work on ${project}: abso login, then abso join ${project} in a new folder.`,
+			...(root === resolve(env.cwd) ? [] : [`cd ${relative(env.cwd, root) || root}`]),
+		].join("\n"),
+		json: { project, visitor: true, version, root },
+	};
 }
 
 export async function runJoin(args: Parsed, env: Env): Promise<Output> {
@@ -163,7 +196,9 @@ export async function runJoin(args: Parsed, env: Env): Promise<Output> {
 		agent = agentFrom(args);
 		minted = box && !hasKey ? await mintKey(box, project, agent) : undefined;
 	} else {
-		// No --agent: the box's name, or the next free -2, -3.
+		// No --agent: the box's name, or the next free -2, -3. Not signed in, --reader reads a public project signed out.
+		if (!box && reader && !hasKey && (await isPublic(server, project)))
+			return joinAsVisitor(root, server, project, env);
 		if (!box)
 			throw new UsageError(
 				`${await signedOut(server, project)} (A folder that already has a key joins with --agent <name>.)`,

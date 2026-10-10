@@ -174,7 +174,7 @@ export class Api {
 		return {
 			// Which client made the call (#29); the mods send theirs too.
 			"x-abso-client": `abso-cli/${clientVersion()}`,
-			...(this.config.token ? { authorization: `Bearer ${this.config.token}` } : {}),
+			...(this.config.token && !this.config.visitor ? { authorization: `Bearer ${this.config.token}` } : {}),
 			...(contentType ? { "content-type": contentType } : {}),
 		};
 	}
@@ -187,6 +187,9 @@ export class Api {
 		atLeastMs = 0,
 	): Promise<T> {
 		let res: Response | undefined;
+		// A visitor folder only reads, and follows no redirect, so nothing it sends goes anywhere it didn't name.
+		const visitor = this.config.visitor === true;
+		if (visitor && method !== "GET") throw new ApiError(`${path}: a folder that reads signed out sends only reads`);
 		const sent = body === undefined ? undefined : JSON.stringify(body);
 		const timeoutMs = Math.max(atLeastMs, timeoutFor(this.timeoutMs, sent));
 		// A connection that never opened is tried once more, IPv4 first (#37, GAME - UI/UX: one IPv6
@@ -198,6 +201,7 @@ export class Api {
 					method,
 					headers: this.headers(sent === undefined ? undefined : "application/json"),
 					...(sent === undefined ? {} : { body: sent }),
+					...(visitor ? { redirect: "error" as const, credentials: "omit" as const } : {}),
 					signal: AbortSignal.timeout(timeoutMs),
 				});
 			} catch (err) {

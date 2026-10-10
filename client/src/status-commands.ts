@@ -280,6 +280,17 @@ export function missingText(missing: readonly string[]): string[] {
 
 export async function runStatus(args: Parsed, env: Env): Promise<Output> {
 	const { root, config, api } = open(env);
+	if (config.visitor) {
+		// A folder that reads signed out: shared's version and whether it's green. It holds no files to compare.
+		const status = await api.status();
+		return {
+			text: [
+				`Project ${config.project}: shared is at version ${status.version}. This folder reads it signed out, sending no sign-in: status, log, show, files, blame, why, where, issues, issue and search work here. To work on it: abso login, then abso join ${config.project} in a new folder.`,
+				...ciText(status.ci ?? undefined, status.version),
+			].join("\n"),
+			json: { project: config.project, version: status.version, visitor: true, ci: status.ci ?? null },
+		};
+	}
 	const short = bool(args, "short");
 	const { files: view, ...status } = short ? { ...(await api.status()), files: undefined } : await api.statusAndFiles();
 	const clean = CleanFiles.load(root);

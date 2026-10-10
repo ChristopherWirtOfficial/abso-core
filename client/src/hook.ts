@@ -16,7 +16,7 @@ import { appendFileSync, existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { Api, type News, newsLines } from "./api.ts";
-import { findRoot, isReader, readConfig } from "./config.ts";
+import { findRoot, isReader, isVisitor, readConfig } from "./config.ts";
 import { editBody, newsContext, normalize, spellingText, uncomposedText } from "./core.ts";
 import { fromEnv } from "./env-names.ts";
 import { forgetKnown, isPaused, loadIgnore, logNews, readKnown, readText, relativeTo, writeKnown } from "./folder.ts";
@@ -91,6 +91,8 @@ export async function runHook(
 			outcome = "skipped: recording is paused (abso resume)";
 		} else if (isReader(root)) {
 			outcome = "skipped: this folder is a reader";
+		} else if (isVisitor(root)) {
+			outcome = "skipped: this folder reads signed out";
 		} else if (rel === undefined || loadIgnore(root)(rel, false)) {
 			outcome = "skipped: ignored path";
 		} else if (readKnownModes(root).get(rel)?.link != null) {

@@ -21,6 +21,11 @@ export interface Settings {
 	readonly follow?: string;
 	/** A reader folder (abso join --reader, #37): it reads everything and records nothing; the server refuses its records too. */
 	readonly reader?: boolean;
+	/**
+	 * A visitor folder (abso join <project> --reader with no sign-in, for a public project): it reads through the
+	 * routes anyone can read and sends no credential. It has no agent; its config holds server, project and this.
+	 */
+	readonly visitor?: boolean;
 }
 
 export interface Config extends Settings {
@@ -44,6 +49,13 @@ export function findRoot(start: string): string | undefined {
 
 export function readConfig(root: string, env: Readonly<Record<string, string | undefined>> = process.env): Config {
 	const raw = JSON.parse(readFileSync(configPath(root), "utf8")) as Partial<Settings>;
+	if (raw.visitor === true) {
+		for (const key of ["server", "project"] as const) {
+			if (typeof raw[key] !== "string" || raw[key] === "") throw new Error(`${configPath(root)} has no "${key}"`);
+		}
+		// No token and no key, whatever the environment or the folder holds: a visitor sends no credential.
+		return { server: raw.server!, project: raw.project!, agent: "", visitor: true };
+	}
 	for (const key of ["server", "project", "agent"] as const) {
 		if (typeof raw[key] !== "string" || raw[key] === "") throw new Error(`${configPath(root)} has no "${key}"`);
 	}
@@ -56,6 +68,15 @@ export function readConfig(root: string, env: Readonly<Record<string, string | u
 		...(raw.reader === true ? { reader: true } : {}),
 		...(token ? { token } : {}),
 	};
+}
+
+/** Whether the folder is a visitor's: it reads signed out and sends no credential. Read straight from its config. */
+export function isVisitor(root: string): boolean {
+	try {
+		return (JSON.parse(readFileSync(configPath(root), "utf8")) as { visitor?: unknown }).visitor === true;
+	} catch {
+		return false;
+	}
 }
 
 /** Whether the folder is a reader (#37): records nothing. Read straight from its config, for the paths that only need this. */
@@ -205,11 +226,11 @@ export function readToken(env: Readonly<Record<string, string | undefined>> = pr
 
 export function writeConfig(root: string, settings: Settings): void {
 	mkdirSync(stateDir(root), { recursive: true });
-	const { server, project, agent, follow, reader } = settings;
-	writeFileSync(
-		configPath(root),
-		`${JSON.stringify({ server, project, agent, ...(follow ? { follow } : {}), ...(reader ? { reader: true } : {}) }, null, 2)}\n`,
-	);
+	const { server, project, agent, follow, reader, visitor } = settings;
+	const written = visitor
+		? { server, project, visitor: true }
+		: { server, project, agent, ...(follow ? { follow } : {}), ...(reader ? { reader: true } : {}) };
+	writeFileSync(configPath(root), `${JSON.stringify(written, null, 2)}\n`);
 	excludeFromGit(root);
 }
 

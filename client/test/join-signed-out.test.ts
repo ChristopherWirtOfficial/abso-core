@@ -1,7 +1,7 @@
 // A join with no sign-in says abso login signs the box in. For a public project
-// it also says where the website shows it, since the client needs a sign-in
-// even to read. The client runs as its own process with an empty home, so no
-// sign-in or token on this machine is found.
+// it also says where the website shows it, and that --reader reads it here
+// (visitor.test.ts has that folder). The client runs as its own process with an
+// empty home, so no sign-in or token on this machine is found.
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -65,7 +65,7 @@ describe("join, signed out", () => {
 		assert.notEqual(run.code, 0);
 		assert.match(
 			run.stderr,
-			/abso-core is public: read it at http:\/\/127\.0\.0\.1:\d+\/christopher\/abso-core \(every page is also JSON\)\. The client needs a sign-in, even to read: abso login\./,
+			/abso-core is public: read it at http:\/\/127\.0\.0\.1:\d+\/christopher\/abso-core \(every page is also JSON\), or here with abso join abso-core --reader\. To work on it: abso login\./,
 		);
 	});
 

@@ -37,7 +37,7 @@ import {
 	runSync,
 	takeNews,
 } from "./commands.ts";
-import { configPath, findRoot, installKey, readConfig, readToken } from "./config.ts";
+import { configPath, findRoot, installKey, isVisitor, readConfig, readToken } from "./config.ts";
 import { newsBlockLines, newsShown, TOKEN_SERVERS } from "./core.ts";
 import { checkServer, doctor, doctorText, plainError, realProbe, whoami } from "./doctor.ts";
 import { runDraftSync, runLand, runSwitch } from "./drafts.ts";
@@ -53,6 +53,7 @@ import { installSkill, SKILL, skillPath } from "./skill.ts";
 import { colorsPass, terminalText } from "./terminal-text.ts";
 import { runAmend, runDrop, runFollow, runLabel, runLabels, runPluck } from "./versions.ts";
 import { runVisibility } from "./visibility-commands.ts";
+import { checkVisitor } from "./visitor.ts";
 
 interface CommandDef {
 	readonly flags: FlagSpec;
@@ -291,7 +292,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { server: "string", agent: "string", dir: "string", reader: "boolean" },
 		usage: "abso join <project> [--agent <name>] [--dir <folder>] [--server <url>] [--reader]",
 		about:
-			"Join a project as a new agent and write its shared files into a folder: --dir, else here when this folder is empty, else ./<project> (which has to be new or empty). Without --agent the agent is named after this box (the name abso login gave it, lower-cased), or the next free <name>-2, <name>-3; that needs the box signed in with abso login. The server is --server, else ABSO_SERVER, else the one this box signed in to with abso login, else https://api.abso.dev. --reader joins as a reader: it reads everything and records nothing, and the server refuses its edits, records and publishes.",
+			"Join a project as a new agent and write its shared files into a folder: --dir, else here when this folder is empty, else ./<project> (which has to be new or empty). Without --agent the agent is named after this box (the name abso login gave it, lower-cased), or the next free <name>-2, <name>-3; that needs the box signed in with abso login. The server is --server, else ABSO_SERVER, else the one this box signed in to with abso login, else https://api.abso.dev. --reader joins as a reader: it reads everything and records nothing, and the server refuses its edits, records and publishes. With --reader and no sign-in, a public project is joined to read signed out: the folder holds only its settings, sends no sign-in, and runs status, log, show, files, blame, why, where, issues, issue and search; every other command is refused.",
 		run: runJoin,
 	},
 	record: {
@@ -913,6 +914,9 @@ export async function main(argv: readonly string[], env: Env): Promise<MainResul
 			const files = bodyFilesHelp(command, def.flags);
 			return { stdout: `${def.usage}\n  ${def.about}\n${files ? `  ${files}\n` : ""}`, stderr: "", exit: EXIT.ok };
 		}
+		// A folder that reads signed out runs its reads and nothing else, refused before any call.
+		const root = findRoot(env.cwd);
+		if (root !== undefined && isVisitor(root)) checkVisitor(command, parsed, readConfig(root, env.env).project);
 		const args = readBodyFiles(command, parsed, env.cwd, env.readStdin);
 		takeNews(); // what an earlier call in this process left (tests run many)
 		const out = await def.run(args, env);
