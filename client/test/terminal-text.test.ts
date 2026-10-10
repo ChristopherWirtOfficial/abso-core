@@ -62,11 +62,8 @@ describe("terminalText", () => {
 			if (process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot;
 			const client = resolve(import.meta.dirname, "..", "abso.ts");
 			const run = await new Promise<{ stdout: string; stderr: string }>((done) =>
-				execFile(
-					process.execPath,
-					[client, `frob${ESC}]52;c;aGk=\x07`],
-					{ cwd: dir, env },
-					(_e, stdout, stderr) => done({ stdout, stderr }),
+				execFile(process.execPath, [client, `frob${ESC}]52;c;aGk=\x07`], { cwd: dir, env }, (_e, stdout, stderr) =>
+					done({ stdout, stderr }),
 				),
 			);
 			assert.doesNotMatch(run.stdout + run.stderr, /\x1b/);
