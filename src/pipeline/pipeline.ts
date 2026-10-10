@@ -68,7 +68,7 @@ export type Checked =
 	| { readonly ok: true; readonly file: PipelineFile }
 	| { readonly ok: false; readonly problems: readonly Problem[] };
 
-export const BUILT_INS = ["deploy", "preview", "notify"] as const;
+export const BUILT_INS = ["deploy", "preview", "notify", "npm-publish"] as const;
 export type BuiltIn = (typeof BUILT_INS)[number];
 
 /** Each built-in step's own settings, beside the keys every job has. */
@@ -76,7 +76,12 @@ const BUILT_IN_SETTINGS: Readonly<Record<BuiltIn, readonly string[]>> = {
 	deploy: ["worker", "staging", "live"],
 	preview: [],
 	notify: ["to"],
+	// The npm packages it may publish, from the .tgz files its from: job kept.
+	"npm-publish": ["packages"],
 };
+
+/** An npm package name: lower case, URL-safe, optionally under a @scope/. */
+const NPM_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
 
 const TRIGGERS = ["publish", "draft", "green", "land", "hand"] as const;
 const SIZES: readonly Size[] = ["small", "standard", "large"];
@@ -277,6 +282,18 @@ function job(name: string, j: unknown, at: string, say: Say): Job | undefined {
 	for (const k of settings) if (j[k] !== undefined) withs[k] = j[k];
 	if (uses === "deploy" && typeof j.worker !== "string")
 		say(`${at}.worker`, "names the Worker deploy ships, and is missing");
+	if (uses === "npm-publish") {
+		if (j.from === undefined)
+			say(`${at}.from`, "names the job whose kept .tgz files npm-publish publishes, and is missing");
+		const packages = j.packages;
+		if (!Array.isArray(packages) || packages.length === 0)
+			say(`${at}.packages`, "lists the npm packages npm-publish may publish, and is missing");
+		else
+			packages.forEach((p, i) => {
+				if (typeof p !== "string" || p.length > 214 || !NPM_NAME.test(p))
+					say(`${at}.packages[${i}]`, `${q(p)} isn't an npm package name`);
+			});
+	}
 	return {
 		name,
 		needs: list(j.needs, `${at}.needs`, say, "a list of job names"),

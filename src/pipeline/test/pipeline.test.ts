@@ -216,6 +216,35 @@ describe("refusing", () => {
 		ok(checkPipelines(one({ a: { run: "npm test" } }, { on: ["draft"] })));
 	});
 
+	it("npm-publish: the packages it may publish, from a job's kept files", () => {
+		const pack = { run: "npm pack --pack-destination out", keep: ["out"] };
+		const read = checkPipelines(
+			one({
+				pack,
+				publish: { uses: "npm-publish", from: "p.pack", needs: ["pack"], packages: ["@scope/tool", "tool"] },
+			}),
+		);
+		ok(read);
+		const job = read.ok ? read.file.pipelines[0]!.jobs.find((j) => j.name === "publish") : undefined;
+		assert.equal(job?.uses, "npm-publish");
+		assert.deepEqual(job?.with, { packages: ["@scope/tool", "tool"] });
+		const ps = problems(
+			checkPipelines(
+				one({
+					pack,
+					a: { uses: "npm-publish", packages: ["tool"] },
+					b: { uses: "npm-publish", from: "p.pack" },
+					c: { uses: "npm-publish", from: "p.pack", packages: ["Tool", "@scope", 7] },
+				}),
+			),
+		);
+		has(ps, "pipelines.p.jobs.a.from", /is missing/);
+		has(ps, "pipelines.p.jobs.b.packages", /is missing/);
+		has(ps, "pipelines.p.jobs.c.packages[0]", /isn't an npm package name/);
+		has(ps, "pipelines.p.jobs.c.packages[1]", /isn't an npm package name/);
+		has(ps, "pipelines.p.jobs.c.packages[2]", /isn't an npm package name/);
+	});
+
 	it("keys it doesn't know, at every level", () => {
 		const ps = problems(
 			checkPipelines({
