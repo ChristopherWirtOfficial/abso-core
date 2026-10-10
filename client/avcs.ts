@@ -3,11 +3,12 @@
 // `abso help` lists the commands. `abso hook` is the Claude Code hook; it
 // loads only what it needs, since every edit pays for its start-up.
 
-import { enableCompileCache } from "node:module";
+import * as nodeModule from "node:module";
 
 // Node keeps the compiled modules (TypeScript already stripped) in a cache in
 // the temp folder. Loading the hook's modules drops from about 55 ms to 11 ms.
-enableCompileCache();
+// Node 20 has no compile cache, and the built client runs there without one.
+(nodeModule as { enableCompileCache?: () => unknown }).enableCompileCache?.();
 
 const argv = process.argv.slice(2);
 
