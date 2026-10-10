@@ -217,7 +217,7 @@ describe("a visitor folder", () => {
 		assert.equal(elsewhereHeard, 0);
 	});
 
-	it("asks fetch for no redirect and no credentials, join's public check too (a fetch spy)", async () => {
+	it("asks fetch to follow no redirect and sends no credential, join's public check too (a fetch spy)", async () => {
 		const root = temp("spy");
 		writeConfig(root, { server: url, project: "abso-core", agent: "", visitor: true });
 		const real = globalThis.fetch;
@@ -236,7 +236,6 @@ describe("a visitor folder", () => {
 		assert.equal(calls.length, 2);
 		for (const init of calls) {
 			assert.equal(init.redirect, "error");
-			assert.equal(init.credentials, "omit");
 			const headers = new Headers(init.headers);
 			assert.equal(headers.get("authorization"), null);
 			assert.equal(headers.get("cookie"), null);

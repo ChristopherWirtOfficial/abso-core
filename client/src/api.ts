@@ -201,7 +201,7 @@ export class Api {
 					method,
 					headers: this.headers(sent === undefined ? undefined : "application/json"),
 					...(sent === undefined ? {} : { body: sent }),
-					...(visitor ? { redirect: "error" as const, credentials: "omit" as const } : {}),
+					...(visitor ? { redirect: "error" as const } : {}),
 					signal: AbortSignal.timeout(timeoutMs),
 				});
 			} catch (err) {

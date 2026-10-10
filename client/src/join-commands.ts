@@ -135,7 +135,6 @@ export async function isPublic(server: string, project: string): Promise<boolean
 	try {
 		const response = await fetch(new URL(`/p/${encodeURIComponent(project)}/status`, server), {
 			redirect: "error",
-			credentials: "omit",
 			signal: AbortSignal.timeout(3000),
 		});
 		return response.status === 200;
