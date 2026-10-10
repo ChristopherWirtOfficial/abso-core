@@ -5,13 +5,13 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runAnnounce, runNews, runStart } from "./announce.ts";
 import { ApiError } from "./api.ts";
-import { clientVersion } from "./client-version.ts";
 import { bool, type FlagSpec, type Parsed, parseArgs, str, UsageError } from "./args.ts";
 import { bodyFilesHelp, readBodyFiles, withBodyFiles } from "./body-files.ts";
 import { boxPublic, boxText, login, logout, readBox } from "./box.ts";
 import { runDiff, runFiles, runLog, runRestore, runShow } from "./changes.ts";
 import { runCheckIgnore } from "./check-ignore.ts";
 import { runCi } from "./ci.ts";
+import { clientVersion } from "./client-version.ts";
 import {
 	type Env,
 	EXIT,
