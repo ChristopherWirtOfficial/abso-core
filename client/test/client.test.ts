@@ -1098,7 +1098,10 @@ describe("abso run starts again when the connection fails before any answer (tri
 		fake.dropRunStarts = 4;
 		const r = await main(["run", "node", "hi.js"], { cwd: folders.alice!, env: FAST, write: () => {} });
 		assert.equal(r.exit, 1);
-		assert.match(r.stderr, /^abso run: could not reach .*\(tried 4 times\)\n$/);
+		assert.match(
+			r.stderr,
+			/^abso run: Can't reach .*\(tried 4 times\)\. Check your connection; abso doctor checks the rest\.\n$/,
+		);
 		assert.equal(fake.runStarts.slice(before).filter((t) => t.started).length, 0);
 		fake.dropRunStarts = 0;
 	});
@@ -2917,7 +2920,7 @@ describe("a server that can't be reached (#37, GAME - UI/UX)", () => {
 		assert.equal(status.exit, 1);
 		assert.match(
 			status.stderr,
-			/could not reach http:\/\/127\.0\.0\.1:\d+: .*Tried twice, the second time IPv4 first; the connection never opened, so nothing reached the server\n$/,
+			/Can't reach http:\/\/127\.0\.0\.1:\d+: .*Tried twice, the second time IPv4 first; the connection never opened, so nothing reached the server\. Check your connection; abso doctor checks the rest\.\n$/,
 		);
 		const plain = await main(["publish", "-m", "x"], { cwd: folders.alice!, env: ENV, write: () => {} });
 		assert.match(plain.stderr, /nothing reached the server\. Nothing was published\. Run the same command again\.\n$/);

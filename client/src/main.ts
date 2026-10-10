@@ -38,6 +38,7 @@ import {
 } from "./commands.ts";
 import { configPath, findRoot, installKey, readConfig, readToken } from "./config.ts";
 import { newsBlockLines, newsShown, TOKEN_SERVERS } from "./core.ts";
+import { doctor, doctorText, plainError, realProbe, whoami } from "./doctor.ts";
 import { runDraftSync, runLand, runSwitch } from "./drafts.ts";
 import { runExport } from "./export.ts";
 import { runBlame, runWhere, runWho, runWhy } from "./history.ts";
@@ -200,6 +201,27 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 			const server = boxServer(args, env);
 			const record = readBox(server);
 			return { text: boxText(record, server), json: { box: boxPublic(record) } };
+		},
+	},
+	whoami: {
+		flags: { server: "string" },
+		usage: "abso whoami [--server <url>]",
+		about:
+			"Who and where you're signed in: this box's sign-in, as the server sees it (so a revoked one shows), its projects, roles and expiry, and this folder's project, agent and kind of key. Never a credential.",
+		run: async (args, env) => {
+			const out = await whoami(boxServer(args, env), env.cwd, env.env, realProbe());
+			return { text: out.text, json: out.json };
+		},
+	},
+	doctor: {
+		flags: { server: "string" },
+		usage: "abso doctor [--server <url>]",
+		about:
+			"Checks what commands need, one line each: Node's version, that the server answers, this box's sign-in (present, unexpired, accepted), and this folder's key against its project. A failed check says what to do next, and the exit is 1. Never prints a credential.",
+		run: async (args, env) => {
+			const checks = await doctor(boxServer(args, env), env.cwd, env.env, realProbe());
+			const failed = checks.some((c) => c.result === "fail");
+			return { text: doctorText(checks), json: { checks }, ...(failed ? { exit: EXIT.error } : {}) };
 		},
 	},
 	logout: {
@@ -803,6 +825,16 @@ function newsBlock(news: readonly string[]): string[] {
 	return newsBlockLines(news.map((n) => newsShown(n)));
 }
 
+/** Whether this folder's calls carry a key or token, for how a refusal is worded. False when that can't be told. */
+function carriesCredential(env: Env): boolean {
+	try {
+		const root = findRoot(env.cwd);
+		return root ? readConfig(root, env.env).token !== undefined : readToken(env.env) !== undefined;
+	} catch {
+		return false;
+	}
+}
+
 export async function main(argv: readonly string[], env: Env): Promise<MainResult> {
 	const command = argv[0];
 	const json = argv.includes("--json") && command !== "run" && command !== "logs";
@@ -865,7 +897,10 @@ export async function main(argv: readonly string[], env: Env): Promise<MainResul
 		const e = err as Error;
 		const code = err instanceof UsageError ? "usage" : err instanceof ApiError ? "server" : "error";
 		const message =
-			err instanceof UsageError || err instanceof ApiError ? e.message : `${e.message}${e.stack ? `\n${e.stack}` : ""}`;
+			plainError(err, carriesCredential(env)) ??
+			(err instanceof UsageError || err instanceof ApiError
+				? e.message
+				: `${e.message}${e.stack ? `\n${e.stack}` : ""}`);
 		// The server refusing (409) is like a collision: exit 2, not a failure.
 		const exit = err instanceof ApiError && err.status === 409 ? EXIT.refused : EXIT.error;
 		// News taken before the failure still shows.
