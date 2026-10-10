@@ -21,6 +21,25 @@ function sgrAt(text: string, i: number): number {
 	return 0;
 }
 
+/**
+ * An SGR sequence without parameter 8 (conceal), which would hide the text after it from the reader. The 8 in an
+ * extended color (38;5;8, 48;2;8;8;8) is a color, so those are copied whole. Nothing is left when 8 was all it said.
+ */
+function withoutConceal(sgr: string): string {
+	const parts = sgr.slice(2, -1).split(";");
+	const kept: string[] = [];
+	for (let i = 0; i < parts.length; i++) {
+		const p = parts[i]!;
+		if ((p === "38" || p === "48" || p === "58") && (parts[i + 1] === "5" || parts[i + 1] === "2")) {
+			const n = parts[i + 1] === "5" ? 3 : 5;
+			kept.push(...parts.slice(i, i + n));
+			i += n - 1;
+		} else if (p !== "8") kept.push(p);
+	}
+	if (kept.length === parts.length) return sgr;
+	return kept.length === 0 ? "" : `\x1b[${kept.join(";")}m`;
+}
+
 /** Whether a character code is one the terminal acts on: C0 but tab and newline, DEL, and C1. */
 const control = (c: number) => (c < 0x20 && c !== 0x09 && c !== 0x0a) || (c >= 0x7f && c <= 0x9f);
 
@@ -38,7 +57,7 @@ export function terminalText(text: string, colors: boolean): string {
 		}
 		const sgr = sgrAt(text, i);
 		if (sgr > 0) {
-			if (colors) out += text.slice(i, i + sgr);
+			if (colors) out += withoutConceal(text.slice(i, i + sgr));
 			i += sgr - 1;
 		} else if (c === 0x0d && text.charCodeAt(i + 1) === 0x0a) out += "\r";
 		else out += c < 0x80 ? `\\x${c.toString(16).padStart(2, "0")}` : `\\u${c.toString(16).padStart(4, "0")}`;

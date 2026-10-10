@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runAnnounce, runNews, runStart } from "./announce.ts";
 import { ApiError } from "./api.ts";
+import { clientVersion } from "./client-version.ts";
 import { bool, type FlagSpec, type Parsed, parseArgs, str, UsageError } from "./args.ts";
 import { bodyFilesHelp, readBodyFiles, withBodyFiles } from "./body-files.ts";
 import { boxPublic, boxText, login, logout, readBox } from "./box.ts";
@@ -790,20 +791,55 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	},
 };
 
-function help(): string {
+const HELP_INTRO = "abso: version control for agents. This is its command-line client.";
+const HELP_NOTE =
+	"Every command takes --json. Settings live in .abso/config.json (.avcs/config.json in a folder from before the rename). The token comes from ABSO_TOKEN, or else ~/.abso/token (or ~/.avcs/token from before).";
+
+/** Every command as help shows it, in order: the table's, then the three it doesn't hold. */
+function helpEntries(): { name: string; usage: string; about: string; flags: FlagSpec }[] {
 	return [
-		"abso: version control for agents. This is its command-line client.",
-		"",
-		...Object.values(COMMANDS).flatMap((c) => [`  ${c.usage}`, `      ${c.about}`]),
-		"  abso hook",
-		"      The Claude Code PostToolUse hook. Reads the hook JSON on stdin; never fails.",
-		"  abso mcp",
-		"      An MCP server on stdin and stdout: the reading commands and the everyday writing ones as tools, answering with the same text as here. Add it with claude mcp add abso -- abso mcp (on Windows, claude mcp add abso -- cmd /c abso mcp).",
-		"  abso --version",
-		"      This client's version and commit, and the abso mods installed on this machine.",
-		"",
-		"Every command takes --json. Settings live in .abso/config.json (.avcs/config.json in a folder from before the rename). The token comes from ABSO_TOKEN, or else ~/.abso/token (or ~/.avcs/token from before).",
-	].join("\n");
+		...Object.entries(COMMANDS).map(([name, c]) => ({ name, usage: c.usage, about: c.about, flags: c.flags })),
+		{
+			name: "hook",
+			usage: "abso hook",
+			about: "The Claude Code PostToolUse hook. Reads the hook JSON on stdin; never fails.",
+			flags: {},
+		},
+		{
+			name: "mcp",
+			usage: "abso mcp",
+			about:
+				"An MCP server on stdin and stdout: the reading commands and the everyday writing ones as tools, answering with the same text as here. Add it with claude mcp add abso -- abso mcp (on Windows, claude mcp add abso -- cmd /c abso mcp).",
+			flags: {},
+		},
+		{
+			name: "--version",
+			usage: "abso --version",
+			about: "This client's version and commit, and the abso mods installed on this machine.",
+			flags: {},
+		},
+	];
+}
+
+function help(): string {
+	const entries = helpEntries().flatMap((c) => [`  ${c.usage}`, `      ${c.about}`]);
+	return [HELP_INTRO, "", ...entries, "", HELP_NOTE].join("\n");
+}
+
+/**
+ * help --json: the same entries as data, for a command reference built from the client itself. A flag is
+ * "string" (takes a value), "boolean" (stands alone) or "optional" (a value that may be left off); every
+ * command also takes --json and --help.
+ */
+function helpJson(): Record<string, unknown> {
+	return {
+		ok: true,
+		command: "help",
+		version: clientVersion(),
+		intro: HELP_INTRO,
+		note: HELP_NOTE,
+		commands: helpEntries(),
+	};
 }
 
 export interface MainResult {
@@ -839,6 +875,10 @@ export async function main(argv: readonly string[], env: Env): Promise<MainResul
 	const command = argv[0];
 	const json = argv.includes("--json") && command !== "run" && command !== "logs";
 	if (command === undefined || command === "help" || command === "--help" || command === "-h") {
+		if (json) {
+			const data = helpJson();
+			return { stdout: `${JSON.stringify(data, null, 2)}\n`, stderr: "", exit: EXIT.ok, data };
+		}
 		return { stdout: `${help()}\n`, stderr: "", exit: EXIT.ok };
 	}
 	try {

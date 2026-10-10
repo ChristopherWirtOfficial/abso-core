@@ -24,6 +24,14 @@ describe("terminalText", () => {
 		assert.equal(terminalText(red, false), "failed and bold");
 	});
 
+	it("drops conceal (SGR 8), which would hide text, but keeps 8 as a color", () => {
+		assert.equal(terminalText(`${ESC}[8mhidden${ESC}[0m`, true), `hidden${ESC}[0m`);
+		assert.equal(terminalText(`${ESC}[1;8;31mx`, true), `${ESC}[1;31mx`);
+		assert.equal(terminalText(`${ESC}[38;5;8;48;2;8;8;8mx`, true), `${ESC}[38;5;8;48;2;8;8;8mx`);
+		assert.equal(terminalText(`${ESC}[38;5;8;8mx`, true), `${ESC}[38;5;8mx`);
+		assert.equal(terminalText(`${ESC}[mx${ESC}[28m`, true), `${ESC}[mx${ESC}[28m`);
+	});
+
 	it("shows OSC 52 (the clipboard) and OSC 8 (links) as text, with or without colors", () => {
 		const clip = `${ESC}]52;c;ZWNobyBoaQ==\x07`;
 		assert.equal(terminalText(clip, true), "\\x1b]52;c;ZWNobyBoaQ==\\x07");
