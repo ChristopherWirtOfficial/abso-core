@@ -5,7 +5,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { readPipelineFile } from "../../src/pipeline/pipeline.ts";
+import { readPipelineFile, triggerWord } from "../../src/pipeline/pipeline.ts";
 import { type PipelineEvent, plan } from "../../src/pipeline/plan.ts";
 import { type Parsed, str, UsageError } from "./args.ts";
 import { type Env, EXIT, type Output, open } from "./command-env.ts";
@@ -47,7 +47,7 @@ export async function runPipeline(args: Parsed, env: Env): Promise<Output> {
 		const said =
 			event.kind === "schedule"
 				? `On the schedule "${event.every}"`
-				: `On ${event.kind}${event.kind === "hand" ? ` of ${event.pipeline}` : ""} in ${event.space}`;
+				: `On ${triggerWord(event.kind)}${event.kind === "hand" ? ` of ${event.pipeline}` : ""} in ${event.space}`;
 		const lines = [
 			...planned.start.flatMap((p) => [
 				`  ${p.name} starts:`,
@@ -59,11 +59,11 @@ export async function runPipeline(args: Parsed, env: Env): Promise<Output> {
 		];
 		return {
 			text: `${said}, ${planned.start.length === 0 ? "nothing in" : `${planned.start.length === 1 ? "1 pipeline" : `${planned.start.length} pipelines`} from`} ${name} starts; jobs on one line can run side by side.\n${lines.join("\n")}\n`,
-			json: { file: name, event, ...planned },
+			json: { file: name, event: { ...event, kind: triggerWord(event.kind) }, ...planned },
 		};
 	}
 	const lines = pipelines.flatMap((p) => [
-		`  ${p.name}, on ${p.on.map((t) => (typeof t === "string" ? t : `every ${t.every}`)).join(", ")}${p.only ? `, only ${p.only.join(", ")}` : ""}:`,
+		`  ${p.name}, on ${p.on.map((t) => (typeof t === "string" ? triggerWord(t) : `every ${t.every}`)).join(", ")}${p.only ? `, only ${p.only.join(", ")}` : ""}:`,
 		...p.jobs.map(
 			(j) =>
 				`    ${j.name}${p.required.includes(j.name) ? " (required)" : ""}: ${j.uses ? `uses ${j.uses}` : j.run}${j.needs.length ? `, after ${j.needs.join(", ")}` : ""}`,
@@ -71,11 +71,14 @@ export async function runPipeline(args: Parsed, env: Env): Promise<Output> {
 	]);
 	return {
 		text: `${name} is fine: ${pipelines.length === 1 ? "1 pipeline" : `${pipelines.length} pipelines`}, jobs in the order they run.\n${lines.join("\n")}\n`,
-		json: { file: name, pipelines },
+		json: {
+			file: name,
+			pipelines: pipelines.map((p) => ({ ...p, on: p.on.map((t) => (typeof t === "string" ? triggerWord(t) : t)) })),
+		},
 	};
 }
 
-const KINDS = ["publish", "draft", "green", "land", "hand", "schedule"] as const;
+const KINDS = ["push", "draft", "green", "land", "hand", "schedule"] as const;
 
 /** --on, with --space, --pipeline (by hand) and --every (a schedule), as an event. */
 function eventFrom(on: string, args: Parsed): PipelineEvent {
@@ -91,7 +94,7 @@ function eventFrom(on: string, args: Parsed): PipelineEvent {
 		if (!pipeline) throw new UsageError("--on hand takes --pipeline <name>");
 		return { kind: "hand", pipeline, space };
 	}
-	return { kind: on as "publish" | "draft" | "green" | "land", space };
+	return { kind: on === "push" ? "publish" : (on as "draft" | "green" | "land"), space };
 }
 
 /** A run as the server's list gives it. */

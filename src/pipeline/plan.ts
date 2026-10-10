@@ -4,7 +4,7 @@
 // waves, so the jobs of one wave can run side by side. `abso pipeline check
 // --on <event>` shows it, and a runner reads the same plan.
 
-import type { Job, Pipeline, PipelineFile } from "./pipeline.ts";
+import { type Job, type Pipeline, type PipelineFile, triggerWord } from "./pipeline.ts";
 
 /** What happened, and in which space (shared, or a named draft). */
 export type PipelineEvent =
@@ -46,7 +46,8 @@ function notStarting(p: Pipeline, event: PipelineEvent, space: string): string |
 		event.kind === "schedule"
 			? p.on.some((t) => typeof t !== "string" && t.every === event.every)
 			: p.on.includes(event.kind);
-	if (!on) return event.kind === "schedule" ? `has no schedule "${event.every}"` : `doesn't run on ${event.kind}`;
+	if (!on)
+		return event.kind === "schedule" ? `has no schedule "${event.every}"` : `doesn't run on ${triggerWord(event.kind)}`;
 	if (p.only && !p.only.includes(space)) return `runs only for ${p.only.join(", ")}, not ${space}`;
 	// The file check refuses this already; the plan holds the line too.
 	if (event.kind === "draft" && p.jobs.some((j) => j.secrets.length > 0))

@@ -89,7 +89,13 @@ const DIST_TAG = /^[a-z][a-z0-9_-]{0,31}$/;
 /** An npm package name: lower case, URL-safe, optionally under a @scope/. */
 const NPM_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
 
-const TRIGGERS = ["publish", "draft", "green", "land", "hand"] as const;
+/** The words a pipeline file writes. The word `push` is the stored event "publish" (a log entry kind that stays). */
+const TRIGGERS = ["push", "draft", "green", "land", "hand"] as const;
+
+/** A trigger as a file and a person say it: the stored "publish" event is written `push`. */
+export function triggerWord(t: string): string {
+	return t === "publish" ? "push" : t;
+}
 const SIZES: readonly Size[] = ["small", "standard", "large"];
 const MACHINE_KEYS = ["image", "dockerfile", "size"] as const;
 const JOB_KEYS = ["needs", "run", "uses", "from", "keep", "cache", "secrets", "abso", ...MACHINE_KEYS] as const;
@@ -196,7 +202,7 @@ function shorthand(doc: Record<string, unknown>, say: Say): Record<string, unkno
 		jobs[name] = { run, ...(last ? { needs: [last] } : {}), ...(name === "build" ? { keep: [`${out}/**`] } : {}) };
 		last = name;
 	}
-	return { on: ["publish"], jobs, required: Object.keys(jobs) };
+	return { on: ["push"], jobs, required: Object.keys(jobs) };
 }
 
 function pipeline(name: string, p: unknown, at: string, say: Say): Pipeline | undefined {
@@ -364,7 +370,8 @@ function triggers(on: unknown, at: string, say: Say): Trigger[] | undefined {
 	const out: Trigger[] = [];
 	all.forEach((t, i) => {
 		const here = Array.isArray(on) ? `${at}[${i}]` : at;
-		if (typeof t === "string" && (TRIGGERS as readonly string[]).includes(t)) out.push(t as Trigger);
+		if (typeof t === "string" && (TRIGGERS as readonly string[]).includes(t))
+			out.push((t === "push" ? "publish" : t) as Trigger);
 		else if (isRecord(t) && Object.keys(t).length === 1 && typeof t.every === "string" && t.every.trim())
 			out.push({ every: t.every });
 		else say(here, `must be one of ${TRIGGERS.join(", ")}, or { every: "<when>" }, not ${q(t)}`);

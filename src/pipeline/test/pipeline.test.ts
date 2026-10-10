@@ -11,7 +11,7 @@ import { type Checked, checkPipelines, type Problem, readPipelineFile } from "..
 const DRAFT = `defaults: { image: node, size: standard }   # image: a menu or \`dockerfile: path\`
 pipelines:
   ci:
-    on: [publish, draft]          # every version of shared, and an agent's draft before it pushes
+    on: [push, draft]          # every version of shared, and an agent's draft before it pushes
     jobs:
       setup:  { run: npm ci, cache: [package-lock.json] }
       lint:   { needs: [setup], run: npx biome ci . }
@@ -54,7 +54,7 @@ const has = (ps: readonly Problem[], at: string, message: RegExp) =>
 
 /** A file with one pipeline `p` of the given jobs. */
 const one = (jobs: Record<string, unknown>, rest: Record<string, unknown> = {}) => ({
-	pipelines: { p: { on: ["publish"], jobs, ...rest } },
+	pipelines: { p: { on: ["push"], jobs, ...rest } },
 });
 
 describe("reading the file", () => {
@@ -106,7 +106,7 @@ describe("reading the file", () => {
 	});
 
 	it("reads on as a key in YAML, not as true", () => {
-		ok(readPipelineFile("pipelines:\n  p:\n    on: publish\n    jobs:\n      a: { run: x }\n", "abso.yaml"));
+		ok(readPipelineFile("pipelines:\n  p:\n    on: push\n    jobs:\n      a: { run: x }\n", "abso.yaml"));
 	});
 
 	it("says where YAML or JSON breaks, and refuses a name it can't tell the format of", () => {
@@ -122,7 +122,7 @@ describe("reading the file", () => {
 	it("refuses a key given twice in YAML", () => {
 		has(
 			problems(
-				readPipelineFile("pipelines:\n  p:\n    on: publish\n    on: draft\n    jobs: { a: { run: x } }\n", "abso.yml"),
+				readPipelineFile("pipelines:\n  p:\n    on: push\n    on: draft\n    jobs: { a: { run: x } }\n", "abso.yml"),
 			),
 			"file",
 			/isn't valid YAML/,
@@ -166,7 +166,7 @@ describe("refusing", () => {
 			checkPipelines({
 				pipelines: {
 					p: {
-						on: ["publish"],
+						on: ["push"],
 						jobs: { a: { needs: ["nope"], run: "a" }, b: { needs: ["q.c"], run: "b" } },
 						required: ["a", "missing"],
 					},
@@ -198,7 +198,7 @@ describe("refusing", () => {
 
 	it("secrets in a pipeline a draft can start", () => {
 		const deploy = { uses: "deploy", worker: "w", secrets: ["CLOUDFLARE_API_TOKEN"] };
-		const ps = problems(checkPipelines(one({ ship: deploy }, { on: ["publish", "draft"], only: "shared" })));
+		const ps = problems(checkPipelines(one({ ship: deploy }, { on: ["push", "draft"], only: "shared" })));
 		has(ps, "pipelines.p.on", /includes draft, but ship holds secrets/);
 		assert.equal(ps.length, 1, JSON.stringify(ps));
 	});
@@ -300,7 +300,7 @@ describe("refusing", () => {
 		const ps = problems(
 			checkPipelines({
 				defaults: { image: "node", colour: "blue" },
-				pipelines: { p: { on: ["publish"], when: "always", jobs: { a: { run: "x", timeout: 5, worker: "w" } } } },
+				pipelines: { p: { on: ["push"], when: "always", jobs: { a: { run: "x", timeout: 5, worker: "w" } } } },
 				extra: 1,
 			}),
 		);
@@ -336,7 +336,7 @@ describe("refusing", () => {
 			checkPipelines({
 				defaults: { image: "node", dockerfile: "Dockerfile" },
 				pipelines: {
-					p: { on: ["publish", "sometimes", { every: "" }], jobs: { a: { run: "x", size: "huge" } } },
+					p: { on: ["push", "sometimes", { every: "" }], jobs: { a: { run: "x", size: "huge" } } },
 					Bad: { on: [], jobs: {} },
 					s: { on: "green", only: "shared", jobs: { "x y": { uses: "deploy", worker: "w", secrets: ["token"] } } },
 					t: { jobs: { a: { run: "x" } } },
@@ -344,7 +344,7 @@ describe("refusing", () => {
 			}),
 		);
 		has(ps, "defaults", /both image and dockerfile/);
-		has(ps, "pipelines.p.on[1]", /must be one of publish, draft, green, land, hand/);
+		has(ps, "pipelines.p.on[1]", /must be one of push, draft, green, land, hand/);
 		has(ps, "pipelines.p.on[2]", /every/);
 		has(ps, "pipelines.p.jobs.a.size", /must be one of small, standard, large, not "huge"/);
 		has(ps, "pipelines.Bad", /isn't a usable name/);
@@ -364,7 +364,7 @@ describe("refusing", () => {
 });
 
 describe("abso.json's shorthand for a ci pipeline", () => {
-	it("reads the project's own abso.json as ci: setup, then check, both required, on publish", async () => {
+	it("reads the project's own abso.json as ci: setup, then check, both required, on push", async () => {
 		const { readFileSync } = await import("node:fs");
 		const text = readFileSync(new URL("../../../abso.json", import.meta.url), "utf8");
 		const own = JSON.parse(text);

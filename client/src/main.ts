@@ -771,7 +771,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	pipeline: {
 		flags: { on: "string", space: "string", pipeline: "string", every: "string", log: "string" },
 		usage:
-			"abso pipeline check [file] [--on publish|draft|green|land|hand|schedule [--space <name>] [--pipeline <name>] [--every <when>]] | abso pipeline runs [<run>] [--log <pipeline.job>]",
+			"abso pipeline check [file] [--on push|draft|green|land|hand|schedule [--space <name>] [--pipeline <name>] [--every <when>]] | abso pipeline runs [<run>] [--log <pipeline.job>]",
 		about:
 			"Read the folder's pipeline file (abso.yml, abso.yaml or avcs.json, or the file named) and say what's wrong with it, place by place: a cycle in needs, a job that doesn't exist, secrets a draft could reach, a key it doesn't know. Exits 1 when it has problems. With --on, it says which pipelines that event starts (in shared, or --space), with their jobs in waves that can run side by side, and why each other pipeline doesn't start. It reads only the file. abso pipeline runs asks the server what the project's pipelines did: the runs, newest first; with a run's number, its jobs (state, why, exit, time, an npm or deploy job's phase); with --log <pipeline.job>, that job's output.",
 		// Loaded only here, so the yaml package it needs can't stop every other command

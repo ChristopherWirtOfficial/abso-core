@@ -24,7 +24,7 @@ const run = (cwd: string, ...argv: string[]) =>
 
 const GOOD = `pipelines:
   ci:
-    on: [publish, draft]
+    on: [push, draft]
     jobs:
       test: { needs: [setup], run: npm test }
       setup: { run: npm ci }
@@ -37,7 +37,7 @@ describe("abso pipeline check", () => {
 		assert.equal(r.exit, 0, r.stderr);
 		assert.equal(
 			r.stdout,
-			"abso.yml is fine: 1 pipeline, jobs in the order they run.\n  ci, on publish, draft:\n    setup: npm ci\n    test (required): npm test, after setup\n",
+			"abso.yml is fine: 1 pipeline, jobs in the order they run.\n  ci, on push, draft:\n    setup: npm ci\n    test (required): npm test, after setup\n",
 		);
 	});
 
@@ -78,7 +78,7 @@ describe("abso pipeline check", () => {
 		assert.equal(only.exit, 0, only.stderr);
 		assert.match(
 			only.stdout,
-			/^avcs\.json is fine: 1 pipeline.*\n {2}ci, on publish:\n {4}setup \(required\): npm ci\n {4}check \(required\): npm test, after setup\n$/s,
+			/^avcs\.json is fine: 1 pipeline.*\n {2}ci, on push:\n {4}setup \(required\): npm ci\n {4}check \(required\): npm test, after setup\n$/s,
 		);
 	});
 
@@ -116,7 +116,7 @@ describe("the yaml package is loaded only by abso pipeline (abso issue 168)", ()
 describe("abso pipeline check --on (abso issue 176)", () => {
 	const FILE = `pipelines:
   ci:
-    on: [publish, draft]
+    on: [push, draft]
     jobs:
       setup: { run: npm ci }
       lint: { needs: [setup], run: lint }
@@ -153,7 +153,7 @@ describe("abso pipeline check --on (abso issue 176)", () => {
 		const dir = folder({ "abso.yml": FILE });
 		assert.match(
 			(await run(dir, "check", "--on", "merge")).stderr,
-			/--on is one of publish, draft, green, land, hand, schedule/,
+			/--on is one of push, draft, green, land, hand, schedule/,
 		);
 		assert.match((await run(dir, "check", "--on", "hand")).stderr, /--on hand takes --pipeline <name>/);
 		assert.match((await run(dir, "check", "--on", "schedule")).stderr, /--on schedule takes --every/);

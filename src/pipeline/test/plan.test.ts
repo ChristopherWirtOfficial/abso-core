@@ -7,7 +7,7 @@ import { plan, waves } from "../plan.ts";
 
 const FILE = `pipelines:
   ci:
-    on: [publish, draft]
+    on: [push, draft]
     jobs:
       setup:  { run: npm ci }
       lint:   { needs: [setup], run: npx biome ci . }
@@ -40,8 +40,8 @@ describe("which pipelines an event starts", () => {
 		assert.deepEqual(p.start[0]!.waves, [["setup"], ["lint", "test"], ["bundle"]]);
 		assert.deepEqual(p.start[0]!.required, ["lint", "test"]);
 		assert.deepEqual(p.skip, [
-			{ name: "release", why: "doesn't run on publish" },
-			{ name: "nightly", why: "doesn't run on publish" },
+			{ name: "release", why: "doesn't run on push" },
+			{ name: "nightly", why: "doesn't run on push" },
 		]);
 	});
 
