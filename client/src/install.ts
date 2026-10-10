@@ -45,7 +45,7 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { CLIENT_DIR, clientPlace, clientVersion, headCommit } from "./client-version.ts";
+import { builtCopy, CLIENT_DIR, clientPlace, clientVersion, headCommit } from "./client-version.ts";
 
 export interface ModSpec {
 	/** The mod's name, as its plugin.json has it. */
@@ -552,13 +552,16 @@ export function versionReport(env: Readonly<Record<string, string | undefined>>)
 			})(),
 		};
 		mods.push(m);
+		// A built copy has no mod files to compare with or install from: it reports what is installed.
 		if (m.version === undefined) {
-			lines.push(`the ${m.name} mod: not installed (node client/${installer})`);
+			lines.push(`the ${m.name} mod: not installed${builtCopy() ? "" : ` (node client/${installer})`}`);
 			continue;
 		}
 		const when = m.at ? `, installed ${m.at.slice(0, 16).replace("T", " ")} UTC` : "";
 		const behind =
-			m.version === m.current ? "" : `; this client has ${m.current}: node client/${installer} installs it`;
+			builtCopy() || m.version === m.current
+				? ""
+				: `; this client has ${m.current}: node client/${installer} installs it`;
 		lines.push(`the ${m.name} mod: ${m.version} in ${m.folder}${when}${behind}`);
 	}
 	return { text: lines.join("\n"), json: { client, folder: CLIENT_DIR, mods } };

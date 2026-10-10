@@ -490,4 +490,11 @@ describe("which client this is", () => {
 		assert.equal(headers["x-abso-client"], `abso-cli/${clientVersion()}`);
 		assert.match(clientVersion(), /^\d+\.\d+\.\d+(\+[0-9a-f]{7})?$/);
 	});
+
+	it("the npm package's client gives the package's version", () => {
+		const url = new URL("../src/client-version.ts", import.meta.url).href;
+		const script = `globalThis.__ABSO_PACKAGE_VERSION__ = "0.58.0"; const m = await import(${JSON.stringify(url)}); console.log(m.clientVersion());`;
+		const r = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+		assert.equal(r.stdout.trim(), "0.58.0", r.stderr);
+	});
 });

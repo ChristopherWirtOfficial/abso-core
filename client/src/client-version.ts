@@ -65,6 +65,15 @@ function bundledCommit(): string | undefined {
 	return typeof stamp === "string" && /^[0-9a-f]{7,64}$/.test(stamp) ? stamp.slice(0, 7) : undefined;
 }
 
+/** Set by the npm package build: the package's version, such as 0.58.0. Absent everywhere else. */
+function packageVersion(): string | undefined {
+	const stamp = (globalThis as { __ABSO_PACKAGE_VERSION__?: unknown }).__ABSO_PACKAGE_VERSION__;
+	return typeof stamp === "string" && /^\d+\.\d+\.\d+$/.test(stamp) ? stamp : undefined;
+}
+
+/** A built copy (the npm package or a downloaded abso.mjs), which has no mods to install from, rather than a checkout. */
+export const builtCopy = (): boolean => packageVersion() !== undefined || bundledCommit() !== undefined;
+
 let version: string | undefined;
 
 /**
@@ -86,8 +95,9 @@ export async function newerCommitNote(server: string): Promise<string | undefine
 	}
 }
 
-/** This client's version: 0.1.0+ed45dad, or plugin.json's alone outside a git checkout. */
+/** This client's version: the npm package's (0.58.0), else 0.1.0+ed45dad, or plugin.json's alone outside a git checkout. */
 export function clientVersion(): string {
+	version ??= packageVersion();
 	if (version === undefined) {
 		let base = "0.0.0";
 		try {
