@@ -283,12 +283,12 @@ describe("refusing", () => {
 	});
 });
 
-describe("avcs.json's shorthand for a ci pipeline (abso issue 162)", () => {
-	it("reads abso's own avcs.json as ci: setup, then check, both required, on publish", async () => {
+describe("abso.json's shorthand for a ci pipeline", () => {
+	it("reads the project's own abso.json as ci: setup, then check, both required, on publish", async () => {
 		const { readFileSync } = await import("node:fs");
-		const text = readFileSync(new URL("../../../avcs.json", import.meta.url), "utf8");
+		const text = readFileSync(new URL("../../../abso.json", import.meta.url), "utf8");
 		const own = JSON.parse(text);
-		const [ci, ...rest] = ok(readPipelineFile(text, "avcs.json")).pipelines;
+		const [ci, ...rest] = ok(readPipelineFile(text, "abso.json")).pipelines;
 		assert.equal(rest.length, 0);
 		assert.equal(ci!.name, "ci");
 		assert.deepEqual(ci!.on, ["publish"]);

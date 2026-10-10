@@ -1,4 +1,5 @@
 node_modules/
+.abso/
 .avcs/
 *.log
 .dev.vars

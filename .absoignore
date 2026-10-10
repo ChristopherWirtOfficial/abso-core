@@ -1,6 +1,6 @@
-# Files avcs leaves out, on top of .gitignore (#56). Same rules as .gitignore;
-# this file wins over .gitignore in the same folder. `avcs check-ignore <path>`
-# says which line decided. .git, .avcs, .claude and node_modules are always
+# Files abso leaves out, on top of .gitignore. Same rules as .gitignore;
+# this file wins over .gitignore in the same folder. `abso check-ignore <path>`
+# says which line decided. .git, .abso, .avcs, .claude and node_modules are always
 # left out.
 
 # Each session's own Claude Code state
