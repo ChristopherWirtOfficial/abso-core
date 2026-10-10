@@ -284,7 +284,7 @@ test("a box's sign-in is kept per server, and logout forgets it even when the se
 	assert.equal(forgetBox(SERVER, h), false);
 });
 
-test("join and init pick the server: --server, ABSO_SERVER, the box's sign-in, then api.abso.dev (abso issue 349)", () => {
+test("join and init pick the server: --server, ABSO_SERVER, the box's sign-in, then api.abso.dev", () => {
 	const h = home();
 	const args = (server?: string) => ({ positionals: [], flags: new Map(server ? [["server", server]] : []) });
 	const none = { env: {} };
@@ -307,7 +307,7 @@ test("join and init pick the server: --server, ABSO_SERVER, the box's sign-in, t
 	assert.equal(serverFrom(args(SERVER), none, h), SERVER, "--server settles it");
 });
 
-test("join with no --agent takes the box's name, skips names this box holds, and moves past a taken one (abso issue 351)", async () => {
+test("join with no --agent takes the box's name, skips names this box holds, and moves past a taken one", async () => {
 	const seen: Seen = [];
 	const fetcher = server(
 		[

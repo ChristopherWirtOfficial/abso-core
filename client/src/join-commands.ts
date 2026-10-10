@@ -18,10 +18,10 @@ import { modInstalled } from "./install.ts";
 import { type FullMode, foldModes, writeKnownModes } from "./modes.ts";
 import { projectFileName, readProjectFile, startingProjectFileText, writeStartingProjectFile } from "./project-file.ts";
 import { refusedText } from "./safety.ts";
-import { stateDir } from "./state-dir.ts";
+import { OLD_STATE_DIR, STATE_DIR, stateDir } from "./state-dir.ts";
 
 /**
- * The server to join or start on (abso issue 349): --server, then ABSO_SERVER, then the server this box is signed in
+ * The server to join or start on: --server, then ABSO_SERVER, then the server this box is signed in
  * to (abso login wrote it), then https://api.abso.dev. A box signed in to more than one server has to say which.
  */
 export function serverFrom(args: Parsed, env: Pick<Env, "env">, home?: string): string {
@@ -106,13 +106,16 @@ export async function runInit(args: Parsed, env: Env): Promise<Output> {
 }
 
 /**
- * Where abso join writes (abso issue 351): --dir, else here when this folder is empty, else ./<project>, which has
- * to be new or empty so nobody's files are written over.
+ * Where abso join writes: --dir, else here when --agent is given (as before, so a folder prepared with
+ * abso key install --server is joined where its key is). With no --agent: here when this folder is empty, else
+ * ./<project>, which has to be new or empty so nobody's files are written over. A folder holding only abso's own
+ * state folder counts as empty.
  */
-function joinFolder(args: Parsed, env: Env, project: string): string {
+export function joinFolder(args: Parsed, env: Pick<Env, "cwd">, project: string): string {
 	const dir = str(args, "dir");
 	if (dir !== undefined) return resolve(env.cwd, dir);
-	const empty = (path: string) => readdirSync(path).length === 0;
+	if (str(args, "agent") !== undefined) return resolve(env.cwd);
+	const empty = (path: string) => readdirSync(path).every((name) => name === STATE_DIR || name === OLD_STATE_DIR);
 	if (empty(env.cwd)) return resolve(env.cwd);
 	const sub = resolve(env.cwd, project);
 	if (existsSync(sub) && (!statSync(sub).isDirectory() || !empty(sub)))
@@ -140,7 +143,7 @@ export async function runJoin(args: Parsed, env: Env): Promise<Output> {
 		agent = agentFrom(args);
 		minted = box && !hasKey ? await mintKey(box, project, agent) : undefined;
 	} else {
-		// abso issue 351: no --agent takes the box's name, or the next free -2, -3.
+		// No --agent: the box's name, or the next free -2, -3.
 		if (!box) throw new UsageError("abso login signs this box in first (or give --agent <name>)");
 		if (hasKey) throw new UsageError(`${root} already has a key: give its agent's name with --agent <name>`);
 		const free = await mintFreeName(box, project, defaultAgentName());

@@ -277,13 +277,13 @@ export async function mintKey(
 	return { key, id };
 }
 
-/** The agent name abso join takes when none is given (abso issue 351): the box's name, lower-cased. */
+/** The agent name abso join takes when none is given: the box's name, lower-cased. */
 export function defaultAgentName(): string {
 	return boxName().toLowerCase();
 }
 
 /**
- * abso join with no --agent (abso issue 351): mints a key under `base`, else `base`-2, -3 and so on. Names this
+ * abso join with no --agent: mints a key under `base`, else `base`-2, -3 and so on. Names this
  * box already holds in the project are skipped without asking, since minting one again would replace that agent's
  * key and cut off its folder. A name the server says is taken (409) moves on to the next; any other refusal, the
  * box's agent limit among them, is said as it is.
