@@ -16,8 +16,8 @@ import { cleanup, commitFiles, freshPath, sorted } from "./helpers.ts";
 
 after(cleanup);
 
-const BASE_SEED = Number(process.env["PROP_SEED"] ?? 20261003);
-const CASES = Number(process.env["PROP_CASES"] ?? 30);
+const BASE_SEED = Number(process.env.PROP_SEED ?? 20261003);
+const CASES = Number(process.env.PROP_CASES ?? 30);
 
 // A small vocabulary, so files repeat lines and diffs have choices to make.
 const WORDS = ["{", "}", "x", "y", "return x;", "", "let a = 1;", "let b = 2;"];
@@ -28,7 +28,7 @@ function randomLines(rng: Rng, min: number, max: number, tag: string): string[] 
 	return Array.from({ length: rng.range(min, max) }, (_, i) => (rng.chance(0.5) ? rng.pick(WORDS) : `${tag} ${i}`));
 }
 
-const text = (lines: readonly string[]): string => lines.map((l) => l + "\n").join("");
+const text = (lines: readonly string[]): string => lines.map((l) => `${l}\n`).join("");
 
 /** One person's commit: a few random line edits, sometimes a new or deleted file. */
 function randomCommit(rng: Rng, files: Files, n: number): Files {

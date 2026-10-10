@@ -1328,7 +1328,7 @@ describe("paths from the server never leave the folder", () => {
 	];
 
 	it("refuses each one, writes nothing for it, and says which and why", async () => {
-		const { name, folders } = await project({ "ok.txt": "ok\n" }, "alice", "bob", "carol");
+		const { folders } = await project({ "ok.txt": "ok\n" }, "alice", "bob", "carol");
 		const bob = folders.bob!;
 		const files = Object.fromEntries([...HOSTILE.map((p) => [p, "pwned\n"] as const), ["fine/new.txt", "fine\n"]]);
 		const parent = dirname(bob);
@@ -1474,7 +1474,7 @@ describe("paths from the server never leave the folder", () => {
 	});
 
 	it("refuses a link out of the folder, and a write through a folder that is a link", async () => {
-		const { name, folders } = await project({ "ok.txt": "ok\n" }, "alice", "bob");
+		const { folders } = await project({ "ok.txt": "ok\n" }, "alice", "bob");
 		const bob = folders.bob!;
 		fake.injectSync = {
 			files: { up: "", "in-folder": "" },
@@ -1783,7 +1783,7 @@ describe("publish and sync say what happened to others' work (#37, the game tria
 		);
 		// Settle: a file with no markers is refused, and settles nothing.
 		assert.match(
-			(await main(["settle", "b.txt", "--theirs"], { cwd: alice, env: ENV, write: () => {} })).stdout + "",
+			`${(await main(["settle", "b.txt", "--theirs"], { cwd: alice, env: ENV, write: () => {} })).stdout}`,
 			/^$/,
 		);
 		const none = await main(["settle", "a.txt", "b.txt", "--theirs"], { cwd: alice, env: ENV, write: () => {} });
@@ -4249,8 +4249,8 @@ describe("the executable bit and links", () => {
 		const { name, folders } = await project({ "a.txt": "a\n" }, "alice");
 		symlinkSync("a.txt", join(folders.alice!, "link"));
 		assert.equal((await avcs(folders.alice!, "publish", "-m", "add a link")).exit, 0);
-		assert.equal(shared(name)["link"], "");
-		assert.deepEqual(fake.projects.get(name)!.project.modes()["link"], { link: "a.txt" });
+		assert.equal(shared(name).link, "");
+		assert.deepEqual(fake.projects.get(name)!.project.modes().link, { link: "a.txt" });
 	});
 
 	it("shows mode changes in diffs and attribute collisions in words", () => {

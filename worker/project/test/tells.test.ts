@@ -58,7 +58,7 @@ test("a sync's reset hears no tell, two tells with the same words stay two, and 
 	for (let i = 0; i < TELLS_KEPT + 3; i++) project.announce("lead", `Tell ${i}.`, ["b2"], 3 + i);
 	const kept = project.status().tells;
 	assert.equal(kept.length, TELLS_KEPT);
-	assert.match(kept[0]!.text, new RegExp(`Tell ${TELLS_KEPT + 2}\.$`));
+	assert.match(kept[0]!.text, new RegExp(`Tell ${TELLS_KEPT + 2}\\.$`));
 });
 
 test("a person's tell is kept like an agent's", () => {

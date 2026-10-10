@@ -166,8 +166,8 @@ describe("2. two imports", () => {
 	}
 	const insertAfter = (anchor: string, line: string, mode: "both" | "after" = "both") => ({
 		file: "Sidebar.tsx",
-		old: anchor + "\n",
-		new: anchor + "\n" + line + "\n",
+		old: `${anchor}\n`,
+		new: `${anchor}\n${line}\n`,
 		mode,
 	});
 	const railAfter = (anchor: string, mode: "both" | "after" = "both"): Spec => ({
@@ -240,7 +240,7 @@ describe("2. two imports", () => {
 			author: "reviewer",
 			message: "keep both imports, Rail before Footer",
 			resolves: [a.id, b.id],
-			edits: [{ file: "Sidebar.tsx", old: FOOTER + "\n" + RAIL + "\n", new: RAIL + "\n" + FOOTER + "\n" }],
+			edits: [{ file: "Sidebar.tsx", old: `${FOOTER}\n${RAIL}\n`, new: `${RAIL}\n${FOOTER}\n` }],
 		});
 		assert.deepEqual(
 			resolver.deps.filter((d) => d === a.id || d === b.id),

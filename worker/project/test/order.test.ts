@@ -45,18 +45,18 @@ test("changes that do not collide give the same files in every publish order", (
 
 		const expected = [...base];
 		for (const p of [...plans].reverse()) expected.splice(p.start, p.end - p.start, ...p.lines);
-		const expectedText = expected.length > 0 ? expected.join("\n") + "\n" : undefined;
+		const expectedText = expected.length > 0 ? `${expected.join("\n")}\n` : undefined;
 
 		const orders = [plans.map((_, i) => i), plans.map((_, i) => plans.length - 1 - i)];
 		for (let k = 0; k < 3; k++) orders.push([...orders[0]!].sort(() => rand() - 0.5));
 		for (const order of orders) {
 			const project = new Project(new MemoryStore());
-			project.init({ "f.txt": base.join("\n") + "\n" }, 0);
+			project.init({ "f.txt": `${base.join("\n")}\n` }, 0);
 			for (const p of plans) {
 				project.sync(p.agent);
 				const lines = [...base];
 				lines.splice(p.start, p.end - p.start, ...p.lines);
-				project.record(p.agent, { "f.txt": lines.join("\n") + "\n" }, 1);
+				project.record(p.agent, { "f.txt": `${lines.join("\n")}\n` }, 1);
 			}
 			for (const i of order) {
 				const answer = project.publish(plans[i]!.agent, "m", 2);

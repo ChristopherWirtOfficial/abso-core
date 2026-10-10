@@ -59,7 +59,7 @@ function gitAnswers(root: string, home: string, paths: readonly string[], ignore
 		{
 			cwd: root,
 			env,
-			input: paths.join("\0") + "\0",
+			input: `${paths.join("\0")}\0`,
 			encoding: "utf8",
 		},
 	);

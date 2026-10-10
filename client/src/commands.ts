@@ -28,7 +28,6 @@ import {
 	isPaused,
 	type LeftOut,
 	listKnown,
-	MAX_TEXT_BYTES,
 	newFileEndings,
 	normalize,
 	pausedPath,

@@ -6,7 +6,7 @@
 
 import { type Api, newsLines, type QueueItem, type QueueState } from "./api.ts";
 import { type Parsed, UsageError } from "./args.ts";
-import { type Env, type Output, open, plural } from "./commands.ts";
+import { type Env, type Output, open } from "./commands.ts";
 import { logNews } from "./folder.ts";
 
 /** How long publish waits by default: under the 2 minutes a Claude Code shell command gets (#39). */

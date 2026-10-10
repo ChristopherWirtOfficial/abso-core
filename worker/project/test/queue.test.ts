@@ -20,7 +20,7 @@ function setup(queue = true) {
 	project.checkerReady = true;
 	project.init(
 		{
-			"avcs.json": JSON.stringify({ queue }) + "\n",
+			"avcs.json": `${JSON.stringify({ queue })}\n`,
 			"a.ts": "export const a = 1;\n",
 			"b.ts": "export const b = 1;\n",
 			"c.ts": "export const c = 1;\n",

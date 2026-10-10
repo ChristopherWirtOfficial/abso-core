@@ -20,7 +20,7 @@ test("a move in a later publish leaves the agent's queued publish whole, and bot
 	project.checkerReady = true;
 	project.init(
 		{
-			"avcs.json": JSON.stringify({ queue: true }) + "\n",
+			"avcs.json": `${JSON.stringify({ queue: true })}\n`,
 			"a.ts": "export const a = 1;\nexport function kept() {\n\treturn 'x';\n}\n",
 			"c.ts": "export const c = 1;\n",
 		},
@@ -66,7 +66,7 @@ test("restore while a publish waits in the queue undoes only the later edits, an
 	const project = new Project(store);
 	project.checkerReady = true;
 	project.init(
-		{ "avcs.json": JSON.stringify({ queue: true }) + "\n", "a.ts": "export const a = 1;\nexport const b = 1;\n" },
+		{ "avcs.json": `${JSON.stringify({ queue: true })}\n`, "a.ts": "export const a = 1;\nexport const b = 1;\n" },
 		0,
 	);
 	project.sync("one");

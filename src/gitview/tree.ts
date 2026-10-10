@@ -61,7 +61,7 @@ export async function readTreeFiles(ctx: GitContext, treeOid: string): Promise<T
 		for (const entry of tree) {
 			const path = prefix + entry.path;
 			if (entry.mode === MODE_TREE) {
-				await visit(entry.oid, path + "/");
+				await visit(entry.oid, `${path}/`);
 			} else if (entry.mode === MODE_SUBMODULE) {
 				skipped.push({ path, reason: "submodule", oid: entry.oid });
 			} else if (entry.mode === MODE_LINK) {

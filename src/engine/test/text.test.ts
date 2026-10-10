@@ -115,9 +115,9 @@ describe("diffLines", () => {
 		assert.deepEqual(
 			diffLines(
 				a,
-				a.map((s) => s + "!"),
+				a.map((s) => `${s}!`),
 			),
-			[{ start: 0, end: 2100, lines: a.map((s) => s + "!") }],
+			[{ start: 0, end: 2100, lines: a.map((s) => `${s}!`) }],
 		);
 	});
 
@@ -192,8 +192,8 @@ describe("mergeLines", () => {
 			const base = Array.from({ length: 6 + rnd(10) }, (_, k) => `l${k}`);
 			// ours edits the first half, theirs the second, with a gap between.
 			const cut = Math.floor(base.length / 2);
-			const ours = base.map((l, k) => (k < cut - 1 && rnd(3) === 0 ? l + "o" : l));
-			const theirs = base.map((l, k) => (k > cut && rnd(3) === 0 ? l + "t" : l));
+			const ours = base.map((l, k) => (k < cut - 1 && rnd(3) === 0 ? `${l}o` : l));
+			const theirs = base.map((l, k) => (k > cut && rnd(3) === 0 ? `${l}t` : l));
 			const expected = base.map((l, k) => (ours[k] !== l ? ours[k] : theirs[k]));
 			const got = mergeLines(base, ours, theirs);
 			if (got.conflicts === 0) assert.deepEqual(got.lines, expected, `seed ${seed}`);

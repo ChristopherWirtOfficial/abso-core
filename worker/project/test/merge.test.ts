@@ -54,7 +54,7 @@ test("Fuzzer's case: identical call lines merge once; the two helpers are a dupl
 	project.record("prefix", { "engine/classset.ts": CALLS + HELPER }, 1);
 	assert.equal(project.publish("prefix", "isHex instead of regex literals", 2).ok, true);
 	// fuzzer, unpublished: the same calls, and its own helper at the top.
-	const mine = CALLS.replace("// classset\n", "// classset\n" + HELPER.replace("no RegExp", "hex only"));
+	const mine = CALLS.replace("// classset\n", `// classset\n${HELPER.replace("no RegExp", "hex only")}`);
 	project.record("fuzzer", { "engine/classset.ts": mine }, 3);
 	const s = project.sync("fuzzer");
 	const text = project.draftOf("fuzzer")!.view.text("engine/classset.ts");

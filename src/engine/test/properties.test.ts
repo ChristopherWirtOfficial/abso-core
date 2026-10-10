@@ -21,8 +21,8 @@ import {
 import { EditGen, type Files, filesFromView, filesToRecord, sameFiles } from "./gen.ts";
 import { Repo, Rng } from "./helpers.ts";
 
-const BASE_SEED = Number(process.env["PROP_SEED"] ?? 20260621);
-const CASES = Number(process.env["PROP_CASES"] ?? 250);
+const BASE_SEED = Number(process.env.PROP_SEED ?? 20260621);
+const CASES = Number(process.env.PROP_CASES ?? 250);
 
 /** Run `body` once per seed; on failure report the seed and the steps taken. */
 export function forCases(name: string, body: (rng: Rng, log: string[]) => void): void {

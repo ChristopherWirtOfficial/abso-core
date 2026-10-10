@@ -21,13 +21,13 @@ export function filesToRecord(files: Files): Record<string, string> {
 	const out: Record<string, string> = {};
 	for (const path of [...files.keys()].sort()) {
 		const lines = files.get(path)!;
-		if (lines.length > 0) out[path] = lines.join("\n") + "\n";
+		if (lines.length > 0) out[path] = `${lines.join("\n")}\n`;
 	}
 	return out;
 }
 
 function textOf(lines: readonly string[]): string {
-	return lines.length === 0 ? "" : lines.join("\n") + "\n";
+	return lines.length === 0 ? "" : `${lines.join("\n")}\n`;
 }
 
 function occurrences(text: string, needle: string): number {
@@ -247,7 +247,7 @@ export class EditGen {
 		let old = t.slice(c1, this.rng.range(c1 + 1, t.length));
 		if (this.rng.chance(0.3) && i + 1 < lines.length) {
 			const next = lines[i + 1]!;
-			old = t.slice(c1) + "\n" + next.slice(0, this.rng.int(next.length + 1));
+			old = `${t.slice(c1)}\n${next.slice(0, this.rng.int(next.length + 1))}`;
 		}
 		const replacement = this.rng.pick(["", "Z", "q\nr", "\n", "w\n", "yy", "Z\nZ", this.fresh()]);
 		const text = textOf(lines);

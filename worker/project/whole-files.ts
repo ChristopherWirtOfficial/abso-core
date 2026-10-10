@@ -52,7 +52,7 @@ export function isWhole(
 	return (
 		rules.some((p) => matchesPattern(p, path)) ||
 		length > WHOLE_LIMIT ||
-		(view !== undefined && view.hasFile(path) && view.attrs(path).blob !== null)
+		(view?.hasFile(path) === true && view.attrs(path).blob !== null)
 	);
 }
 

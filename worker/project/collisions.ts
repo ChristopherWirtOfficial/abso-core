@@ -240,8 +240,8 @@ export function duplicateCollisions(host: CollisionHost, agent: AgentState): Col
 				kind: "duplicate",
 				name,
 				file,
-				yours: { lines: [yours.start + 1, yours.end], text: yours.text + "\n" },
-				theirs: { lines: [theirs.start + 1, theirs.end], text: theirs.text + "\n", ...originOf(host, by, space.name) },
+				yours: { lines: [yours.start + 1, yours.end], text: `${yours.text}\n` },
+				theirs: { lines: [theirs.start + 1, theirs.end], text: `${theirs.text}\n`, ...originOf(host, by, space.name) },
 			});
 		}
 	}

@@ -34,7 +34,7 @@ export function oneLine(text: string): string {
  */
 export function withTrailers(message: string, trailers: readonly Trailer[], fallback: string): string {
 	const body = cleanMessage(message) || fallback;
-	if (trailers.length === 0) return body + "\n";
+	if (trailers.length === 0) return `${body}\n`;
 	const block = trailers.map((t) => `${t.key}: ${oneLine(t.value)}`).join("\n");
 	return `${body}\n\n${block}\n`;
 }

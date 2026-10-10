@@ -12,18 +12,7 @@
 // agents publish into under the same rules, and that lands in shared as one
 // unit. Every agent works in one space at a time.
 
-import {
-	type Atom,
-	type AtomId,
-	type ConflictKey,
-	conflictKeys,
-	type EditInput,
-	EngineError,
-	Graph,
-	type LineId,
-	type MoveInput,
-	type View,
-} from "../../src/engine/index.ts";
+import { type Atom, type AtomId, EngineError, Graph, type LineId, type View } from "../../src/engine/index.ts";
 import { type AddDraftHost, addDraft as hostedAddDraft } from "./add-draft.ts";
 import { type AmendHost, amend as hostedAmend } from "./amend.ts";
 import { type AnnounceHost, announce as hostedAnnounce, announcePerson as hostedAnnouncePerson } from "./announce.ts";
@@ -98,7 +87,6 @@ import {
 	closeNote as hostedCloseNote,
 	noteAnswer as hostedNoteAnswer,
 	notes as hostedNotes,
-	noteView as hostedNoteView,
 	startingNotes as hostedStartingNotes,
 	writeNote as hostedWriteNote,
 	type NoteHost,
@@ -140,8 +128,6 @@ import type {
 	Entry,
 	LandAnswer,
 	MergedLine,
-	Meta,
-	Mode,
 	Modes,
 	NoteAnswer,
 	NoteBody,
@@ -155,7 +141,6 @@ import type {
 	Refusal,
 	Settled,
 	Starting,
-	SwitchAnswer,
 	Tail,
 	TellRecord,
 } from "./project-types.ts";
@@ -178,7 +163,7 @@ import { record as hostedRecord, type RecordHost } from "./record.ts";
 import { recordFile as hostedRecordFile, type RecordFileHost } from "./record-file.ts";
 import { refusals as hostedRefusals, refuse as hostedRefuse, type RefuseHost } from "./refuse.ts";
 import { restore as hostedRestore, type RestoreHost } from "./restore.ts";
-import { addVersion, last, Membership, newSpace, type Published, SHARED, type Space, sharedBaseOf } from "./spaces.ts";
+import { last, Membership, SHARED, type Space, sharedBaseOf } from "./spaces.ts";
 import { starting as hostedStarting, type StartingHost } from "./start.ts";
 import { switchTo as hostedSwitchTo, type SwitchHost } from "./switch-to.ts";
 import { sync as hostedSync, type SyncHost } from "./sync.ts";
@@ -738,16 +723,6 @@ export class Project {
 		}
 		const author = this.#agents.get(newest.author);
 		return author ? this.#currentChange(author, this.#now?.() ?? this.#lastTime) : undefined;
-	}
-
-	/**
-	 * The view a note's lines live in (#44):
-	 * shared once any were published there; else the named draft they were
-	 * published into; else their author's draft, where it works now or where it
-	 * parked it. Undefined when no space holds them any more (a discarded draft).
-	 */
-	#noteView(n: NoteRecord): View | undefined {
-		return hostedNoteView(this.#notesHost, n);
 	}
 
 	#noteAnswer(n: NoteRecord): NoteAnswer {

@@ -28,7 +28,7 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true,
+			"preset": "recommended",
 			"style": {
 				"noNonNullAssertion": "off"
 			},
@@ -53,6 +53,17 @@
 	"overrides": [
 		{
 			"includes": ["**/test/**", "**/*.test.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off",
+						"noTemplateCurlyInString": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["client/hooks/**", "client/view/hooks/**"],
 			"linter": {
 				"rules": {
 					"suspicious": {

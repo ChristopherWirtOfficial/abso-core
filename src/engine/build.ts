@@ -487,7 +487,7 @@ function matchText(view: View, edit: TextEdit, mode: Mode, order: number): Regio
 	if (replacement !== "" && !replacement.endsWith("\n")) {
 		if (endLine + 1 < visible.length) {
 			endLine++;
-			replacement += visible[endLine]!.text + "\n";
+			replacement += `${visible[endLine]!.text}\n`;
 		} else {
 			replacement += "\n";
 		}

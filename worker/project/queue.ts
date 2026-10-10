@@ -137,10 +137,10 @@ export function enqueue(
 					kind: "duplicate",
 					name,
 					file,
-					yours: { lines: [yours.start + 1, yours.end], text: yours.text + "\n" },
+					yours: { lines: [yours.start + 1, yours.end], text: `${yours.text}\n` },
 					theirs: {
 						lines: [theirs.start + 1, theirs.end],
-						text: theirs.text + "\n",
+						text: `${theirs.text}\n`,
 						agent: q.agent,
 						message: q.message,
 						version: last(space),

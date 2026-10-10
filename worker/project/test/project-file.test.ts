@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MemoryStore, Project } from "../project.ts";
 
-const review = (reviewer: string) => JSON.stringify({ review: [{ paths: ["src/**"], reviewer }] }) + "\n";
+const review = (reviewer: string) => `${JSON.stringify({ review: [{ paths: ["src/**"], reviewer }] })}\n`;
 
 function touchSrc(project: Project, time: number): void {
 	project.sync("builder");

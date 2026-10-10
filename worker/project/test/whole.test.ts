@@ -21,13 +21,13 @@ function setup(config: object = { whole: ["test/recordings/**"] }) {
 	};
 	const log = new MemoryStore();
 	const project = new Project(log, { hasBlob: (sha) => store.has(sha), whole });
-	project.init({ "avcs.json": JSON.stringify(config) + "\n", "src/a.ts": "export const a = 1;\n" }, 0);
+	project.init({ "avcs.json": `${JSON.stringify(config)}\n`, "src/a.ts": "export const a = 1;\n" }, 0);
 	for (const a of ["ann", "bob"]) project.sync(a);
 	return { project, store, log, whole };
 }
 
 const recording = (n: number) =>
-	JSON.stringify({ frames: Array.from({ length: 50 }, (_, i) => i * n) }, null, 2) + "\n";
+	`${JSON.stringify({ frames: Array.from({ length: 50 }, (_, i) => i * n) }, null, 2)}\n`;
 
 test("a path the project marks whole is stored as a blob, and publishes and syncs like one", () => {
 	const { project, store } = setup();
@@ -44,7 +44,7 @@ test("a path the project marks whole is stored as a blob, and publishes and sync
 
 test("text over 1 MB is kept whole whatever its path; smaller text is tracked by line", () => {
 	const { project } = setup({});
-	const big = "x".repeat(80) + "\n";
+	const big = `${"x".repeat(80)}\n`;
 	project.record("ann", { "gen/big.txt": big.repeat(13_000), "src/small.txt": "small\n" }, 1);
 	project.publish("ann", "two files", 2);
 	assert.ok(project.blobs()["gen/big.txt"], "the big one is a blob");
@@ -54,7 +54,7 @@ test("text over 1 MB is kept whole whatever its path; smaller text is tracked by
 
 test("once whole, a file stays whole even when it shrinks; an Edit of it is out of step so the client sends the file", () => {
 	const { project, store } = setup({});
-	project.record("ann", { "gen/big.txt": ("y".repeat(80) + "\n").repeat(13_000) }, 1);
+	project.record("ann", { "gen/big.txt": `${"y".repeat(80)}\n`.repeat(13_000) }, 1);
 	project.publish("ann", "big", 2);
 	project.sync("bob");
 	project.record("bob", { "gen/big.txt": "tiny now\n" }, 3);

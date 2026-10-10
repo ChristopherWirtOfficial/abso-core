@@ -106,8 +106,7 @@ export function withEntries(spec: string, cwd: string): TarEntry[] {
 			: [[box, local] as const];
 		for (const [path, from] of files) {
 			const text = readText(from);
-			const data =
-				text !== undefined && text.includes("\r") ? Buffer.from(text.replace(/\r\n?/g, "\n")) : readFileSync(from);
+			const data = text?.includes("\r") ? Buffer.from(text.replace(/\r\n?/g, "\n")) : readFileSync(from);
 			const exec = (statSync(from).mode & 0o111) !== 0 || (data[0] === 0x23 && data[1] === 0x21);
 			out.push({ path, data, ...(exec ? { mode: 0o755 } : {}) });
 		}
@@ -364,7 +363,7 @@ export async function runRun(args: Parsed, env: Env, as: "run" | "prep" = "run")
 			continue;
 		}
 		// Text goes as abso records it, with LF line endings: a CRLF script fails in the box's sh (#37).
-		const lf = d.text !== undefined && d.text.includes("\r") ? Buffer.from(d.text.replace(/\r\n?/g, "\n")) : undefined;
+		const lf = d.text?.includes("\r") ? Buffer.from(d.text.replace(/\r\n?/g, "\n")) : undefined;
 		if (lf !== undefined) toLf.push(rel);
 		const data = lf ?? readFileSync(path);
 		// The bit from the disk, or (on Windows) from the server; a script with "#!" runs either way.

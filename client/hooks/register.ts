@@ -144,7 +144,7 @@ export const register: Register = (on) => {
 					),
 				),
 				snapshot: text === undefined || looksBinary(text) ? undefined : normalize(text),
-				...(text !== undefined && text.includes("\u0000")
+				...(text?.includes("\u0000")
 					? { nul: { at: text.indexOf("\u0000"), line: text.slice(0, text.indexOf("\u0000")).split("\n").length } }
 					: {}),
 				agentId: typeof input.agentId === "string" ? input.agentId : undefined,

@@ -3,7 +3,6 @@
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
 import { UsageError } from "./args.ts";
 import type { Config } from "./config.ts";
 import { fromEnv } from "./env-names.ts";

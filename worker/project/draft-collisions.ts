@@ -114,8 +114,8 @@ export function draftCollisions(
 							kind: "duplicate",
 							name,
 							file,
-							first: { agent: a.name, file, lines: [dA.start + 1, dA.end], text: dA.text + "\n" },
-							second: { agent: b.name, file, lines: [dB.start + 1, dB.end], text: dB.text + "\n" },
+							first: { agent: a.name, file, lines: [dA.start + 1, dA.end], text: `${dA.text}\n` },
+							second: { agent: b.name, file, lines: [dB.start + 1, dB.end], text: `${dB.text}\n` },
 						});
 					}
 				}

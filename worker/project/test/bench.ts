@@ -15,7 +15,7 @@ const rounds = 40;
 
 const files: Record<string, string> = {};
 for (let f = 0; f < fileCount; f++) {
-	files[`src/f${f}.ts`] = Array.from({ length: linesPer }, (_, i) => lineOf(f, i)).join("\n") + "\n";
+	files[`src/f${f}.ts`] = `${Array.from({ length: linesPer }, (_, i) => lineOf(f, i)).join("\n")}\n`;
 }
 
 const store = new MemoryStore();

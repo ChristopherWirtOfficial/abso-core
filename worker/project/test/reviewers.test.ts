@@ -23,7 +23,7 @@ function setup() {
 	const project = new Project(new MemoryStore(), { now: () => 100 });
 	project.init(
 		{
-			"avcs.json": JSON.stringify(RULES) + "\n",
+			"avcs.json": `${JSON.stringify(RULES)}\n`,
 			"src/auth/login.ts": "export const login = 1;\n",
 			"src/game.ts": "export const game = 1;\n",
 			"README.md": "# readme\n",

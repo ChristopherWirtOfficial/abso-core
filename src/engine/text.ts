@@ -15,7 +15,7 @@ export function splitLines(text: string): string[] {
 
 /** Join lines into file text. A non-empty file always ends with "\n". */
 export function joinLines(lines: readonly string[]): string {
-	return lines.length === 0 ? "" : lines.join("\n") + "\n";
+	return lines.length === 0 ? "" : `${lines.join("\n")}\n`;
 }
 
 /** Normalize, then make a non-empty text end with "\n" (how files are projected). */

@@ -16,7 +16,6 @@ import {
 	type Env,
 	EXIT,
 	mergedLinesText,
-	newsText,
 	type Output,
 	open,
 	plural,

@@ -455,7 +455,7 @@ export function newFileEndings(root: string, rels: readonly string[]): Map<strin
 	}
 	const autocrlf = config.get("core.autocrlf");
 	const coreEol = config.get("core.eol") ?? "native";
-	const attrs = git(["check-attr", "--stdin", "-z", "text", "eol"], rels.join("\0") + "\0");
+	const attrs = git(["check-attr", "--stdin", "-z", "text", "eol"], `${rels.join("\0")}\0`);
 	if (attrs === undefined) return out;
 	const f = attrs.split("\0");
 	const seen = new Map<string, { text?: string; eol?: string }>();

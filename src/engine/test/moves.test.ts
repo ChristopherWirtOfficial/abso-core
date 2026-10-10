@@ -8,8 +8,8 @@ import { describe, it } from "node:test";
 import { type Atom, type AtomId, conflicts } from "../index.ts";
 import { lines, Repo, Rng } from "./helpers.ts";
 
-const BASE_SEED = Number(process.env["PROP_SEED"] ?? 20261004);
-const CASES = Number(process.env["PROP_CASES"] ?? 200);
+const BASE_SEED = Number(process.env.PROP_SEED ?? 20261004);
+const CASES = Number(process.env.PROP_CASES ?? 200);
 
 const FN = ["function area(r) {", "  const pi = 3.14;", "  return pi * r * r;", "}"];
 const START = {
@@ -133,7 +133,7 @@ describe("moves", () => {
 		const repo = Repo.init(START);
 		concurrently(
 			repo,
-			(base) => repo.draft({ edits: [{ file: "shapes.js", old: FN.join("\n") + "\n", new: "" }] }, base),
+			(base) => repo.draft({ edits: [{ file: "shapes.js", old: `${FN.join("\n")}\n`, new: "" }] }, base),
 			(base) => moveArea(repo, base),
 		);
 		assert.deepEqual(conflicts(repo.graph, repo.shared), []);

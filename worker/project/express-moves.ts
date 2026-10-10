@@ -127,7 +127,7 @@ export function expressMoves(host: ExpressMovesHost, agent: AgentState, time: nu
 				}
 				if (len > 0 && (!best || len > best.len)) best = { block, q, len };
 			}
-			if (best && best.block.texts.slice(best.q, best.q + best.len).some((t) => !PLAIN_LINE.test(t))) {
+			if (best?.block.texts.slice(best.q, best.q + best.len).some((t) => !PLAIN_LINE.test(t))) {
 				const ids = best.block.ids.slice(best.q, best.q + best.len);
 				for (const id of ids) used.add(id);
 				matches.push({ from: best.block.file, ids, to: run.file, at: run.start + p });

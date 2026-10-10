@@ -86,7 +86,7 @@ export function noteSaid(note: {
 	const about = note.change !== undefined ? ` (change "${clip(note.change)}")` : "";
 	const verb = note.reply ? "replies on" : note.kind === "objection" ? "objects on" : "comments on";
 	const ask =
-		note.kind === "objection" ? " Fix it, or answer: abso note --reply " + id : " Answer: abso note --reply " + id;
+		note.kind === "objection" ? ` Fix it, or answer: abso note --reply ${id}` : ` Answer: abso note --reply ${id}`;
 	return note.person
 		? `${note.person.person.name} (a person, signed in on the website, id ${note.person.person.id}) ${verb} ${file} ${span}${about}: ${JSON.stringify(clip(note.text))}.${ask}`
 		: `${note.writer} ${verb} ${file} ${span}${about}: "${clip(note.text)}".${ask}`;

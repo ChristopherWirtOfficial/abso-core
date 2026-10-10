@@ -24,13 +24,13 @@ import {
 	View,
 } from "../index.ts";
 
-const textOf = (lines: readonly string[]): string => (lines.length === 0 ? "" : lines.join("\n") + "\n");
+const textOf = (lines: readonly string[]): string => (lines.length === 0 ? "" : `${lines.join("\n")}\n`);
 
 import { EditGen, type Files, filesFromView, filesToRecord, sameFiles } from "./gen.ts";
 import { Repo, Rng } from "./helpers.ts";
 
-const BASE_SEED = Number(process.env["PROP_SEED"] ?? 20260621);
-const CASES = Number(process.env["PROP_CASES"] ?? 250);
+const BASE_SEED = Number(process.env.PROP_SEED ?? 20260621);
+const CASES = Number(process.env.PROP_CASES ?? 250);
 
 /** A hunk in terms of the old view's visible lines. start === end is a pure insertion at gap start. */
 interface PlainHunk {
@@ -98,7 +98,7 @@ function concurrentEdit(gen: EditGen, rng: Rng, files: Files, index: number, dea
 			usedFiles.add(path);
 			const lines = fresh(rng.range(1, 3));
 			hunks.push({ file: path, start: 0, end: 0, lines });
-			edits.push({ file: path, old: "", new: lines.join("\n") + "\n" });
+			edits.push({ file: path, old: "", new: `${lines.join("\n")}\n` });
 			parts.push(`create ${path} ${JSON.stringify(lines)}`);
 			return;
 		}
@@ -429,7 +429,7 @@ describe("property: claim width", () => {
 			const a = Math.max(0, i - rng.range(0, 2));
 			const b = Math.min(n, j + rng.range(0, 2));
 			const edit = gen.textEdit(file, all, i, j, add, "both") as { old: string; new: string };
-			const text = (ls: readonly string[]) => (ls.length ? ls.join("\n") + "\n" : "");
+			const text = (ls: readonly string[]) => (ls.length ? `${ls.join("\n")}\n` : "");
 			const whole = text(all);
 			const wider = { file, old: text(all.slice(a, b)), new: text([...all.slice(a, i), ...add, ...all.slice(j, b)]) };
 			const unique = wider.old !== "" && whole.indexOf(wider.old) === whole.lastIndexOf(wider.old);

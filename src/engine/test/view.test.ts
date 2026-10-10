@@ -78,7 +78,7 @@ describe("View", () => {
 	it("projects a long file (a deep chain) without recursion limits", () => {
 		const big = Array.from({ length: 30_000 }, (_, i) => `line ${i}`);
 		const graph = new Graph();
-		graph.add(buildBase({ "big.txt": big.join("\n") + "\n" }, { author: "import", message: "big" }));
+		graph.add(buildBase({ "big.txt": `${big.join("\n")}\n` }, { author: "import", message: "big" }));
 		const files = project(graph, ["a0"]);
 		assert.equal(files["big.txt"]!.split("\n").length, 30_001);
 	});

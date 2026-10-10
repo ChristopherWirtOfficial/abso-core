@@ -192,10 +192,10 @@ test("a move split across two publishes is a delete and a fresh write: the moved
 test("past the move limit only the longest blocks move: a rewrite of many single lines still publishes, and a block moved whole keeps someone's edit (abso issue 137)", () => {
 	const keys = Array.from({ length: 200 }, (_, i) => `  "k${i}": ${i},`);
 	const block = ["  // block", '  "b1": "one",', '  "b2": "two",', '  "b3": "three",', "  // end block"];
-	const before = ["{", ...block, ...keys, "}"].join("\n") + "\n";
+	const before = `${["{", ...block, ...keys, "}"].join("\n")}\n`;
 	// The draft reverses the keys with a new line between each, so every one is its own one-line match.
 	const rewritten = keys.toReversed().flatMap((k, i) => [k, `  "n${i}": 0,`]);
-	const after = ["{", ...rewritten, ...block, "}"].join("\n") + "\n";
+	const after = `${["{", ...rewritten, ...block, "}"].join("\n")}\n`;
 	const store = new MemoryStore();
 	const project = new Project(store);
 	project.init({ "f.json": before }, 0);

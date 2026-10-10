@@ -241,7 +241,7 @@ describe("ingest against live work", () => {
 			edits: [{ file: "notes.md", old: "two\n", new: "two\nthree\n" }],
 		});
 		person.setLine("app.txt", 9, "app line nine");
-		person.write("app.txt", person.read("app.txt") + "app line 13\n");
+		person.write("app.txt", `${person.read("app.txt")}app line 13\n`);
 		person.commit("Pat edits the bottom");
 
 		const result = await ingest(repo.graph, repo.shared, person.dir);

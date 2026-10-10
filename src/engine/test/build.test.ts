@@ -127,7 +127,7 @@ describe("pure insertion modes", () => {
 		const atom = repo.edit({ edits: [{ file: "f.txt", old: "five\n", new: "five\nsix\n" }] });
 		assert.deepEqual(atom.writes, [gapKey("a0.4")]);
 		assert.deepEqual(atom.reads, [lineKey("a0.4")]);
-		assert.equal(repo.text("f.txt"), FIVE + "six\n");
+		assert.equal(repo.text("f.txt"), `${FIVE}six\n`);
 	});
 });
 

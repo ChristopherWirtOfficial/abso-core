@@ -168,7 +168,7 @@ export class DefinitionRule {
 			const visible = view.lines(file);
 			const def = after[0];
 			const theirs = def
-				? { file: def.file, lines: [def.start + 1, def.end] as [number, number], text: def.text + "\n" }
+				? { file: def.file, lines: [def.start + 1, def.end] as [number, number], text: `${def.text}\n` }
 				: { file: before[0]!.file, lines: [before[0]!.start + 1, before[0]!.start] as [number, number], text: "" };
 			const collision: Collision = {
 				kind: "definition",

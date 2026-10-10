@@ -133,5 +133,5 @@ export class Repo {
 
 /** Lines of text with a trailing newline. */
 export function lines(...items: string[]): string {
-	return items.map((s) => s + "\n").join("");
+	return items.map((s) => `${s}\n`).join("");
 }

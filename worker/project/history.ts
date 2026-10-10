@@ -2,7 +2,7 @@
 // (pathLife), and where lines went (follow). They read through HistoryHost, the one seam the derived tables
 // (abso issues 48 and 79) plug into: today the host is the project in memory.
 
-import type { AtomId, Graph, LineId, View } from "../../src/engine/index.ts";
+import type { Graph, LineId, View } from "../../src/engine/index.ts";
 import { pathKey } from "./pathkey.ts";
 import { checkReadPath, differs, type LastChange, ProjectError, utf8Bytes } from "./project.ts";
 import { last, SHARED, type Space } from "./spaces.ts";
