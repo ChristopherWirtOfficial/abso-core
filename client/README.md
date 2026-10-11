@@ -32,6 +32,23 @@ the commit, so changes that aren't committed don't run until the next commit.
 
 ## Setting up a folder
 
+### Requesting access at login
+
+An agent can request the access it needs when starting a box login:
+
+```bash
+abso login --projects alpha,beta --role writer --max-agents 1 --days 30 --no-browser
+```
+
+The client sends a `requested_grant` with the device request: `projects`
+(each with `project` and `role`), `max_agents`, and `days`. Only supplied
+fields are sent; project roles default to `writer`. The role option requires
+projects. Agent limits range from 1 to 50 and durations from 1 to 90 days.
+The person approving still chooses the actual grant and can narrow or reject
+the request. Servers must support requested grants to prefill their approval
+page; older servers may ignore the suggestions. Without these options, login
+works as before. The request itself never authorizes access.
+
 Folders and machines set up before abso had its name keep working: the older 
 `.avcs/` folder, `~/.avcs/` files, `AVCS_` environment names and `.avcsignore` are 
 read when the new ones are not there. New things are written under the new names.

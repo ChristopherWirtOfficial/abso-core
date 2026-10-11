@@ -12,13 +12,47 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { UsageError } from "./args.ts";
+import { type Parsed, str, UsageError } from "./args.ts";
 import { homeFile, homeWritePath, OLD_STATE_DIR, STATE_DIR } from "./state-dir.ts";
 
 /** What the person who approved the code allowed: each project with the highest role its agents get there, and how many agents. */
 export interface Grant {
 	readonly projects: readonly { readonly project: string; readonly role: string }[];
 	readonly max_agents: number;
+}
+
+/** Requested access is a suggestion for the person approving, never an authorization. */
+export interface LoginRequest {
+	readonly projects?: readonly { readonly project: string; readonly role: "reader" | "writer" | "owner" }[];
+	readonly max_agents?: number;
+	readonly days?: number;
+}
+
+export function loginRequest(args: Parsed): LoginRequest | undefined {
+	const projects = str(args, "projects");
+	const role = str(args, "role");
+	const maxAgents = str(args, "max-agents");
+	const days = str(args, "days");
+	if (projects === undefined && role === undefined && maxAgents === undefined && days === undefined) return undefined;
+	if (role !== undefined && projects === undefined) throw new UsageError("--role needs --projects");
+	const requestedRole = role ?? "writer";
+	if (requestedRole !== "reader" && requestedRole !== "writer" && requestedRole !== "owner")
+		throw new UsageError("--role is reader, writer or owner");
+	const names = projects?.split(",").map((name) => name.trim());
+	if (names && (names.length > 100 || names.some((name) => !/^[A-Za-z0-9._-]+$/.test(name))))
+		throw new UsageError(
+			"--projects is a comma-separated list of up to 100 project names (letters, digits, dot, dash and underscore)",
+		);
+	const integer = (value: string, name: string, max: number): number => {
+		if (!/^[0-9]+$/.test(value) || !Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > max)
+			throw new UsageError(`--${name} is from 1 to ${max}`);
+		return Number(value);
+	};
+	return {
+		...(names ? { projects: [...new Set(names)].map((project) => ({ project, role: requestedRole })) } : {}),
+		...(maxAgents === undefined ? {} : { max_agents: integer(maxAgents, "max-agents", 50) }),
+		...(days === undefined ? {} : { days: integer(days, "days", 90) }),
+	};
 }
 
 export interface BoxRecord {
@@ -205,6 +239,7 @@ const MAX_LOGIN_WAIT_S = 30 * 60;
 const STILL_WAITING_MS = 60_000;
 
 export interface LoginIo {
+	readonly request?: LoginRequest;
 	readonly fetch?: typeof fetch;
 	readonly sleep?: (ms: number) => Promise<void>;
 	readonly now?: () => number;
@@ -222,7 +257,13 @@ export async function login(server: string, io: LoginIo, home = homedir()): Prom
 	const fetcher = io.fetch ?? fetch;
 	const sleep = io.sleep ?? ((ms) => new Promise((done) => setTimeout(done, ms)));
 	const now = io.now ?? Date.now;
-	const start = await call(server, "/login/device", { name: boxName(), client: "abso" }, undefined, fetcher);
+	const start = await call(
+		server,
+		"/login/device",
+		{ name: boxName(), client: "abso", ...(io.request ? { requested_grant: io.request } : {}) },
+		undefined,
+		fetcher,
+	);
 	const { device_code: device, user_code: code, verification_uri_complete: link } = start.body;
 	let interval = Number(start.body.interval) || 5;
 	// The server says when its code runs out; a server that says never still gets an end.

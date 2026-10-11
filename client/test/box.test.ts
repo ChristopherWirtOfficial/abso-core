@@ -7,11 +7,13 @@ import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { parseArgs } from "../src/args.ts";
 import {
 	boxPublic,
 	boxText,
 	forgetBox,
 	login,
+	loginRequest,
 	logout,
 	mintFreeName,
 	mintKey,
@@ -20,6 +22,7 @@ import {
 	writeBox,
 } from "../src/box.ts";
 import { serverFrom } from "../src/join-commands.ts";
+import { main } from "../src/main.ts";
 
 const SERVER = "https://staging.abso.example";
 const CREDENTIAL = "abso_bx_the-secret-credential";
@@ -66,6 +69,102 @@ function clock() {
 		slept: () => t,
 	};
 }
+
+test("login grant options validate project lists, roles, limits and duration", () => {
+	const request = (...words: string[]) =>
+		loginRequest(
+			parseArgs("login", words, {
+				projects: "string",
+				role: "string",
+				"max-agents": "string",
+				days: "string",
+			}),
+		);
+	assert.equal(request(), undefined);
+	assert.deepEqual(request("--projects", "alpha, beta,alpha", "--max-agents", "1", "--days", "30"), {
+		projects: [
+			{ project: "alpha", role: "writer" },
+			{ project: "beta", role: "writer" },
+		],
+		max_agents: 1,
+		days: 30,
+	});
+	assert.deepEqual(request("--projects", "alpha", "--role", "reader"), {
+		projects: [{ project: "alpha", role: "reader" }],
+	});
+	assert.deepEqual(request("--projects", "alpha", "--role", "owner"), {
+		projects: [{ project: "alpha", role: "owner" }],
+	});
+	assert.deepEqual(request("--max-agents", "50", "--days", "90"), { max_agents: 50, days: 90 });
+	for (const words of [
+		["--role", "writer"],
+		["--projects", ""],
+		["--projects", "alpha,"],
+		["--projects", "../alpha"],
+		["--projects", "alpha", "--role", "admin"],
+		["--projects", Array.from({ length: 101 }, (_, i) => `p${i}`).join(",")],
+	])
+		assert.throws(() => request(...words));
+	for (const flag of ["--max-agents", "--days"]) {
+		for (const value of ["0", "-1", "1.5", "1e1", "Infinity", "100", "abc", ""])
+			assert.throws(() => request(flag, value));
+	}
+});
+
+test("login sends requested grants only at device start and retains the user's actual approval", async () => {
+	const h = home();
+	const seen: Seen = [];
+	const c = clock();
+	const requested = { projects: [{ project: "abso", role: "owner" as const }], max_agents: 10, days: 90 };
+	const approved = { projects: [{ project: "abso", role: "reader" }], max_agents: 1 };
+	const got = await login(
+		SERVER,
+		{
+			request: requested,
+			fetch: server(
+				[
+					[200, started],
+					[400, { error: "authorization_pending" }],
+					[200, { box_id: "b_test", box_token: CREDENTIAL, expires_at: EXPIRES, grant: approved }],
+				],
+				seen,
+			),
+			sleep: c.sleep,
+			now: c.now,
+			say: () => {},
+		},
+		h,
+	);
+	assert.ok(seen[0]);
+	assert.deepEqual((seen[0].body as Record<string, unknown>).requested_grant, requested);
+	assert.deepEqual(
+		seen.slice(1).map((call) => call.body),
+		[{ device_code: started.device_code }, { device_code: started.device_code }],
+	);
+	assert.deepEqual(got.grant, approved);
+	assert.deepEqual(readBox(SERVER, h)?.grant, approved);
+});
+
+test("invalid login grant flags fail before a network request through the CLI", async () => {
+	const original = globalThis.fetch;
+	let calls = 0;
+	globalThis.fetch = (async () => {
+		calls++;
+		throw new Error("unexpected request");
+	}) as typeof fetch;
+	try {
+		const result = await main(["login", "--projects", "alpha", "--days", "0", "--no-browser"], {
+			cwd: home(),
+			env: {},
+			write: () => {},
+		});
+		assert.equal(result.exit, 1);
+		assert.match(result.stderr, /--days is from 1 to 90/);
+		assert.equal(calls, 0);
+	} finally {
+		globalThis.fetch = original;
+	}
+});
 
 test("login shows the code, waits while it's pending, and keeps the credential in the user folder", async () => {
 	const h = home();

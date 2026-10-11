@@ -7,7 +7,7 @@ import { runAnnounce, runNews, runStart } from "./announce.ts";
 import { ApiError } from "./api.ts";
 import { bool, type FlagSpec, type Parsed, parseArgs, str, UsageError } from "./args.ts";
 import { bodyFilesHelp, readBodyFiles, withBodyFiles } from "./body-files.ts";
-import { boxPublic, boxText, login, logout, readBox } from "./box.ts";
+import { boxPublic, boxText, login, loginRequest, logout, readBox } from "./box.ts";
 import { runDiff, runFiles, runLog, runRestore, runShow } from "./changes.ts";
 import { runCheckIgnore } from "./check-ignore.ts";
 import { runCi } from "./ci.ts";
@@ -174,8 +174,16 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		},
 	},
 	login: {
-		flags: { server: "string", "no-browser": "boolean" },
-		usage: "abso login [--server <url>] [--no-browser]",
+		flags: {
+			server: "string",
+			"no-browser": "boolean",
+			projects: "string",
+			role: "string",
+			"max-agents": "string",
+			days: "string",
+		},
+		usage:
+			"abso login [--server <url>] [--no-browser] [--projects <name,name>] [--role <reader|writer|owner>] [--max-agents <1-50>] [--days <1-90>]",
 		about:
 			"Sign this box in once: it opens the approve page in your browser with the code filled in, prints the link and the code too, and waits while a person approves the code on the website, choosing the projects, the highest role and how many agents. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. Without --server, the folder's server, or https://api.abso.dev outside a folder. No browser opens with --no-browser or ABSO_NO_BROWSER, over SSH, under CI, or on Linux without a display.",
 		run: async (args, env) => {
@@ -185,6 +193,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 					? undefined
 					: (url: string) => openInBrowser(url);
 			const record = await login(server, {
+				request: loginRequest(args),
 				say: (line) => process.stderr.write(terminalText(`${line}\n`, colorsPass(process.stderr, env.env))),
 				open,
 			});
