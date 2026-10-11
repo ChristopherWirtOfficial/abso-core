@@ -91,4 +91,82 @@ describe("View", () => {
 		assert.deepEqual(view.knownPaths(), ["a.txt", "b.txt"]);
 		assert.deepEqual(view.files(), { "a.txt": "a\n" });
 	});
+
+	it("accounts for the membership bitmap before layout and stays observational", () => {
+		const small = Repo.init({ "f.txt": lines("same") });
+		const larger = Repo.init({ "f.txt": lines("same") });
+		for (let i = 0; i < 8; i++)
+			larger.edit({ attrs: [{ file: "f.txt", name: "exec", value: i % 2 === 0 ? "1" : null }] });
+
+		const smallView = new View(small.graph, small.shared);
+		const largerView = new View(larger.graph, larger.shared);
+		const smallBeforeLayout = smallView.weight();
+		const largerBeforeLayout = largerView.weight();
+		assert.ok(smallBeforeLayout >= small.graph.size);
+		assert.ok(largerBeforeLayout >= larger.graph.size);
+		assert.equal(largerBeforeLayout - smallBeforeLayout, larger.graph.size - small.graph.size);
+		assert.equal(largerView.weight(), largerBeforeLayout);
+
+		assert.deepEqual(smallView.files(), largerView.files());
+		const afterLayout = largerView.weight();
+		assert.equal(largerView.weight(), afterLayout);
+		assert.deepEqual(largerView.files(), { "f.txt": "same\n" });
+	});
+
+	it("accounts for lazy view-owned containers and relocation/index growth", () => {
+		const repo = Repo.init({ "a.txt": lines("one", "two"), "b.txt": lines("base") });
+		repo.edit({ move: { file: "a.txt", start: 0, end: 1, to: "b.txt", at: 1 } });
+		const deletion = repo.edit({ edits: [{ file: "b.txt", old: "base\n", new: "" }] });
+		const view = repo.view();
+		let weight = view.weight();
+		assert.equal(view.weight(), weight);
+
+		assert.equal(view.set.size, 3);
+		assert.ok(view.weight() > weight);
+		weight = view.weight();
+		assert.deepEqual(view.knownPaths(), ["a.txt", "b.txt"]);
+		assert.ok(view.weight() > weight);
+		weight = view.weight();
+		assert.equal(view.fileOf("a0.0"), "b.txt");
+		assert.ok(view.weight() > weight);
+
+		const expectedFiles = { "a.txt": "two\n", "b.txt": "one\n" };
+		assert.deepEqual(view.files(), expectedFiles);
+		weight = view.weight();
+		assert.deepEqual(
+			view.sequence("b.txt").map((line) => [line.text, line.visible, line.deletedBy]),
+			[
+				["base", false, [deletion.id]],
+				["one", true, []],
+			],
+		);
+		assert.ok(view.weight() > weight);
+		weight = view.weight();
+		assert.equal(view.sequenceIndex("b.txt", "a0.0"), 1);
+		assert.ok(view.weight() > weight);
+		weight = view.weight();
+		assert.equal(view.lineNumber("b.txt", "a0.0"), 0);
+		assert.ok(view.weight() > weight);
+		weight = view.weight();
+		assert.deepEqual(
+			view.lines("b.txt").map((line) => line.text),
+			["one"],
+		);
+		assert.ok(view.weight() > weight);
+		const finalWeight = view.weight();
+		assert.equal(view.weight(), finalWeight);
+		assert.deepEqual(view.files(), expectedFiles);
+	});
+
+	it("counts line-cache references without charging Graph-owned text per view", () => {
+		const short = Repo.init({ "f.txt": lines("x") });
+		const long = Repo.init({ "f.txt": lines("x".repeat(10_000)) });
+		const shortView = short.view();
+		const longView = long.view();
+		shortView.lines("f.txt");
+		longView.lines("f.txt");
+		assert.equal(shortView.weight(), longView.weight());
+		const longWeight = longView.weight();
+		assert.equal(longView.weight(), longWeight);
+	});
 });

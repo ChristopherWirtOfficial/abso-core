@@ -71,6 +71,16 @@ interface Child {
 const EMPTY_INTS = new Int32Array(0);
 const NO_FILE: FileState = { attrs: NO_ATTRS, seq: EMPTY_INTS, vis: EMPTY_INTS, deletedBy: new Map() };
 
+// Approximate retained-container costs for View.weight(): reference slots,
+// object headers, and map/set entries. These are cache-budget units, not V8
+// heap measurements. Referenced Graph strings and records are not charged.
+const ARRAY_HEADER_BYTES = 24;
+const OBJECT_BYTES = 32;
+const MAP_HEADER_BYTES = 32;
+const MAP_ENTRY_BYTES = 40;
+const SET_ENTRY_BYTES = 32;
+const REFERENCE_BYTES = 8;
+
 /**
  * The projection of a closed set. Construct once, then ask for files, lines
  * and sequences. Throws `not-closed` if some atom's dependency is missing.
@@ -448,21 +458,44 @@ export class View {
 	}
 
 	/**
-	 * About how many bytes keeping this view costs (#46): its laid-out files
-	 * (4 bytes a line, and more for a deleted line and for positions once asked
-	 * for), and the records it keeps for the file it was last asked about.
+	 * About how many bytes of retained state this view costs (#46). This uses
+	 * approximate ownership costs for containers and wrappers, not V8 heap
+	 * measurements. Graph-owned strings and records count only as references.
+	 * This method only inspects already-created state: it does not lay out files,
+	 * populate lazy caches, enumerate the graph, or count temporary traversal
+	 * containers and shared empty singleton payloads as retained view state.
 	 */
 	weight(): number {
-		let n = 0;
-		for (const f of this.#files.values())
-			n +=
-				4 * (f.seq.length + f.vis.length) +
-				40 * f.deletedBy.size +
-				24 * ((f.seqIndex?.size ?? 0) + (f.visIndex?.size ?? 0));
-		n +=
-			100 * (this.#linesCache?.lines.length ?? 0) +
-			120 * (this.#seqCache?.seq.length ?? 0) +
-			2 * (this.#textCache?.text.length ?? 0);
+		let n = this.#in.byteLength;
+		n += ARRAY_HEADER_BYTES + REFERENCE_BYTES * this.#movers.length;
+		n += MAP_HEADER_BYTES; // #files exists from construction.
+		n += MAP_HEADER_BYTES; // #fileOf exists from construction.
+		if (this.#set) n += OBJECT_BYTES + SET_ENTRY_BYTES * this.#set.size;
+		if (this.#knownList) n += ARRAY_HEADER_BYTES + REFERENCE_BYTES * this.#knownList.length;
+		if (this.#relocs) n += MAP_HEADER_BYTES + MAP_ENTRY_BYTES * this.#relocs.size;
+		if (this.#relocsN) n += MAP_HEADER_BYTES + (MAP_ENTRY_BYTES + OBJECT_BYTES) * this.#relocsN.size;
+		n += MAP_ENTRY_BYTES * this.#fileOf.size;
+		for (const f of this.#files.values()) {
+			n += MAP_ENTRY_BYTES;
+			if (f !== NO_FILE) {
+				// FileState and FileAttrs are per laid-out file; typed-array
+				// headers are separate from their payload byte lengths below.
+				n += OBJECT_BYTES + OBJECT_BYTES + 2 * ARRAY_HEADER_BYTES;
+				n += f.seq.byteLength + f.vis.byteLength;
+				n += MAP_HEADER_BYTES + (MAP_ENTRY_BYTES + ARRAY_HEADER_BYTES) * f.deletedBy.size;
+				for (const deleters of f.deletedBy.values()) n += REFERENCE_BYTES * deleters.length;
+				if (f.seqIndex) n += MAP_HEADER_BYTES + MAP_ENTRY_BYTES * f.seqIndex.size;
+				if (f.visIndex) n += MAP_HEADER_BYTES + MAP_ENTRY_BYTES * f.visIndex.size;
+			}
+		}
+		if (this.#linesCache)
+			n += OBJECT_BYTES + REFERENCE_BYTES + ARRAY_HEADER_BYTES + 100 * this.#linesCache.lines.length;
+		if (this.#seqCache) {
+			n += OBJECT_BYTES + REFERENCE_BYTES + ARRAY_HEADER_BYTES + 120 * this.#seqCache.seq.length;
+			for (const line of this.#seqCache.seq)
+				if (line.deletedBy !== NONE) n += ARRAY_HEADER_BYTES + REFERENCE_BYTES * line.deletedBy.length;
+		}
+		if (this.#textCache) n += OBJECT_BYTES + REFERENCE_BYTES + ARRAY_HEADER_BYTES + 2 * this.#textCache.text.length;
 		return n;
 	}
 
