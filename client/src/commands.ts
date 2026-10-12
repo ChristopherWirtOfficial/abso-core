@@ -41,6 +41,7 @@ import {
 import { withFolderLock } from "./lock.ts";
 import type { OnDisk } from "./modes.ts";
 import { applyMode, type FullMode, foldModes, onDisk, PLAIN, readKnownModes, writeKnownModes } from "./modes.ts";
+import { batchRecordItems, sendRecordBatches } from "./record-batches.ts";
 import { type Refused, screenAnswer, unsafePath } from "./safety.ts";
 
 export {
@@ -213,38 +214,77 @@ async function recordFolderLocked(
 		.map(([rel]) => rel)
 		.sort();
 	if (sent === 0) return { sent: 0, paths, deleted, changed: [], news: undefined, leftOut, turnedBinary };
-	await uploadBlobs(api, blobs);
-	const answer = await api.record(
-		Object.fromEntries(files),
-		{},
-		modes,
-		Object.fromEntries([...blobs].map(([rel, b]) => [rel, b.sha])),
+	const items = paths.map((path) => ({
+		path,
+		...(files.has(path) ? { text: files.get(path) } : {}),
+		...(modes[path] !== undefined ? { mode: modes[path] } : {}),
+		...(blobs.has(path) ? { blob: blobs.get(path)?.sha } : {}),
+	}));
+	const batches = batchRecordItems(items);
+	let batchBlobs = new Map<string, BlobToSend>();
+	const uploaded = new Set<string>();
+	const answers = await sendRecordBatches(
+		api,
+		batches,
+		async (batch) => {
+			batchBlobs = new Map(
+				batch.paths.flatMap((path) => {
+					const blob = blobs.get(path);
+					return blob === undefined ? [] : [[path, blob] as const];
+				}),
+			);
+			for (const [path, blob] of batchBlobs) {
+				if (uploaded.has(blob.sha)) continue;
+				await uploadBlobs(api, new Map([[path, blob]]));
+				uploaded.add(blob.sha);
+			}
+		},
+		async (batch, answer) => {
+			const batchFiles = new Map(Object.entries(batch.files));
+			// Commit known state only after this batch is confirmed; earlier successful batches stay committed on later failure.
+			for (const [rel, text] of batchFiles) if (text === null) forgetKnown(root, rel);
+			for (const [rel, text] of batchFiles) if (text !== null) writeKnown(root, rel, text);
+			const knownBlobs = readKnownBlobs(root);
+			if (Object.keys(batch.blobs).length > 0 || batch.paths.some((rel) => knownBlobs.has(rel))) {
+				for (const rel of new Set([...Object.keys(batch.files), ...Object.keys(batch.blobs)])) knownBlobs.delete(rel);
+				for (const [rel, sha] of Object.entries(batch.blobs)) {
+					forgetKnown(root, rel);
+					knownBlobs.set(rel, sha);
+				}
+				writeKnownBlobs(root, knownBlobs);
+			}
+			const gone = Object.entries(batch.files)
+				.filter(([, text]) => text === null)
+				.map(([rel]) => rel);
+			const knownModes = readKnownModes(root);
+			if (Object.keys(batch.modes).length > 0 || gone.some((rel) => knownModes.has(rel))) {
+				foldModes(knownModes, batch.modes, gone);
+				writeKnownModes(root, knownModes);
+			}
+			heard(root, [
+				...newsLines(answer.news),
+				...(answer.spelling ?? []).map(spellingText),
+				...(answer.uncomposed ?? []).map(uncomposedText),
+			]);
+		},
 	);
-	if (!answer.ok) throw new Error(`the server refused the record: ${answer.reason ?? "no reason given"}`);
-	// Forget before writing: after a rename that changes only case, known/a.ts and known/A.ts are one file on Windows and macOS.
-	for (const [rel, text] of files) if (text === null) forgetKnown(root, rel);
-	for (const [rel, text] of files) if (text !== null) writeKnown(root, rel, text);
-	const knownBlobs = readKnownBlobs(root);
-	if (blobs.size > 0 || [...files.keys()].some((rel) => knownBlobs.has(rel))) {
-		for (const rel of files.keys()) knownBlobs.delete(rel);
-		for (const [rel, b] of blobs) {
-			forgetKnown(root, rel);
-			knownBlobs.set(rel, b.sha);
-		}
-		writeKnownBlobs(root, knownBlobs);
-	}
-	const gone = [...files].filter(([, text]) => text === null).map(([rel]) => rel);
-	const knownModes = readKnownModes(root);
-	if (Object.keys(modes).length > 0 || gone.some((rel) => knownModes.has(rel))) {
-		foldModes(knownModes, modes, gone);
-		writeKnownModes(root, knownModes);
-	}
-	// Another spelling of an existing file went in as that file (#49); a new name not in composed form gets a gentle word.
-	heard(root, [
-		...newsLines(answer.news),
-		...(answer.spelling ?? []).map(spellingText),
-		...(answer.uncomposed ?? []).map(uncomposedText),
-	]);
+	const changed = answers.flatMap((answer) => (Array.isArray(answer.changed) ? answer.changed : []));
+	const changedCount = answers.some((answer) => typeof answer.changed === "number")
+		? answers.reduce(
+				(sum, answer) =>
+					sum +
+					(typeof answer.changed === "number"
+						? answer.changed
+						: Array.isArray(answer.changed)
+							? answer.changed.length
+							: 0),
+				0,
+			)
+		: changed;
+	const news = answers.flatMap((answer) => newsLines(answer.news));
+	const spelling = answers.flatMap((answer) => answer.spelling ?? []);
+	const uncomposed = answers.flatMap((answer) => answer.uncomposed ?? []);
+	const answer = { changed: changedCount, news, spelling, uncomposed };
 	const longPaths = longPathsOf(
 		root,
 		[...files].filter(([, text]) => text !== null).map(([path]) => path),

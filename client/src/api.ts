@@ -231,7 +231,13 @@ export class Api {
 				await new Promise((ok) => setTimeout(ok, 500));
 			}
 		}
-		const text = await res.text();
+		let text: string;
+		try {
+			text = await res.text();
+		} catch (err) {
+			const reason = err instanceof Error ? err.message : String(err);
+			throw new ApiError(`${method} ${path} response body ended unexpectedly: ${reason}`, res.status);
+		}
 		// 409 is a refusal that says what to do (a drop took out lines your work builds on): print it as it is.
 		if (!res.ok)
 			throw new ApiError(
