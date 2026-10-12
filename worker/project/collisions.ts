@@ -46,23 +46,72 @@ export function pairsIn(
 	const out: Pair[] = [];
 	for (const yours of draft) {
 		const atom = g.atom(yours);
-		const candidates = new Set<AtomId>();
+		const streams: IterableIterator<AtomId>[] = [];
 		for (const key of atom.writes) {
-			for (const list of [g.writersOf(key), g.readersOf(key), g.holdersOf(key)]) {
-				for (const id of list) if (against.has(id)) candidates.add(id);
-			}
+			streams.push(g.eachWriterOf(key), g.eachReaderOf(key), g.eachHolderOf(key));
 		}
-		for (const key of claimsOf(atom)) for (const id of g.writersOf(key)) if (against.has(id)) candidates.add(id);
-		for (const theirs of [...candidates].sort((p, q) => g.atom(p).seq - g.atom(q).seq)) {
+		for (const key of claimsOf(atom)) streams.push(g.eachWriterOf(key));
+		for (const theirs of orderedClaimants(g, streams)) {
+			if (!against.has(theirs)) continue;
 			const [lo, hi] = g.atom(yours).seq < g.atom(theirs).seq ? [yours, theirs] : [theirs, yours];
 			const keys = conflictKeys(g.atom(lo), g.atom(hi), g.dependsOn(hi, lo));
 			if (keys.length === 0 || sideBySide(g, lo, hi, keys)) continue;
-			const fromHi = new Set(g.resolversOf(hi));
-			if (g.resolversOf(lo).some((r) => fromHi.has(r) && settled.has(r))) continue;
+			if (hasCommonResolver(g, lo, hi, settled)) continue;
 			out.push({ yours, theirs, keys });
 		}
 	}
 	return out;
+}
+
+/** Claim indexes append in canonical seq order. Merge one cursor per current
+ * atom key, retaining no candidate set proportional to historical claims. */
+function* orderedClaimants(g: Graph, streams: IterableIterator<AtomId>[]): IterableIterator<AtomId> {
+	try {
+		const heads = streams.map((stream) => stream.next());
+		let previous = -1;
+		for (;;) {
+			let best = -1;
+			let seq = Infinity;
+			for (let i = 0; i < heads.length; i++) {
+				const head = heads[i]!;
+				if (head.done) continue;
+				const current = g.atom(head.value).seq;
+				if (current < seq) {
+					best = i;
+					seq = current;
+				}
+			}
+			if (best < 0) return;
+			const id = heads[best]!.value!;
+			heads[best] = streams[best]!.next();
+			if (seq === previous) continue;
+			previous = seq;
+			yield id;
+		}
+	} finally {
+		for (const stream of streams) stream.return?.();
+	}
+}
+
+/** Resolver indexes share the same append order, so intersection needs two cursors. */
+function hasCommonResolver(g: Graph, lo: AtomId, hi: AtomId, settled: ReadonlySet<AtomId>): boolean {
+	const left = g.eachResolverOf(lo);
+	const right = g.eachResolverOf(hi);
+	try {
+		let a = left.next();
+		let b = right.next();
+		while (!a.done && !b.done) {
+			const x = g.atom(a.value).seq;
+			const y = g.atom(b.value).seq;
+			if (x === y && settled.has(a.value)) return true;
+			if (x <= y) a = left.next();
+			if (y <= x) b = right.next();
+		}
+		return false;
+	} finally {
+		left.return?.();
+		right.return?.();
+	}
 }
 
 /**
