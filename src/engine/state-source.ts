@@ -139,6 +139,40 @@ export class StableUnionSet<T> extends StableSet<T> {
 	}
 }
 
+/** Immutable indexed subtraction retains neither operand's enumerated values. */
+export class StableDifferenceSet<T> extends StableSet<T> {
+	readonly left: StableSet<T>;
+	readonly right: StableSet<T>;
+	constructor(left: StableSet<T>, right: StableSet<T>) {
+		super();
+		this.left = left;
+		this.right = right;
+	}
+	get retainedBytes(): number {
+		return 32 + this.left.retainedBytes + this.right.retainedBytes;
+	}
+	has(value: T): boolean {
+		return this.left.has(value) && !this.right.has(value);
+	}
+	*values(): SetIterator<T> {
+		for (const value of this.left) if (!this.right.has(value)) yield value;
+	}
+}
+
+/** Preserve indexed history; only the caller's operation-sized overlay is copied. */
+export function unionOverlay<T>(base: ReadonlySet<T>, overlay: Iterable<T>): ReadonlySet<T> {
+	return base instanceof StableSet
+		? new StableUnionSet(base, new StableOverlaySet(overlay))
+		: new Set([...base, ...overlay]);
+}
+
+/** Both indexed operands must be immutable for the lifetime of the result. */
+export function differenceSet<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): ReadonlySet<T> {
+	return left instanceof StableSet && right instanceof StableSet
+		? new StableDifferenceSet(left, right)
+		: new Set([...left].filter((value) => !right.has(value)));
+}
+
 /** An immutable snapshot for the operation's small overlay, not its history. */
 export class StableOverlaySet<T> extends StableSet<T> {
 	readonly #values: Set<T>;

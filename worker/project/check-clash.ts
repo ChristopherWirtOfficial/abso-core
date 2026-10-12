@@ -2,6 +2,7 @@
 // CheckClashHost; today the host is Project.
 
 import type { AtomId, View } from "../../src/engine/index.ts";
+import { unionOverlay } from "../../src/engine/state-source.ts";
 import { ProjectError } from "./project-error.ts";
 import { configProblem, PROJECT_FILES } from "./project-helpers.ts";
 import type { Space } from "./spaces.ts";
@@ -10,6 +11,7 @@ import { clashIn } from "./spelling.ts";
 /** What the spelling clash check needs from a project. */
 export interface CheckClashHost {
 	shared(): Space;
+	setOf(space: Space): ReadonlySet<AtomId>;
 	view(set: ReadonlySet<AtomId>): View;
 	sharedView(): View;
 	touchedFiles(ids: Iterable<AtomId>, views: readonly View[]): Set<string>;
@@ -29,8 +31,10 @@ export function checkClash(
 	let now: View;
 	try {
 		// Publishes queued ahead (#39) land first, so they count as shared.
-		view = host.view(new Set([...host.shared().own, ...ahead, ...changes]));
-		now = ahead.size === 0 ? host.sharedView() : host.view(new Set([...host.shared().own, ...ahead]));
+		const base = host.setOf(host.shared());
+		const queued = unionOverlay(base, ahead);
+		view = host.view(unionOverlay(queued, changes));
+		now = ahead.size === 0 ? host.sharedView() : host.view(queued);
 	} catch (e) {
 		if ((e as { code?: string }).code === "not-closed") return; // stranded by a drop: the publish says so itself
 		throw e;

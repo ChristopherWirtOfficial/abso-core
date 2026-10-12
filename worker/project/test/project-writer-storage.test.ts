@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { Graph } from "../../../src/engine/graph.ts";
 import { StableSet, storedArray } from "../../../src/engine/state-source.ts";
 import { SqlState } from "../../../src/engine/test/storage-helper.ts";
 import { MemoryStore, Project } from "../project.ts";
@@ -30,6 +31,29 @@ function setup() {
 		},
 	};
 }
+
+test("persistent publish keeps membership indexed through union and conflict checks", (t) => {
+	const { storage, entries, store } = setup();
+	try {
+		let project = new Project(store, { writerStorage: storage });
+		storage.transaction(() => project.init({ "a.txt": "one\n", "b.txt": "two\n" }, 0));
+		storage.transaction(() => project.record("writer", { "a.txt": "ONE\n" }, 1));
+		storage.transaction(() => project.record("other", { "b.txt": "TWO\n" }, 2));
+		storage.transaction(() => project.publish("other", "Other file", 3));
+		project = Project.openWriter(store, storage, entries.length);
+		t.mock.method(Graph.prototype, "closureOf", () => {
+			throw new Error("materialized membership closure is forbidden");
+		});
+		const result = storage.transaction(() => project.publish("writer", "Merge without history copies", 4));
+		assert.equal(result.ok, true);
+		assert.deepEqual(Project.openWriter(store, storage, entries.length).files(), {
+			"a.txt": "ONE\n",
+			"b.txt": "TWO\n",
+		});
+	} finally {
+		storage.db.close();
+	}
+});
 
 test("actor fence reads neither enumerate other agents nor project their files", (t) => {
 	const { storage, entries, store } = setup();

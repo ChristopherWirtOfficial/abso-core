@@ -2,6 +2,7 @@
 // once, and who hears it after an edit, publish or land. Writes (the news entry) stay on Project.
 
 import { type AtomId, type Graph, isStartNode, parseKey, type View } from "../../src/engine/index.ts";
+import { unionOverlay } from "../../src/engine/state-source.ts";
 import { type Origin, type Pair, pairsIn, touchedFiles } from "./collisions.ts";
 import { type DefinitionCollision, signature } from "./definition-rule.ts";
 import { definitionsIn } from "./definitions.ts";
@@ -192,7 +193,7 @@ export interface NewsHost {
 	readonly graph: Graph;
 	readonly agents: ReadonlyMap<string, AgentState>;
 	draft(agent: AgentState): AtomId[];
-	newerFor(agent: AgentState): Set<AtomId>;
+	newerFor(agent: AgentState): ReadonlySet<AtomId>;
 	spaceOf(agent: AgentState): Space;
 	setOf(space: Space): ReadonlySet<AtomId>;
 	viewAt(space: Space, version: number): View;
@@ -253,7 +254,7 @@ export function newsAboutOwnDraft(host: NewsHost, agent: AgentState, entries: En
 	if (draft.length === 0) return;
 	const newer = host.newerFor(agent);
 	if (newer.size === 0) return;
-	const lines = pairsIn(host.graph, draft, newer, new Set([...host.setOf(host.spaceOf(agent)), ...draft]));
+	const lines = pairsIn(host.graph, draft, newer, unionOverlay(host.setOf(host.spaceOf(agent)), draft));
 	host.queueNews(
 		agent,
 		[...lineNews(host, agent, lines), ...definitionNews(host.definitionCollisions(agent, newer))],
@@ -281,7 +282,7 @@ export function newsForOthers(
 		if (agent === publisher || agent.space !== space.name) continue;
 		const draft = host.draft(agent);
 		if (draft.length === 0) continue;
-		const lines = pairsIn(host.graph, draft, just, new Set([...host.setOf(space), ...draft]));
+		const lines = pairsIn(host.graph, draft, just, unionOverlay(host.setOf(space), draft));
 		const defs = changedDefinitions
 			? host.definitionCollisions(agent, host.newerFor(agent)).filter((d) => just.has(d.by))
 			: [];

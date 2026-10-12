@@ -2,6 +2,7 @@
 // the host is Project. Ingest calls publishDraft, the inner step.
 
 import { type AtomId, buildAtom, type Hunk, joinLines, type View } from "../../src/engine/index.ts";
+import { differenceSet, unionOverlay } from "../../src/engine/state-source.ts";
 import type { Pair } from "./collisions.ts";
 import type { DefinitionCollision } from "./definition-rule.ts";
 import { keptOf, lostLines, settleLines } from "./markers.ts";
@@ -59,7 +60,7 @@ export interface PublishHost {
 	): PublishAnswer;
 	view(set: ReadonlySet<AtomId>): View;
 	requireClosed(tie: { deps: readonly AtomId[] }, union: ReadonlySet<AtomId>): void;
-	newerFor(agent: AgentState): Set<AtomId>;
+	newerFor(agent: AgentState): ReadonlySet<AtomId>;
 	currentChange(agent: AgentState, time: number): number | undefined;
 	apply(entry: Entry): void;
 	newsForOthers(publisher: AgentState, space: Space, version: number, entries: Entry[]): void;
@@ -126,7 +127,7 @@ export function publishDraft(
 	const draft = host.draft(agent);
 	if (draft.length === 0) return { ok: true, version: last(space), changes: 0 };
 	const now = host.setOf(space);
-	const union = new Set([...now, ...draft]);
+	const union = unionOverlay(now, draft);
 	const newer = host.newerFor(agent);
 	const collisions = [
 		...host.pairs(draft, newer, union).map((p) => host.collision(agent, p)),
@@ -143,7 +144,7 @@ export function publishDraft(
 	// (#37: twenty goals twice, shared red for three versions). So
 	// that is refused unless the agent says to publish as it is (asIs); then,
 	// like any other seen collision, publishing settles it.
-	const seen = host.pairs(draft, new Set([...now].filter((id) => !newer.has(id))), union);
+	const seen = host.pairs(draft, differenceSet(now, newer), union);
 	if (!asIs) {
 		const untouched = seen
 			.map((p) => host.collision(agent, p))

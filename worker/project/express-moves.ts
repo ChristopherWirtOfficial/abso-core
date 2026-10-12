@@ -3,6 +3,7 @@
 // atoms so the lines keep their ids. Writes go through ExpressMovesHost; today the host is Project.
 
 import type { AtomId, AttrSet, EditInput, Graph, LineId, MoveInput, View } from "../../src/engine/index.ts";
+import { differenceSet, StableOverlaySet } from "../../src/engine/state-source.ts";
 import { PLAIN_LINE } from "./collisions.ts";
 import type { AgentState, Entry, Meta, Mode } from "./project-types.ts";
 
@@ -58,7 +59,7 @@ export function expressMoves(host: ExpressMovesHost, agent: AgentState, time: nu
 	const g = host.graph;
 	const mine = new Set(draft);
 	const after = host.agentView(agent);
-	const before = host.view(new Set([...after.set].filter((id) => !mine.has(id))));
+	const before = host.view(differenceSet(after.set, new StableOverlaySet(draft)));
 	const touched = new Set<string>();
 	for (const id of draft) for (const file of g.filesOf(id)) touched.add(file);
 

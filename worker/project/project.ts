@@ -15,6 +15,7 @@
 import { type Atom, type AtomId, EngineError, Graph, type LineId, type View } from "../../src/engine/index.ts";
 import {
 	CachedStateStorage,
+	differenceSet,
 	type GraphStateStorage,
 	StableOverlaySet,
 	StableSet,
@@ -2184,6 +2185,7 @@ export class Project {
 	get #checkClashHost(): CheckClashHost {
 		this.#checkClashes ??= {
 			shared: () => this.#shared,
+			setOf: (space) => this.#setOf(space),
 			view: (set) => this.#view(set),
 			sharedView: () => this.#sharedView(),
 			touchedFiles: (ids, views) => this.#touchedFiles(ids, views),
@@ -2545,11 +2547,10 @@ export class Project {
 	}
 
 	/** The space's atoms published after the agent's base, by others. */
-	#newerFor(agent: AgentState): Set<AtomId> {
+	#newerFor(agent: AgentState): ReadonlySet<AtomId> {
 		const space = this.#spaceOf(agent);
 		const base = this.#at(space, agent.base);
-		const mine = new Set(agent.mine);
-		return new Set([...this.#setOf(space)].filter((id) => !base.has(id) && !mine.has(id)));
+		return differenceSet(differenceSet(this.#setOf(space), base), new StableOverlaySet(agent.mine));
 	}
 
 	/** The files whose text in the agent's view differs from `before`, and its open collisions. */
@@ -2687,8 +2688,7 @@ export class Project {
 		const draft = new Set(this.#draft(agent));
 		if (draft.size === 0 || newer.size === 0) return [];
 		const space = this.#spaceOf(agent);
-		const mine = new Set(agent.mine);
-		const base = this.#view(new Set([...this.#at(space, agent.base)].filter((id) => !mine.has(id))));
+		const base = this.#view(differenceSet(this.#at(space, agent.base), new StableOverlaySet(agent.mine)));
 		return this.#definitionRule.collisions(
 			draft,
 			this.#agentView(agent),
