@@ -2483,6 +2483,9 @@ export class Project {
 
 	/** An agent's view, keyed by what the set is made of, not by sorting every atom in it (#46): that cost more than the work. */
 	#agentViewKey(agent: AgentState): string {
+		// An empty draft is exactly its published base. Share its projection
+		// with version readers instead of walking the same history twice.
+		if (agent.mine.length === 0) return `v ${agent.space}@${agent.base}`;
 		return `a ${agent.space}@${agent.base}+${agent.mine.join(",")}`;
 	}
 

@@ -50,6 +50,27 @@ test("actor fence reads neither enumerate other agents nor project their files",
 	storage.db.close();
 });
 
+test("empty writer drafts reuse their exact published base projection without conflating newer heads", () => {
+	const { storage, entries, store } = setup();
+	let project = new Project(store, { writerStorage: storage });
+	storage.transaction(() => project.init({ "a.txt": "one\n" }, 0));
+	storage.transaction(() => project.record("writer", { "a.txt": "two\n" }, 1));
+	storage.transaction(() => project.publish("writer", "Two", 2));
+	project = Project.openWriter(store, storage, entries.length);
+	const base = project.sharedView();
+	assert.equal(project.draftOf("writer")!.view, base);
+	assert.equal(base.text("a.txt"), "two\n");
+	storage.transaction(() => project.record("other", { "a.txt": "three\n" }, 3));
+	assert.notEqual(project.draftOf("other")!.view, base);
+	storage.transaction(() => project.publish("other", "Three", 4));
+	assert.equal(project.sharedView().text("a.txt"), "three\n");
+	assert.equal(project.draftOf("writer")!.view, base, "an unchanged actor stays at its old base");
+	assert.equal(project.draftOf("writer")!.view.text("a.txt"), "two\n");
+	assert.notEqual(project.draftOf("writer")!.view, project.sharedView());
+	assert.equal(project.draftOf("other")!.view, project.sharedView());
+	storage.db.close();
+});
+
 test("actual Project record and publish use persistent graph, membership and positional indexes", (t) => {
 	t.mock.method(Date, "now", () => 100);
 	const { storage, entries, store } = setup();
