@@ -561,6 +561,40 @@ export class View {
 		return out;
 	}
 
+	/** Two visible neighbours without retaining the file's historical sequence. */
+	visibleNeighbours(path: string, line: LineId): LineId[] {
+		const graph = this.graph;
+		const target = graph.lineN(line);
+		const start = graph.startCodeOf(path);
+		if (target < 0 || start === undefined) return [];
+		const scan = (nodes: Iterable<number>): LineId[] => {
+			let previous: LineId | undefined;
+			let found = false;
+			for (const n of nodes) {
+				if (n === target) {
+					found = true;
+					continue;
+				}
+				let deleted = false;
+				for (const seq of graph.eachDeleterSeqOf(n))
+					if (this.#has(seq)) {
+						deleted = true;
+						break;
+					}
+				if (deleted) continue;
+				const id = graph.lineIdOf(n);
+				if (found) return previous === undefined ? [id] : [previous, id];
+				previous = id;
+			}
+			return found && previous !== undefined ? [previous] : [];
+		};
+		if (this.#hasMoves && graph.hasOrderedChildren)
+			return graph.withProjectionScratch((scratch) =>
+				scan(scratchLayoutNodes(graph, (id) => this.#has(graph.atom(id).seq), scratch, graph.nodeOf(start))),
+			);
+		return scan(this.#layoutNodes(start));
+	}
+
 	/** Index of a line in `sequence(path)`, or -1. */
 	sequenceIndex(path: string, line: LineId): number {
 		const f = this.#file(path, true);

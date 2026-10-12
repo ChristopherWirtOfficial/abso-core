@@ -207,23 +207,7 @@ function insideRun(graph: Graph, line: LineId): boolean {
 function visibleNeighbours(view: View, graph: Graph, line: LineId): LineId[] {
 	const info = graph.line(line);
 	if (!info) return [];
-	const sequence = view.sequence(info.file);
-	const at = view.sequenceIndex(info.file, line);
-	if (at < 0) return [];
-	const out: LineId[] = [];
-	for (let i = at - 1; i >= 0; i--) {
-		if (sequence[i]!.visible) {
-			out.push(sequence[i]!.id);
-			break;
-		}
-	}
-	for (let i = at + 1; i < sequence.length; i++) {
-		if (sequence[i]!.visible) {
-			out.push(sequence[i]!.id);
-			break;
-		}
-	}
-	return out;
+	return view.visibleNeighbours(info.file, line);
 }
 
 /**
