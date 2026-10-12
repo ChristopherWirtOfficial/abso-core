@@ -314,7 +314,9 @@ export class Graph {
 			this.#replacing = numbers("replacing");
 			this.#lineText = storedArray(storage, "line-text");
 			this.#pathIndex = storedMap(storage, "path-index");
-			this.#moreDeleters = storedMap(storage, "more-deleters");
+			this.#moreDeleterPages = storedLists<number>(storage, "more-deleters", (key) =>
+				JSON.stringify(["number", Number(key)]),
+			);
 			this.#writersPages = storedLists<AtomId>(storage, "writers", (key) => key);
 			this.#readersPages = storedLists<AtomId>(storage, "readers", (key) => key);
 			this.#holdersPages = storedLists<AtomId>(storage, "holders", (key) => key);
@@ -422,6 +424,7 @@ export class Graph {
 	/** The first atom that deletes each line (its seq), or -1; a line deleted by more than one has the rest in #moreDeleters. */
 	#deleter: NumberIndex = new Ints();
 	#moreDeleters: StateMap<number, number[]> = new Map();
+	#moreDeleterPages: ReturnType<typeof storedLists<number>> | undefined;
 	#writers: StateMap<Key | number, AtomId | AtomId[]> = new Map();
 	#writersPages: ReturnType<typeof storedLists<AtomId>> | undefined;
 	#readers: StateMap<Key | number, AtomId | AtomId[]> = new Map();
@@ -628,10 +631,14 @@ export class Graph {
 
 	/** The seqs of every atom that deletes line n (none: an empty list, shared). */
 	deleterSeqsOf(n: number): readonly number[] {
+		return [...this.eachDeleterSeqOf(n)];
+	}
+	*eachDeleterSeqOf(n: number): IterableIterator<number> {
 		const first = this.#deleter.at(n);
-		if (first < 0) return EMPTY;
-		const more = this.#moreDeleters.get(n);
-		return more ? [first, ...more] : [first];
+		if (first < 0) return;
+		yield first;
+		if (this.#moreDeleterPages) yield* this.#moreDeleterPages.values(String(n));
+		else yield* this.#moreDeleters.get(n) ?? EMPTY;
 	}
 
 	/** Every relocation that puts a line right after the node with this code. */
@@ -701,12 +708,7 @@ export class Graph {
 	deletersOf(line: LineId): readonly AtomId[] {
 		const n = this.#lineN(line);
 		if (n < 0) return EMPTY;
-		const first = this.#deleter.at(n);
-		if (first < 0) return EMPTY;
-		const more = this.#moreDeleters.get(n);
-		const out = [this.#atoms[first]!.id];
-		if (more) for (const seq of more) out.push(this.#atoms[seq]!.id);
-		return out;
+		return [...this.eachDeleterSeqOf(n)].map((seq) => this.#atoms[seq]!.id);
 	}
 
 	writersOf(key: Key): readonly AtomId[] {
@@ -1025,6 +1027,7 @@ export class Graph {
 		if (frozen.moves) this.#movers.push(frozen.id);
 		for (const n of deletedN) {
 			if (this.#deleter.at(n) < 0) this.#deleter.set(n, seq);
+			else if (this.#moreDeleterPages) this.#moreDeleterPages.append(String(n), seq);
 			else pushIndex(this.#moreDeleters, n, seq);
 		}
 		for (const key of new Set(atom.writes)) {

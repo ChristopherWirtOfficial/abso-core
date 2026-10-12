@@ -5,6 +5,44 @@ import { CachedStateStorage, StableOverlaySet, storedLists, storedNumbers } from
 import { lines, Repo } from "./helpers.ts";
 import { SqlState } from "./storage-helper.ts";
 
+test("current visibility stops at the first included deletion while history retains every deleter", () => {
+	class ObservedStorage extends SqlState {
+		pageReads = 0;
+		override read(collection: string, key: string): unknown {
+			if (collection === "more-deleters:pages") this.pageReads++;
+			return super.read(collection, key);
+		}
+	}
+	const storage = new ObservedStorage();
+	try {
+		const oracle = Repo.init({ "a.txt": "gone\nlive\n" });
+		const deletion = oracle.draft({ edits: [{ file: "a.txt", old: "gone\n", new: "" }] });
+		const graph = new Graph({ storage });
+		graph.add(oracle.graph.atom("a0"));
+		const ids = ["a0"];
+		for (let seq = 1; seq <= 514; seq++) {
+			const atom = { ...deletion, id: `a${seq}`, seq };
+			graph.add(atom);
+			oracle.graph.add(atom);
+			ids.push(atom.id);
+		}
+		const reopened = new Graph({ storage });
+		const membership = new StableOverlaySet(ids);
+		const view = new View(reopened, membership);
+		storage.pageReads = 0;
+		assert.equal(view.text("a.txt"), "live\n");
+		assert.equal(storage.pageReads, 0, "current visibility needs no later deleters after the first match");
+		assert.deepEqual(view.sequence("a.txt"), new View(oracle.graph, membership).sequence("a.txt"));
+		assert.equal(view.sequence("a.txt")[0]!.deletedBy.length, 514);
+		assert.equal(storage.pageReads, 3);
+		assert.deepEqual(reopened.deletersOf("a0.0"), oracle.graph.deletersOf("a0.0"));
+		const lastOnly = new View(reopened, new StableOverlaySet(["a0", "a514"]));
+		assert.equal(lastOnly.text("a.txt"), "live\n", "excluded early deletions must not hide a later included one");
+	} finally {
+		storage.db.close();
+	}
+});
+
 test("relocation indexes stream one fixed page before yielding and preserve order", () => {
 	class ObservedStorage extends SqlState {
 		pageReads = 0;

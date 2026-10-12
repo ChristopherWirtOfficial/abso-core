@@ -376,10 +376,16 @@ export class View {
 		const priority = (a: number, b: number) => graph.lamportOfSeq(a) - graph.lamportOfSeq(b) || a - b;
 		while (stack.length > 0) {
 			const n = stack.pop()!;
-			const deleters = graph.deleterSeqsOf(n);
-			const by = deleters.length === 0 ? NONE : deleters.filter((d) => this.#has(d));
-			if (by.length > 0) {
-				if (complete) deletedBy.set(seq.length, by.length > 1 ? [...by].sort(priority) : by);
+			let deleted = false;
+			const by: number[] = [];
+			for (const deleter of graph.eachDeleterSeqOf(n)) {
+				if (!this.#has(deleter)) continue;
+				deleted = true;
+				if (!complete) break;
+				by.push(deleter);
+			}
+			if (deleted) {
+				if (complete) deletedBy.set(seq.length, by.length > 1 ? by.sort(priority) : by);
 			} else vis.push(n);
 			if (complete) seq.push(n);
 			pushChildren(n);
