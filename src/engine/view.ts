@@ -11,6 +11,7 @@
 
 import type { Graph, RelocationInfo } from "./graph.ts";
 import { isStartNode } from "./keys.ts";
+import { resolveScratchMoves, scratchLayoutNodes } from "./relocation-scratch.ts";
 import { StableSet } from "./state-source.ts";
 import { joinLines } from "./text.ts";
 import { type AtomId, type AtomSet, EngineError, type LineId, type NodeId } from "./types.ts";
@@ -264,6 +265,11 @@ export class View {
 
 	/** The node a line hangs off in this set: where it was written, or where a move put it. */
 	parentOf(line: LineId): NodeId {
+		if (this.graph.lineParent(line) === undefined) throw new EngineError("unknown-line", `no line ${line}`);
+		if (this.#hasMoves && this.graph.hasOrderedChildren)
+			return this.graph.withProjectionScratch((scratch) =>
+				resolveScratchMoves(this.graph, (id) => this.#has(this.graph.atom(id).seq), scratch).parent(line),
+			);
 		const r = this.#hasMoves ? this.#relocations().get(line) : undefined;
 		if (r) return r.parent;
 		const parent = this.graph.lineParent(line);
@@ -290,6 +296,13 @@ export class View {
 	#fileOfN(n: number): string {
 		const graph = this.graph;
 		if (!this.#hasMoves) return graph.writtenIn(n);
+		if (graph.hasOrderedChildren)
+			return graph.withProjectionScratch((scratch) => {
+				const moves = resolveScratchMoves(graph, (id) => this.#has(graph.atom(id).seq), scratch);
+				let current = graph.nodeOf(n);
+				while (!isStartNode(current)) current = moves.parent(current);
+				return current.slice(1);
+			});
 		const relocs = this.#relocationsN();
 		// Keep only a fixed tail of the walk for path compression. The selected
 		// relocation graph is acyclic, so traversal needs no history-sized stack.
@@ -396,6 +409,19 @@ export class View {
 	/** Lay out one file: its line tree from the set's atoms, linearized. */
 	#layout(path: string, complete: boolean): FileState {
 		const graph = this.graph;
+		if (this.#hasMoves && graph.hasOrderedChildren)
+			return graph.withProjectionScratch((scratch) =>
+				this.#layoutResolved(
+					path,
+					complete,
+					scratchLayoutNodes(graph, (id) => this.#has(graph.atom(id).seq), scratch, `^${path}`),
+				),
+			);
+		return this.#layoutResolved(path, complete);
+	}
+
+	#layoutResolved(path: string, complete: boolean, nodes?: Iterable<number>): FileState {
+		const graph = this.graph;
 		// For each attribute, the highest-priority setter in the set wins.
 		const setters = new Map<string, { id: AtomId; value: string | null }>();
 		for (const id of graph.eachAtomIn(path)) {
@@ -413,7 +439,7 @@ export class View {
 
 		const start = graph.startCodeOf(path);
 		const priority = (a: number, b: number) => graph.lamportOfSeq(a) - graph.lamportOfSeq(b) || a - b;
-		for (const n of start === undefined ? [] : this.#layoutNodes(start)) {
+		for (const n of nodes ?? (start === undefined ? [] : this.#layoutNodes(start))) {
 			let deleted = false;
 			const by: number[] = [];
 			for (const deleter of graph.eachDeleterSeqOf(n)) {

@@ -16,6 +16,7 @@ import {
 	startNode,
 } from "./keys.ts";
 import { OrderedIndex, orderedChildKey } from "./ordered-index.ts";
+import { withProjectionScratch } from "./projection-scratch.ts";
 import {
 	type GraphStateStorage,
 	type StateMap,
@@ -634,6 +635,19 @@ export class Graph {
 
 	get hasOrderedChildren(): boolean {
 		return this.#storage !== undefined;
+	}
+	/** Synchronous derived work against one graph identity. Scratch never commits. */
+	withProjectionScratch<T>(operation: (scratch: GraphStateStorage) => T): T {
+		if (!this.#storage) throw new Error("projection scratch requires persistent graph storage");
+		const size = this.size;
+		const lines = this.lineCount;
+		return withProjectionScratch(
+			this.#storage,
+			() => {
+				if (this.size !== size || this.lineCount !== lines) throw new Error("projection graph identity changed");
+			},
+			operation,
+		);
 	}
 	#childPriority(n: number): string {
 		const seq = this.writerSeqOf(n);
