@@ -4,6 +4,14 @@
 // live here once.
 
 import type { AtomId } from "../../src/engine/index.ts";
+import {
+	type GraphStateStorage,
+	StableSet,
+	StableUnionSet,
+	StoredMap,
+	StoredSet,
+	storedArray,
+} from "../../src/engine/state-source.ts";
 import type { Entry } from "./project.ts";
 
 export const SHARED = "";
@@ -27,6 +35,8 @@ export interface Published {
 
 export /** Shared ('') or a named draft. */
 interface Space {
+	/** Storage-backed spaces append the historical membership index here. */
+	indexVersion?: (version: Published) => void;
 	readonly name: string;
 	readonly versions: Published[];
 	/** Every atom published into this space (for shared, everything in it). */
@@ -39,7 +49,19 @@ interface Space {
 	startedAt?: number;
 }
 
-export function newSpace(name: string): Space {
+export function newSpace(name: string, storage?: GraphStateStorage): Space {
+	if (storage) {
+		const prefix = `membership:${JSON.stringify(name)}`;
+		return {
+			name,
+			indexVersion: (version) => indexMembership(storage, prefix, version),
+			versions: storedArray(storage, `${prefix}:versions`),
+			own: new StoredSet(storage, `${prefix}:own`),
+			publishedIn: new StoredMap(storage, `${prefix}:published`),
+			droppedIn: new StoredMap(storage, `${prefix}:dropped`),
+			atCache: new Map(),
+		};
+	}
 	return { name, versions: [], own: new Set(), publishedIn: new Map(), droppedIn: new Map(), atCache: new Map() };
 }
 
@@ -53,6 +75,93 @@ export function addVersion(space: Space, version: Published): void {
 		space.own.delete(id);
 		space.droppedIn.set(id, version.version);
 	}
+	space.indexVersion?.(version);
+}
+
+interface MembershipEvent {
+	version: number;
+	present: boolean;
+	slot: number;
+	atom: AtomId;
+}
+
+function membershipEvent(
+	storage: GraphStateStorage,
+	prefix: string,
+	atom: AtomId,
+	version: number,
+): MembershipEvent | undefined {
+	const events = storedArray<MembershipEvent>(storage, `${prefix}:events:${atom}`);
+	let lo = 0;
+	let hi = events.length;
+	while (lo < hi) {
+		const mid = lo + Math.floor((hi - lo) / 2);
+		if (events[mid]!.version <= version) lo = mid + 1;
+		else hi = mid;
+	}
+	return lo === 0 ? undefined : events[lo - 1];
+}
+
+function indexMembership(storage: GraphStateStorage, prefix: string, version: Published): void {
+	const order = storedArray<MembershipEvent>(storage, `${prefix}:events`);
+	for (const [ids, present] of [
+		[version.atoms, true],
+		[version.dropped ?? [], false],
+	] as const) {
+		for (const atom of ids) {
+			const previous = membershipEvent(storage, prefix, atom, version.version);
+			if ((previous?.present ?? false) === present) continue;
+			const event = { atom, version: version.version, present, slot: order.length };
+			storedArray<MembershipEvent>(storage, `${prefix}:events:${atom}`).push(event);
+			order.push(event);
+		}
+	}
+}
+
+/** Immutable historical shared membership; iteration reads one event at a time. */
+class StoredVersionSet extends StableSet<AtomId> {
+	readonly retainedBytes = 64;
+	readonly #storage: GraphStateStorage;
+	readonly #prefix: string;
+	readonly #version: number;
+	constructor(storage: GraphStateStorage, prefix: string, version: number) {
+		super();
+		this.#storage = storage;
+		this.#prefix = prefix;
+		this.#version = version;
+	}
+	get [Symbol.toStringTag](): string {
+		return "Set";
+	}
+	has(atom: AtomId): boolean {
+		return membershipEvent(this.#storage, this.#prefix, atom, this.#version)?.present ?? false;
+	}
+	get size(): number {
+		let count = 0;
+		for (const _ of this) count++;
+		return count;
+	}
+	*values(): SetIterator<AtomId> {
+		const events = storedArray<MembershipEvent>(this.#storage, `${this.#prefix}:events`);
+		for (const event of events) {
+			if (event.version > this.#version) break;
+			if (!event.present) continue;
+			const selected = membershipEvent(this.#storage, this.#prefix, event.atom, this.#version);
+			if (selected?.slot === event.slot) yield event.atom;
+		}
+	}
+	keys(): SetIterator<AtomId> {
+		return this.values();
+	}
+	*entries(): SetIterator<[AtomId, AtomId]> {
+		for (const atom of this) yield [atom, atom];
+	}
+	[Symbol.iterator](): SetIterator<AtomId> {
+		return this.values();
+	}
+	forEach(callback: (value: AtomId, key: AtomId, set: ReadonlySet<AtomId>) => void, thisArg?: unknown): void {
+		for (const atom of this) callback.call(thisArg, atom, atom, this);
+	}
 }
 
 export function last(space: Space): number {
@@ -65,7 +174,26 @@ export function sharedBaseOf(space: Space): number {
 
 /** Every space, and each one's contents at any of its versions. */
 export class Membership {
-	readonly spaces = new Map<string, Space>([[SHARED, newSpace(SHARED)]]);
+	readonly spaces: Map<string, Space>;
+	readonly #storage?: GraphStateStorage;
+	constructor(storage?: GraphStateStorage) {
+		this.#storage = storage;
+		if (!storage) {
+			this.spaces = new Map([[SHARED, newSpace(SHARED)]]);
+			return;
+		}
+		this.spaces = new StoredMap(storage, "membership:spaces", {
+			encode: (space) => ({ name: space.name, startedAt: space.startedAt }),
+			decode: (value) => {
+				const meta = value as { name: string; startedAt?: number };
+				return {
+					...newSpace(meta.name, storage),
+					...(meta.startedAt === undefined ? {} : { startedAt: meta.startedAt }),
+				};
+			},
+		});
+		if (!this.spaces.has(SHARED)) storage.transaction(() => this.spaces.set(SHARED, newSpace(SHARED, storage)));
+	}
 
 	get shared(): Space {
 		return this.spaces.get(SHARED)!;
@@ -73,6 +201,11 @@ export class Membership {
 
 	/** What an entry (at log position `at`) does to membership; other kinds change none. */
 	apply(entry: Entry, at: number): void {
+		if (this.#storage) this.#storage.transaction(() => this.#apply(entry, at));
+		else this.#apply(entry, at);
+	}
+
+	#apply(entry: Entry, at: number): void {
 		switch (entry.type) {
 			case "init":
 				addVersion(this.shared, {
@@ -108,13 +241,15 @@ export class Membership {
 				});
 				break;
 			case "amend": {
-				const p = this.spaces.get(entry.space ?? SHARED)!.versions[entry.version]!;
+				const space = this.spaces.get(entry.space ?? SHARED)!;
+				const p = space.versions[entry.version]!;
 				p.originalMessage ??= p.message;
 				p.message = entry.message;
+				space.versions[entry.version] = p;
 				break;
 			}
 			case "space": {
-				const space = newSpace(entry.name);
+				const space = newSpace(entry.name, this.#storage);
 				space.startedAt = at;
 				this.spaces.set(entry.name, space);
 				addVersion(space, {
@@ -170,6 +305,18 @@ export class Membership {
 	 * next version is applied. A caller that keeps it across an apply copies it first.
 	 */
 	at(space: Space, version: number): ReadonlySet<AtomId> {
+		if (this.#storage) {
+			const own = new StoredVersionSet(this.#storage, `membership:${JSON.stringify(space.name)}`, version);
+			if (space.name === SHARED) return own;
+			// Named drafts add local atoms over an immutable shared base; drop
+			// entries target shared, never a named draft's local membership.
+			const base = new StoredVersionSet(
+				this.#storage,
+				`membership:${JSON.stringify(SHARED)}`,
+				space.versions[version]!.sharedBase!,
+			);
+			return new StableUnionSet(base, own);
+		}
 		if (space.name === SHARED && version === last(space)) return space.own;
 		let set = space.atCache.get(version);
 		if (!set) {

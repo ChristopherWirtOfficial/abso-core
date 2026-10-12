@@ -15,6 +15,7 @@ import {
 	seqOf,
 	startNode,
 } from "./keys.ts";
+import { type GraphStateStorage, type StateMap, storedArray, storedMap } from "./state-source.ts";
 import {
 	ATTR_NAMES,
 	type Atom,
@@ -76,21 +77,25 @@ export interface GraphJSON {
  * are two (#46): most keys name one atom, and a list for each costs more than
  * the value.
  */
-function pushOne<K, V>(map: Map<K, V | V[]>, key: K, value: V): void {
+function pushOne<K, V>(map: StateMap<K, V | V[]>, key: K, value: V): void {
 	const had = map.get(key);
 	if (had === undefined) map.set(key, value);
-	else if (Array.isArray(had)) had.push(value);
-	else map.set(key, [had, value]);
+	else if (Array.isArray(had)) {
+		had.push(value);
+		map.set(key, had);
+	} else map.set(key, [had, value]);
 }
 
 function listOf<V>(had: V | V[] | undefined): readonly V[] {
 	return had === undefined ? EMPTY : Array.isArray(had) ? had : [had];
 }
 
-function pushIndex<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+function pushIndex<K, V>(map: StateMap<K, V[]>, key: K, value: V): void {
 	const list = map.get(key);
-	if (list) list.push(value);
-	else map.set(key, [value]);
+	if (list) {
+		list.push(value);
+		map.set(key, list);
+	} else map.set(key, [value]);
 }
 
 const EMPTY: readonly never[] = Object.freeze([]);
@@ -176,7 +181,14 @@ class ListedAtom {
 }
 
 /** A growable array of 32-bit integers: a line's fields cost 4 bytes each, not an object and its strings (#46). */
-class Ints {
+interface NumberIndex {
+	readonly length: number;
+	push(n: number): void;
+	at(i: number): number;
+	set(i: number, n: number): void;
+}
+
+class Ints implements NumberIndex {
 	#buf: Int32Array | Uint8Array;
 	/** bytes: values 0-255 only, one byte each. */
 	constructor(bytes = false) {
@@ -232,6 +244,7 @@ function parseLineId(id: string): { seq: number; k: number } | undefined {
 }
 
 export class Graph {
+	readonly #storage?: GraphStateStorage;
 	#atoms: Atom[] = [];
 	#lamport: number[] = [];
 	// Lines, packed (#46): line n is the k-th line atom seq wrote, n = #lineBase[seq] + k. Each holds its
@@ -239,12 +252,14 @@ export class Graph {
 	// path's index for a file's start). Its text stays in the atom. Ids and LineInfo objects are made only
 	// when asked for, so a line costs about 16 bytes here instead of a record, its id and its parent's id.
 	#lineBase: number[] = [];
-	#lineAtom = new Ints();
-	#lineFile = new Ints();
-	#lineParent = new Ints();
+	#lineAtom: NumberIndex = new Ints();
+	#lineFile: NumberIndex = new Ints();
+	#lineParent: NumberIndex = new Ints();
 	/** Lines' text, when the graph keeps it; without it, it comes from `texts` (#46, text on disk). */
 	#lineText: string[] | undefined = [];
-	#lineTotal = 0;
+	get #lineTotal(): number {
+		return this.#lineAtom.length;
+	}
 	/** Where an atom's lines' text is when the graph doesn't keep it: each run's lines, by the atom's seq. */
 	#texts: ((seq: number) => readonly (readonly string[])[]) | undefined;
 	/** Recently read atoms' text, flattened, most recent last, up to TEXT_CACHE characters. */
@@ -257,13 +272,69 @@ export class Graph {
 	 * atom's text when a line of it is asked for, keeping the most recent.
 	 */
 	constructor(
-		options: { texts?: (seq: number) => readonly (readonly string[])[]; lists?: (seq: number) => AtomLists } = {},
+		options: {
+			texts?: (seq: number) => readonly (readonly string[])[];
+			lists?: (seq: number) => AtomLists;
+			storage?: GraphStateStorage;
+		} = {},
 	) {
 		if (options.texts) {
 			this.#texts = options.texts;
 			this.#lineText = undefined;
 		}
 		if (options.lists) this.#lists = options.lists;
+		this.#storage = options.storage;
+		if (options.storage) {
+			const storage = options.storage;
+			const numbers = (name: string): NumberIndex => {
+				const values = storedArray<number>(storage, name);
+				return {
+					get length() {
+						return values.length;
+					},
+					push: (value) => {
+						values.push(value);
+					},
+					at: (index) => values[index]!,
+					set: (index, value) => {
+						values[index] = value;
+					},
+				};
+			};
+			this.#atoms = storedArray<Atom>(storage, "atoms", (atom) =>
+				freezeAtom(
+					atom,
+					(id) => id,
+					(author) => author,
+				),
+			);
+			this.#lamport = storedArray(storage, "lamport");
+			this.#lineBase = storedArray(storage, "line-base");
+			this.#paths = storedArray(storage, "paths");
+			this.#movers = storedArray(storage, "movers");
+			this.#atomFiles = storedArray(storage, "atom-files");
+			this.#atomDeletes = storedArray(storage, "atom-deletes");
+			this.#lineAtom = numbers("line-atom");
+			this.#lineFile = numbers("line-file");
+			this.#lineParent = numbers("line-parent");
+			this.#deleter = numbers("deleter");
+			this.#replacing = numbers("replacing");
+			this.#lineText = storedArray(storage, "line-text");
+			this.#pathIndex = storedMap(storage, "path-index");
+			this.#moreDeleters = storedMap(storage, "more-deleters");
+			this.#writers = storedMap(storage, "writers");
+			this.#readers = storedMap(storage, "readers");
+			this.#holders = storedMap(storage, "holders");
+			this.#dependents = storedMap(storage, "dependents");
+			this.#resolvers = storedMap(storage, "resolvers");
+			this.#together = storedMap(storage, "together");
+			this.#fileAtoms = storedMap(storage, "file-atoms");
+			this.#runStarts = storedMap(storage, "run-starts");
+			this.#relocations = storedMap(storage, "relocations");
+			this.#relocatedTo = storedMap(storage, "relocated-to");
+			this.#relocatedToCode = storedMap(storage, "relocated-to-code");
+			this.#labels = storedMap(storage, "labels");
+		}
 	}
 
 	/** Where an atom's key and delete lists are when the graph doesn't keep them (#46): the stored atom. */
@@ -352,30 +423,30 @@ export class Graph {
 		return this.#textOf(seq)[n - this.#lineBase[seq]!]!;
 	}
 	#paths: string[] = [];
-	#pathIndex = new Map<string, number>();
+	#pathIndex: StateMap<string, number> = new Map();
 	/** The first atom that deletes each line (its seq), or -1; a line deleted by more than one has the rest in #moreDeleters. */
-	#deleter = new Ints();
-	#moreDeleters = new Map<number, number[]>();
-	#writers = new Map<Key | number, AtomId | AtomId[]>();
-	#readers = new Map<Key | number, AtomId | AtomId[]>();
-	#holders = new Map<Key | number, AtomId | AtomId[]>();
-	#dependents = new Map<AtomId, AtomId | AtomId[]>();
-	#resolvers = new Map<AtomId, AtomId | AtomId[]>();
-	#together = new Map<AtomId, TogetherLink[]>();
-	#fileAtoms = new Map<string, AtomId[]>();
+	#deleter: NumberIndex = new Ints();
+	#moreDeleters: StateMap<number, number[]> = new Map();
+	#writers: StateMap<Key | number, AtomId | AtomId[]> = new Map();
+	#readers: StateMap<Key | number, AtomId | AtomId[]> = new Map();
+	#holders: StateMap<Key | number, AtomId | AtomId[]> = new Map();
+	#dependents: StateMap<AtomId, AtomId | AtomId[]> = new Map();
+	#resolvers: StateMap<AtomId, AtomId | AtomId[]> = new Map();
+	#together: StateMap<AtomId, TogetherLink[]> = new Map();
+	#fileAtoms: StateMap<string, AtomId[]> = new Map();
 	/** First lines of runs (their n), by the node they were written after: a line's n, or -1 - a path's index. */
-	#runStarts = new Map<number, number | number[]>();
+	#runStarts: StateMap<number, number | number[]> = new Map();
 	/** 1 for the first line of a run whose atom deleted the line it hangs off: the run replaces it. */
-	#replacing = new Ints(true);
-	#relocations = new Map<LineId, RelocationInfo[]>();
-	#relocatedTo = new Map<NodeId, RelocationInfo[]>();
+	#replacing: NumberIndex = new Ints(true);
+	#relocations: StateMap<LineId, RelocationInfo[]> = new Map();
+	#relocatedTo: StateMap<NodeId, RelocationInfo[]> = new Map();
 	/** The same relocations by node code (a line's n, or -1 - a path's index), for views laid out by number. */
-	#relocatedToCode = new Map<number, RelocationInfo[]>();
+	#relocatedToCode: StateMap<number, RelocationInfo[]> = new Map();
 	#movers: AtomId[] = [];
 	#atomFiles: (readonly string[])[] = [];
 	/** Each atom's deleted lines by n, packed (#46), or undefined when it deletes none. */
-	#atomDeletes: (Int32Array | undefined)[] = [];
-	#labels = new Map<string, Label>();
+	#atomDeletes: (readonly number[] | Int32Array | undefined)[] = [];
+	#labels: StateMap<string, Label> = new Map();
 	/** Each author's name kept once (#46). */
 	#authors = new Map<string, string>();
 
@@ -776,6 +847,11 @@ export class Graph {
 	 * The atom is frozen. Adding to the graph does not add it to any set.
 	 */
 	add(atom: Atom): void {
+		if (this.#storage) this.#storage.transaction(() => this.#add(atom));
+		else this.#add(atom);
+	}
+
+	#add(atom: Atom): void {
 		validateShape(atom);
 		const seq = this.#atoms.length;
 		const bad = (why: string): never => {
@@ -850,6 +926,7 @@ export class Graph {
 			atom,
 			(id) => this.#atoms[seqOf(id)]!.id,
 			(author) => {
+				if (this.#storage) return author;
 				let a = this.#authors.get(author);
 				if (a === undefined) this.#authors.set(author, (a = author));
 				return a;
@@ -857,7 +934,7 @@ export class Graph {
 			this.#texts ? this.#reader(seq) : undefined,
 			this.#lists ? this.#listReader(seq) : undefined,
 		);
-		this.#atoms.push(frozen);
+		this.#atoms.push(this.#storage ? atom : frozen);
 		let lam = 0;
 		for (const d of deps) lam = Math.max(lam, this.lamport(d) + 1);
 		this.#lamport.push(lam);
@@ -866,7 +943,7 @@ export class Graph {
 		// The atom as given: with lists kept elsewhere, the frozen one reads them back from the log.
 		const deletes = atom.deletes.length > 0 ? new Set(atom.deletes) : undefined;
 		const deletedN = atom.deletes.map((line) => this.#lineN(line));
-		this.#atomDeletes.push(deletedN.length > 0 ? Int32Array.from(deletedN) : undefined);
+		this.#atomDeletes.push(deletedN.length > 0 ? (this.#storage ? deletedN : Int32Array.from(deletedN)) : undefined);
 		this.#lineBase.push(this.#lineTotal);
 		for (const run of atom.inserts) {
 			const file = this.#pathOf(run.file);
@@ -874,7 +951,7 @@ export class Graph {
 			const first = this.#lineTotal;
 			pushOne(this.#runStarts, parent, first);
 			for (let i = 0; i < run.lines.length; i++) {
-				const n = this.#lineTotal++;
+				const n = this.#lineTotal;
 				this.#lineAtom.push(seq);
 				this.#lineFile.push(file);
 				this.#lineParent.push(parent);
@@ -974,6 +1051,10 @@ export class Graph {
 	 * their base instead, so their contents don't change.
 	 */
 	removeLabel(name: string): boolean {
+		return this.#storage ? this.#storage.transaction(() => this.#removeLabel(name)) : this.#removeLabel(name);
+	}
+
+	#removeLabel(name: string): boolean {
 		const gone = this.#labels.get(name);
 		if (!gone) return false;
 		this.#labels.delete(name);

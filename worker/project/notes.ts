@@ -321,5 +321,6 @@ export function closeNote(
 		if (a) host.queueNews(a, [noteClosedItem(agentName, how, id, note)], entries);
 	}
 	host.flush(entries);
-	return host.noteAnswer(note);
+	// Storage-backed maps return snapshots; apply may replace the stored row.
+	return host.noteAnswer(host.notes.get(id)!);
 }

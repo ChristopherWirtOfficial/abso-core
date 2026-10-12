@@ -141,12 +141,21 @@ export function applyEntry(host: ApplyEntryHost, entry: Entry, at: number, time:
 			const { type: _, ...note } = entry;
 			host.notes.set(entry.id, { ...note, lines: [...entry.lines], at });
 			host.setLastNote(Math.max(host.lastNote(), entry.id));
-			if (entry.change !== undefined && host.changes.has(entry.change)) host.changes.get(entry.change)!.last = at;
+			if (entry.change !== undefined) {
+				const change = host.changes.get(entry.change);
+				if (change) {
+					change.last = at;
+					host.changes.set(entry.change, change);
+				}
+			}
 			break;
 		}
 		case "note-closed": {
 			const note = host.notes.get(entry.id);
-			if (note) note.closed = { agent: entry.agent, how: entry.how, time: entry.time };
+			if (note) {
+				note.closed = { agent: entry.agent, how: entry.how, time: entry.time };
+				host.notes.set(entry.id, note);
+			}
 			break;
 		}
 		case "pulled":
@@ -249,6 +258,7 @@ export function applyEntry(host: ApplyEntryHost, entry: Entry, at: number, time:
 						files: [...new Set(entry.collisions.map((c) => c.file))].sort(),
 					});
 					rec.last = at;
+					host.changes.set(id, rec);
 				}
 			}
 			break;

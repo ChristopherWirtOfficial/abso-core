@@ -11,6 +11,7 @@
 
 import type { Graph, RelocationInfo } from "./graph.ts";
 import { isStartNode } from "./keys.ts";
+import { StableSet } from "./state-source.ts";
 import { joinLines } from "./text.ts";
 import { type AtomId, type AtomSet, EngineError, type LineId, type NodeId } from "./types.ts";
 
@@ -90,7 +91,8 @@ const REFERENCE_BYTES = 8;
 export class View {
 	readonly graph: Graph;
 	/** The set, made from #in the first time it's asked for: a view keeps a byte per atom, not a copy of the set (#46). */
-	#set: Set<AtomId> | undefined;
+	#set: AtomSet | undefined;
+	readonly #stable: StableSet<AtomId> | undefined;
 	#files = new Map<string, FileState>();
 	/** Every file the set wrote in, sorted; worked out the first time it's asked for. */
 	#knownList: string[] | undefined;
@@ -109,14 +111,34 @@ export class View {
 	#textCache: { path: string; text: string } | undefined;
 
 	constructor(graph: Graph, set: Iterable<AtomId>) {
+		this.graph = graph;
+		if (set instanceof StableSet) {
+			this.#stable = set;
+			this.#set = set;
+			this.#in = new Uint8Array(0);
+			for (const id of set) {
+				const atom = graph.atom(id);
+				for (const dependency of atom.deps) {
+					graph.atom(dependency);
+					if (!set.has(dependency))
+						throw new EngineError("not-closed", `set is not closed: ${id} depends on ${dependency}`);
+				}
+			}
+			this.#movers = graph.movers().filter((id) => set.has(id));
+			this.#relocs = this.#movers.length === 0 ? new Map() : undefined;
+			this.#relocsN = this.#movers.length === 0 ? new Map() : undefined;
+			return;
+		}
 		const inSet = new Uint8Array(graph.size);
-		const atoms: { readonly id: AtomId; readonly deps: readonly AtomId[] }[] = [];
 		for (const id of set) {
 			const atom = graph.atom(id);
 			inSet[atom.seq] = 1;
-			atoms.push(atom);
 		}
-		for (const atom of atoms) {
+		// Validate one atom at a time. Keeping all decoded atoms here defeats
+		// storage-backed Graph reads even though the view only needs membership.
+		for (let seq = 0; seq < inSet.length; seq++) {
+			if (inSet[seq] !== 1) continue;
+			const atom = graph.atom(graph.idOfSeq(seq));
 			for (const d of atom.deps) {
 				if (inSet[graph.atom(d).seq] !== 1)
 					throw new EngineError("not-closed", `set is not closed: ${atom.id} depends on ${d}`);
@@ -141,6 +163,7 @@ export class View {
 
 	/** Whether the atom with this seq is in the set. */
 	#has(seq: number): boolean {
+		if (this.#stable) return this.#stable.has(this.graph.idOfSeq(seq));
 		return seq < this.#in.length && this.#in[seq] === 1;
 	}
 
@@ -272,7 +295,8 @@ export class View {
 		if (relocs) {
 			for (const r of graph.relocatedToCode(code)) {
 				const n = graph.lineN(r.line);
-				if (relocs.get(n)?.r !== r) continue;
+				const selected = relocs.get(n)?.r;
+				if (!selected || selected.atom !== r.atom || selected.k !== r.k) continue;
 				const seq = graph.atom(r.atom).seq;
 				out.push({ n, replaces: 0, lamport: graph.lamportOfSeq(seq), seq, k: r.k });
 			}
@@ -336,8 +360,12 @@ export class View {
 	get #known(): string[] {
 		if (!this.#knownList) {
 			const known = new Set<string>();
-			for (let seq = 0; seq < this.#in.length; seq++)
-				if (this.#in[seq] === 1) for (const file of this.graph.filesOf(this.graph.idOfSeq(seq))) known.add(file);
+			if (this.#stable) {
+				for (const id of this.#stable) for (const file of this.graph.filesOf(id)) known.add(file);
+			} else {
+				for (let seq = 0; seq < this.#in.length; seq++)
+					if (this.#in[seq] === 1) for (const file of this.graph.filesOf(this.graph.idOfSeq(seq))) known.add(file);
+			}
 			this.#knownList = [...known].sort();
 		}
 		return this.#knownList;
@@ -470,7 +498,8 @@ export class View {
 		n += ARRAY_HEADER_BYTES + REFERENCE_BYTES * this.#movers.length;
 		n += MAP_HEADER_BYTES; // #files exists from construction.
 		n += MAP_HEADER_BYTES; // #fileOf exists from construction.
-		if (this.#set) n += OBJECT_BYTES + SET_ENTRY_BYTES * this.#set.size;
+		if (this.#stable) n += this.#stable.retainedBytes;
+		else if (this.#set) n += OBJECT_BYTES + SET_ENTRY_BYTES * this.#set.size;
 		if (this.#knownList) n += ARRAY_HEADER_BYTES + REFERENCE_BYTES * this.#knownList.length;
 		if (this.#relocs) n += MAP_HEADER_BYTES + MAP_ENTRY_BYTES * this.#relocs.size;
 		if (this.#relocsN) n += MAP_HEADER_BYTES + (MAP_ENTRY_BYTES + OBJECT_BYTES) * this.#relocsN.size;

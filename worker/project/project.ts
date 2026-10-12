@@ -13,6 +13,14 @@
 // unit. Every agent works in one space at a time.
 
 import { type Atom, type AtomId, EngineError, Graph, type LineId, type View } from "../../src/engine/index.ts";
+import {
+	type GraphStateStorage,
+	StableOverlaySet,
+	StableSet,
+	StableUnionSet,
+	StoredMap,
+	storedArray,
+} from "../../src/engine/state-source.ts";
 import { type AddDraftHost, addDraft as hostedAddDraft } from "./add-draft.ts";
 import { type AmendHost, amend as hostedAmend } from "./amend.ts";
 import { type AnnounceHost, announce as hostedAnnounce, announcePerson as hostedAnnouncePerson } from "./announce.ts";
@@ -191,6 +199,7 @@ import {
 	wholeRules as hostedWholeRules,
 	type WholeHost,
 } from "./whole-files.ts";
+import { WriterAgents } from "./writer-agents.ts";
 
 export { MemoryStore } from "./memory-store.ts";
 export { checkReadPath, pathProblem } from "./path-rules.ts";
@@ -204,9 +213,21 @@ const UNTIMED = new Set<Entry["type"]>(["join", "sync", "news", "heard", "discar
 
 /** A start note lasts this long after the agent's last activity (#44). */
 const NOTE_IDLE = 2 * 60 * 60 * 1000;
+const WRITER_REOPEN = Symbol("verified writer checkpoint");
+export interface WriterSource {
+	readonly generation: number;
+	readonly logLength: number;
+	readonly sharedVersion: number;
+}
+interface WriterAdoption {
+	source: WriterSource;
+	next: number;
+	ready: boolean;
+}
 
 export class Project {
 	readonly #store: ProjectStore;
+	readonly #writerStorage?: GraphStateStorage;
 	readonly #graph: Graph;
 	/** Views laid out from atom sets, cached under a byte budget (views.ts). */
 	readonly #views: ViewCache;
@@ -248,7 +269,16 @@ export class Project {
 	/** For each version of shared, the log position of the entry that made it (#41). */
 	readonly #versionAt: number[] = [];
 	/** The newest time any applied entry carries: the clock when none was given. */
-	#lastTime = 0;
+	#lastTimeMemory = 0;
+	get #lastTime(): number {
+		return this.#writerStorage
+			? ((this.#writerStorage.read("project:meta", "lastTime") as number | undefined) ?? 0)
+			: this.#lastTimeMemory;
+	}
+	set #lastTime(value: number) {
+		if (this.#writerStorage) this.#writerStorage.write("project:meta", "lastTime", value);
+		else this.#lastTimeMemory = value;
+	}
 	/** Every change (#44), by id. */
 	readonly #changes = new Map<number, ChangeRecord>();
 	/** Each version's change, by "<draft or ''> <version>" (#44): what a note on its lines belongs to. */
@@ -260,12 +290,39 @@ export class Project {
 	/** The merge queue (#39), in order: publishes to shared waiting for their batch's check. */
 	#queue: QueuedPublish[] = [];
 	/** The newest note's id (#44). */
-	#lastNote = 0;
-	#queuedId = 0;
+	#lastNoteMemory = 0;
+	get #lastNote(): number {
+		return this.#writerStorage
+			? ((this.#writerStorage.read("project:meta", "lastNote") as number | undefined) ?? 0)
+			: this.#lastNoteMemory;
+	}
+	set #lastNote(value: number) {
+		if (this.#writerStorage) this.#writerStorage.write("project:meta", "lastNote", value);
+		else this.#lastNoteMemory = value;
+	}
+	#queuedIdMemory = 0;
+	get #queuedId(): number {
+		return this.#writerStorage
+			? ((this.#writerStorage.read("project:meta", "queuedId") as number | undefined) ?? 0)
+			: this.#queuedIdMemory;
+	}
+	set #queuedId(value: number) {
+		if (this.#writerStorage) this.#writerStorage.write("project:meta", "queuedId", value);
+		else this.#queuedIdMemory = value;
+	}
 	/** Queued ids in the batch being checked now: not in the log, only for refusing an unqueue mid-check. */
 	#checking = new Set<number>();
 	/** How many entries the store holds: the log position of the next one (#41, the website's feed and replay). */
-	#stored = 0;
+	#storedMemory = 0;
+	get #stored(): number {
+		return this.#writerStorage
+			? ((this.#writerStorage.read("project:meta", "stored") as number | undefined) ?? 0)
+			: this.#storedMemory;
+	}
+	set #stored(value: number) {
+		if (this.#writerStorage) this.#writerStorage.write("project:meta", "stored", value);
+		else this.#storedMemory = value;
+	}
 	/** Names on the lines a change replaced, by "<atom> <last replaced line>" (atoms never change). */
 	#rule?: DefinitionRule;
 	get #definitionRule(): DefinitionRule {
@@ -273,13 +330,53 @@ export class Project {
 		return this.#rule;
 	}
 	/** The newest announcement's id (announcements are news entries keyed "announce <id>"). */
-	#announced = 0;
+	#announcedMemory = 0;
+	get #announced(): number {
+		return this.#writerStorage
+			? ((this.#writerStorage.read("project:meta", "announced") as number | undefined) ?? 0)
+			: this.#announcedMemory;
+	}
+	set #announced(value: number) {
+		if (this.#writerStorage) this.#writerStorage.write("project:meta", "announced", value);
+		else this.#announcedMemory = value;
+	}
 	#loading = false;
 
 	readonly #hasBlob: (sha256: string) => boolean;
 
-	constructor(store: ProjectStore, options: ProjectOptions = {}) {
+	constructor(store: ProjectStore, options: ProjectOptions = {}, checkpoint?: typeof WRITER_REOPEN) {
 		this.#store = store;
+		this.#writerStorage = options.writerStorage;
+		if (options.writerStorage) {
+			const storage = options.writerStorage;
+			// A stored Graph cannot be replayed over itself. Check before any
+			// constructor writes so an accidental reopen preserves the namespace.
+			if (
+				checkpoint !== WRITER_REOPEN &&
+				((storage.read("atoms:meta", "length") as number | undefined) ||
+					(storage.read('membership:"":versions:meta', "length") as number | undefined))
+			)
+				throw new Error("writer indexes already contain history; Project checkpoint reopen is required");
+			this.#membership = new Membership(storage);
+			this.#atomAt = storedArray(storage, "project:atom-at");
+			this.#timeAt = storedArray(storage, "project:time-at");
+			this.#versionAt = storedArray(storage, "project:version-at");
+			this.#notes = new StoredMap(storage, "project:notes");
+			this.#changes = new StoredMap(storage, "project:changes");
+			this.#labels = new StoredMap(storage, "project:labels");
+			this.#versionChange = new StoredMap(storage, "project:version-change");
+			this.#refusals = storedArray(storage, "project:refusals");
+			this.#agents = new WriterAgents(storage);
+			if (checkpoint === WRITER_REOPEN) {
+				this.#mods = storage.read("project:meta", "mods") as string[];
+				this.#queue = storage.read("project:meta", "queue") as QueuedPublish[];
+				const tells = storage.read("project:meta", "tells") as [
+					number,
+					Omit<TellRecord, "heard"> & { heard: [string, { at: number | undefined } | null][] },
+				][];
+				this.#tells = new Map(tells.map(([id, tell]) => [id, { ...tell, heard: new Map(tell.heard) }]));
+			}
+		}
 		this.#hasBlob = options.hasBlob ?? (() => false);
 		this.#now = options.now;
 		this.#whole = options.whole;
@@ -301,9 +398,11 @@ export class Project {
 			throw new Error(`log entry ${at} holds no atom ${seq}`);
 		};
 		// Line text and each atom's deletes and claim keys stay in the log (#46), read back when asked for.
-		this.#graph = entryAt
-			? new Graph({ texts: (seq) => stored(seq).inserts.map((r) => r.lines), lists: (seq) => stored(seq) })
-			: new Graph();
+		this.#graph = options.writerStorage
+			? new Graph({ storage: options.writerStorage })
+			: entryAt
+				? new Graph({ texts: (seq) => stored(seq).inserts.map((r) => r.lines), lists: (seq) => stored(seq) })
+				: new Graph();
 		this.#views = new ViewCache(this.#graph);
 		this.#paths = new PathIndex({
 			graph: this.#graph,
@@ -330,9 +429,132 @@ export class Project {
 		for (const entry of entries) {
 			project.#apply(entry);
 			project.#stored++;
+			project.#persistMutable();
 		}
 		project.#loading = false;
+		project.#writeCheckpoint();
 		return project;
+	}
+
+	/** Reopen committed writer indexes. The host supplies the authoritative canonical log length. */
+	static openWriter(
+		store: ProjectStore,
+		storage: GraphStateStorage,
+		logLength: number,
+		options: Omit<ProjectOptions, "writerStorage"> = {},
+	): Project {
+		const adoption = storage.read("project:meta", "adoption") as WriterAdoption | undefined;
+		if (adoption && !adoption.ready) throw new Error("writer adoption is incomplete");
+		return Project.#openWriter(store, storage, logLength, options);
+	}
+
+	static #openWriter(
+		store: ProjectStore,
+		storage: GraphStateStorage,
+		logLength: number,
+		options: Omit<ProjectOptions, "writerStorage">,
+	): Project {
+		const checkpoint = storage.read("project:meta", "checkpoint") as
+			| { format: number; logLength: number; atoms: number; version: number }
+			| undefined;
+		const length = (name: string) => (storage.read(`${name}:meta`, "length") as number | undefined) ?? 0;
+		if (
+			!Number.isSafeInteger(logLength) ||
+			logLength < 1 ||
+			checkpoint?.format !== 1 ||
+			checkpoint.logLength !== logLength ||
+			storage.read("project:meta", "stored") !== logLength ||
+			length("project:time-at") !== logLength ||
+			length("atoms") !== checkpoint.atoms ||
+			length("project:atom-at") !== checkpoint.atoms ||
+			length('membership:"":versions') !== checkpoint.version + 1 ||
+			length("project:version-at") !== checkpoint.version + 1 ||
+			!["mods", "queue", "tells"].every((key) => Array.isArray(storage.read("project:meta", key)))
+		)
+			throw new Error("writer checkpoint does not match the canonical log and indexes");
+		return new Project(store, { ...options, writerStorage: storage }, WRITER_REOPEN);
+	}
+
+	/**
+	 * Derive one bounded page from the host's canonical frames. The host reads
+	 * those frames from its own log and revalidates the source inside this same
+	 * transaction. Partial adoption cannot be opened for normal operations.
+	 */
+	static adoptWriterPage(
+		storage: GraphStateStorage,
+		input: {
+			source: WriterSource;
+			from: number;
+			frames: Iterable<{ seq: number; json: string }>;
+			maxEntries: number;
+			maxBytes: number;
+			currentSource(): WriterSource;
+		},
+		options: Omit<ProjectOptions, "writerStorage"> = {},
+	): { next: number; ready: boolean; entries: number; bytes: number } {
+		const same = (a: WriterSource, b: WriterSource) =>
+			a.generation === b.generation && a.logLength === b.logLength && a.sharedVersion === b.sharedVersion;
+		if (
+			![input.source.generation, input.source.logLength, input.source.sharedVersion, input.from].every(
+				(n) => Number.isSafeInteger(n) && n >= 0,
+			) ||
+			input.source.logLength < 1 ||
+			!Number.isSafeInteger(input.maxEntries) ||
+			input.maxEntries < 1 ||
+			input.maxEntries > 256 ||
+			!Number.isSafeInteger(input.maxBytes) ||
+			input.maxBytes < 1 ||
+			input.maxBytes > 8_000_000
+		)
+			throw new Error("invalid writer adoption bounds or source");
+		return storage.transaction(() => {
+			if (!same(input.currentSource(), input.source))
+				throw new Error("canonical source changed before writer adoption");
+			const previous = storage.read("project:meta", "adoption") as WriterAdoption | undefined;
+			if (
+				(previous && (!same(previous.source, input.source) || previous.ready || previous.next !== input.from)) ||
+				(!previous && input.from !== 0)
+			)
+				throw new Error("writer adoption source or cursor does not match");
+			const noAppend: ProjectStore = {
+				append: () => {
+					throw new Error("adoption must never append canonical history");
+				},
+			};
+			const project = previous
+				? Project.#openWriter(noAppend, storage, input.from, options)
+				: new Project(noAppend, { ...options, writerStorage: storage });
+			project.#loading = true;
+			let count = 0;
+			let bytes = 0;
+			for (const frame of input.frames) {
+				if (
+					count >= input.maxEntries ||
+					frame.seq !== input.from + count ||
+					frame.seq >= input.source.logLength ||
+					typeof frame.json !== "string" ||
+					frame.json.length > input.maxBytes - bytes
+				)
+					throw new Error("writer adoption page exceeds bounds or has a noncontiguous frame");
+				bytes += new TextEncoder().encode(frame.json).byteLength;
+				if (bytes > input.maxBytes) throw new Error("writer adoption page exceeds byte bound");
+				project.#apply(JSON.parse(frame.json) as Entry);
+				project.#stored++;
+				project.#persistMutable();
+				count++;
+			}
+			if (count === 0) throw new Error("writer adoption page must advance");
+			project.#loading = false;
+			const next = input.from + count;
+			const ready = next === input.source.logLength;
+			if (!same(input.currentSource(), input.source))
+				throw new Error("canonical source changed during writer adoption");
+			if (ready && project.version !== input.source.sharedVersion)
+				throw new Error("adopted shared version differs from canonical source");
+			project.#writeCheckpoint();
+			storage.write("project:meta", "adoption", { source: input.source, next, ready } satisfies WriterAdoption);
+			return { next, ready, entries: count, bytes };
+		});
 	}
 
 	/**
@@ -1267,9 +1489,32 @@ export class Project {
 	#flush(_entries: readonly Entry[]): void {
 		if (this.#pending.length === 0) return;
 		const out = this.#pending;
-		this.#pending = [];
 		this.#store.append(out);
+		this.#persistMutable();
+		this.#pending = [];
 		this.#stored += out.length;
+		this.#writeCheckpoint();
+	}
+
+	#writeCheckpoint(): void {
+		this.#writerStorage?.write("project:meta", "checkpoint", {
+			format: 1,
+			logLength: this.#stored,
+			atoms: this.#graph.size,
+			version: this.version,
+		});
+	}
+
+	#persistMutable(): void {
+		if (!this.#writerStorage) return;
+		if (this.#agents instanceof WriterAgents) this.#agents.flush();
+		this.#writerStorage.write("project:meta", "mods", this.#mods);
+		this.#writerStorage.write("project:meta", "queue", this.#queue);
+		this.#writerStorage.write(
+			"project:meta",
+			"tells",
+			[...this.#tells].map(([id, tell]) => [id, { ...tell, heard: [...tell.heard] }]),
+		);
 	}
 
 	/**
@@ -2217,7 +2462,12 @@ export class Project {
 	}
 
 	#agentView(agent: AgentState): View {
-		return this.#viewKeyed(this.#agentViewKey(agent), () => this.#agentSet(agent));
+		return this.#viewKeyed(this.#agentViewKey(agent), () => {
+			const base = this.#at(this.#spaceOf(agent), agent.base);
+			return base instanceof StableSet
+				? new StableUnionSet(base, new StableOverlaySet(agent.mine))
+				: new Set([...base, ...agent.mine]);
+		});
 	}
 
 	/** An agent's view, keyed by what the set is made of, not by sorting every atom in it (#46): that cost more than the work. */

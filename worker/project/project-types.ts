@@ -1,4 +1,5 @@
 import type { Atom, AtomId, LineId } from "../../src/engine/index.ts";
+import type { GraphStateStorage } from "../../src/engine/state-source.ts";
 import type { Kept, MarkedRegion } from "./markers.ts";
 /** Whole files: path -> text, or null for a deleted file. */
 export type Files = Record<string, string | null>;
@@ -565,6 +566,14 @@ export type Blobs = Record<string, string | null>;
 
 /** What the project needs from the store of binary files' bytes. */
 export interface ProjectOptions {
+	/**
+	 * Writer indexes for a fresh project or adoption into an empty namespace.
+	 * The host must wrap each operation and canonical log append in the same
+	 * storage transaction, and discard this Project if it rolls back. This is
+	 * not the checkpoint reopen API: use Project.openWriter for an existing
+	 * committed namespace, with its authoritative canonical log length.
+	 */
+	writerStorage?: GraphStateStorage;
 	/** Whether the bytes for a SHA-256 have been uploaded. Without it, no blob is held, so binary files are refused. */
 	hasBlob?: (sha256: string) => boolean;
 	/** The time now, for start notes that end after 2 hours idle (#44). Without it, the newest entry's time. */

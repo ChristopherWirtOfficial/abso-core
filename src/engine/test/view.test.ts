@@ -3,9 +3,38 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { buildBase, conflicts, Graph, project, View } from "../index.ts";
+import { StableOverlaySet, StableSet } from "../state-source.ts";
+import type { AtomId } from "../types.ts";
 import { lines, Repo } from "./helpers.ts";
 
 describe("View", () => {
+	it("immutable indexed membership avoids a history-sized bitmap and remains a snapshot", () => {
+		class RangeMembership extends StableSet<AtomId> {
+			readonly retainedBytes = 64;
+			readonly count: number;
+			constructor(count: number) {
+				super();
+				this.count = count;
+			}
+			has(id: AtomId): boolean {
+				return /^a[0-9]+$/.test(id) && Number(id.slice(1)) < this.count;
+			}
+			*values(): SetIterator<AtomId> {
+				for (let i = 0; i < this.count; i++) yield `a${i}`;
+			}
+		}
+		const repo = Repo.init({ "a.txt": "0\n" });
+		for (let i = 1; i <= 40; i++) repo.edit({ edits: [{ file: "a.txt", old: `${i - 1}\n`, new: `${i}\n` }] });
+		const first = new View(repo.graph, new RangeMembership(repo.graph.size));
+		const weight = first.weight();
+		for (let i = 41; i <= 80; i++) repo.edit({ edits: [{ file: "a.txt", old: `${i - 1}\n`, new: `${i}\n` }] });
+		const second = new View(repo.graph, new RangeMembership(repo.graph.size));
+		assert.equal(second.weight(), weight, "membership resident size does not increase with historical atom count");
+		assert.equal(first.text("a.txt"), "40\n");
+		assert.equal(second.text("a.txt"), "80\n");
+		assert.equal(first.set.has("a80"), false);
+		assert.throws(() => new View(repo.graph, new StableOverlaySet<AtomId>(["a1"])), /not closed/);
+	});
 	it("keeps deleted lines as tombstones in the full sequence", () => {
 		const repo = Repo.init({ "f.txt": lines("one", "two", "three") });
 		const del = repo.edit({ edits: [{ file: "f.txt", old: "two\n", new: "" }] });

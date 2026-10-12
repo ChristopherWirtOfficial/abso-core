@@ -73,6 +73,7 @@ export function changeRecord(
 		rec.note = { text: agent.starting.text, files: [...agent.starting.files] };
 		if (agent.starting.issue !== undefined) rec.issue = agent.starting.issue;
 	}
+	host.changes.set(id, rec);
 	return rec;
 }
 
@@ -101,6 +102,7 @@ export function joinChange(
 	host.versionChange.set(`${draft ?? ""} ${entry.version}`, id);
 	if (entry.type === "publish") for (const s of entry.settled ?? []) rec.settled.push({ ...s, version: entry.version });
 	rec.last = at;
+	host.changes.set(id, rec);
 	if (old) {
 		delete agent.starting;
 		delete agent.noteAt;
