@@ -198,11 +198,14 @@ export class View {
 		if (this.#relocs) return this.#relocs;
 		const graph = this.graph;
 		const stronger = (a: RelocationInfo, b: RelocationInfo): boolean => graph.comparePriority(a.atom, b.atom) > 0;
-		const ignored = new Set<RelocationInfo>();
+		// Persistent reads decode new objects. Cycle suppression must identify the
+		// logical move, not one particular decoded JavaScript object.
+		const identity = (r: RelocationInfo): string => JSON.stringify([r.atom, r.k]);
+		const ignored = new Set<string>();
 		const pick = (line: LineId): RelocationInfo | undefined => {
 			let best: RelocationInfo | undefined;
 			for (const r of graph.relocationsOf(line)) {
-				if (this.#has(graph.atom(r.atom).seq) && !ignored.has(r) && (!best || stronger(r, best))) best = r;
+				if (this.#has(graph.atom(r.atom).seq) && !ignored.has(identity(r)) && (!best || stronger(r, best))) best = r;
 			}
 			return best;
 		};
@@ -239,7 +242,7 @@ export class View {
 					const r = relocs.get(l);
 					if (r && (!weakest || stronger(weakest, r))) weakest = r;
 				}
-				ignored.add(weakest!);
+				ignored.add(identity(weakest!));
 				const next = pick(weakest!.line);
 				if (next) relocs.set(weakest!.line, next);
 				else relocs.delete(weakest!.line);

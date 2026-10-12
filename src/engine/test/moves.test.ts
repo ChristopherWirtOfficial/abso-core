@@ -5,8 +5,10 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { type Atom, type AtomId, conflicts } from "../index.ts";
+import { type Atom, type AtomId, conflicts, Graph, View } from "../index.ts";
+import { StableOverlaySet } from "../state-source.ts";
 import { lines, Repo, Rng } from "./helpers.ts";
+import { SqlState } from "./storage-helper.ts";
 
 const BASE_SEED = Number(process.env.PROP_SEED ?? 20261004);
 const CASES = Number(process.env.PROP_CASES ?? 200);
@@ -243,6 +245,22 @@ describe("moves", () => {
 		accept(repo, mk("a0.2", "a0.0"));
 		const text = repo.text("f.txt");
 		assert.deepEqual(text.split("\n").filter(Boolean).sort(), ["m", "n", "x", "y"]);
+		class BoundedReads extends SqlState {
+			override read(collection: string, key: string): unknown {
+				if (this.reads > 10_000) throw new Error("relocation cycle did not terminate");
+				return super.read(collection, key);
+			}
+		}
+		const storage = new BoundedReads();
+		try {
+			const stored = new Graph({ storage });
+			for (let seq = 0; seq < repo.graph.size; seq++) stored.add(repo.graph.atom(repo.graph.idOfSeq(seq)));
+			const reopened = new Graph({ storage });
+			assert.equal(new View(reopened, repo.shared).text("f.txt"), text);
+			assert.equal(new View(reopened, new StableOverlaySet(repo.shared)).text("f.txt"), text);
+		} finally {
+			storage.db.close();
+		}
 	});
 
 	it("rejects a move onto itself or out of range", () => {
