@@ -420,7 +420,7 @@ export class View {
 		return this.#layoutResolved(path, complete);
 	}
 
-	#layoutResolved(path: string, complete: boolean, nodes?: Iterable<number>): FileState {
+	#attributes(path: string): FileAttrs {
 		const graph = this.graph;
 		// For each attribute, the highest-priority setter in the set wins.
 		const setters = new Map<string, { id: AtomId; value: string | null }>();
@@ -433,6 +433,17 @@ export class View {
 			}
 		}
 
+		return {
+			exists: setters.get("exists")?.value === "1",
+			exec: setters.get("exec")?.value === "1",
+			link: setters.get("link")?.value ?? null,
+			blob: setters.get("blob")?.value ?? null,
+		};
+	}
+
+	#layoutResolved(path: string, complete: boolean, nodes?: Iterable<number>): FileState {
+		const graph = this.graph;
+		const attrs = this.#attributes(path);
 		const seq: number[] = [];
 		const vis: number[] = [];
 		const deletedBy = new Map<number, readonly number[]>();
@@ -453,12 +464,7 @@ export class View {
 			} else vis.push(n);
 			if (complete) seq.push(n);
 		}
-		const attrs: FileAttrs = {
-			exists: setters.get("exists")?.value === "1",
-			exec: setters.get("exec")?.value === "1",
-			link: setters.get("link")?.value ?? null,
-			blob: setters.get("blob")?.value ?? null,
-		};
+
 		return { attrs, complete, seq: Int32Array.from(seq), vis: Int32Array.from(vis), deletedBy };
 	}
 
@@ -496,13 +502,13 @@ export class View {
 
 	/** Whether the file exists in this projection (has a visible line). */
 	hasFile(path: string): boolean {
-		const f = this.#file(path);
-		return f.vis.length > 0 || f.attrs.exists || f.attrs.link !== null || f.attrs.blob !== null;
+		const attrs = this.attrs(path);
+		return attrs.exists || attrs.link !== null || attrs.blob !== null || this.#file(path).vis.length > 0;
 	}
 
 	/** A file's attributes: kept while empty, executable, a link's target. */
 	attrs(path: string): FileAttrs {
-		return this.#file(path).attrs;
+		return this.#files.get(path)?.attrs ?? this.#attributes(path);
 	}
 
 	/** The projected text of a file ("" if it has no visible lines). */
