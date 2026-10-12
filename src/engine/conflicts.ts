@@ -136,12 +136,10 @@ function makeConflict(graph: Graph, set: AtomSet | undefined, a: Atom, b: Atom, 
 }
 
 /** Atoms in the set that claim (write, read or hold) a key. */
-function claimersIn(graph: Graph, set: AtomSet, key: Key): AtomId[] {
-	const out: AtomId[] = [];
+function* claimersIn(graph: Graph, set: AtomSet, key: Key): IterableIterator<AtomId> {
 	for (const list of [graph.eachWriterOf(key), graph.eachReaderOf(key), graph.eachHolderOf(key)]) {
-		for (const id of list) if (set.has(id)) out.push(id);
+		for (const id of list) if (set.has(id)) yield id;
 	}
-	return out;
 }
 
 const bySeq =
