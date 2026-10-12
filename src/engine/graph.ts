@@ -15,7 +15,7 @@ import {
 	seqOf,
 	startNode,
 } from "./keys.ts";
-import { type GraphStateStorage, type StateMap, storedArray, storedMap } from "./state-source.ts";
+import { type GraphStateStorage, type StateMap, storedArray, storedMap, storedNumbers } from "./state-source.ts";
 import {
 	ATTR_NAMES,
 	type Atom,
@@ -286,21 +286,7 @@ export class Graph {
 		this.#storage = options.storage;
 		if (options.storage) {
 			const storage = options.storage;
-			const numbers = (name: string): NumberIndex => {
-				const values = storedArray<number>(storage, name);
-				return {
-					get length() {
-						return values.length;
-					},
-					push: (value) => {
-						values.push(value);
-					},
-					at: (index) => values[index]!,
-					set: (index, value) => {
-						values[index] = value;
-					},
-				};
-			};
+			const numbers = (name: string): NumberIndex => storedNumbers(storage, name);
 			this.#atoms = storedArray<Atom>(storage, "atoms", (atom) =>
 				freezeAtom(
 					atom,

@@ -1,8 +1,55 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { checkDraft, Graph, View } from "../index.ts";
+import { CachedStateStorage, storedNumbers } from "../state-source.ts";
 import { lines, Repo } from "./helpers.ts";
 import { SqlState } from "./storage-helper.ts";
+
+test("numeric pages cross boundaries, reopen, mutate and roll back without retaining history", () => {
+	const source = new SqlState();
+	const storage = new CachedStateStorage(source);
+	const numbers = storedNumbers(storage, "numbers");
+	storage.transaction(() => {
+		for (let i = 0; i < 1025; i++) numbers.push(i - 1);
+	});
+	storage.clear();
+	const reads = source.reads;
+	for (let i = 0; i < 1025; i++) assert.equal(numbers.at(i), i - 1);
+	assert.ok(source.reads - reads <= 7, "one backing read per page plus metadata");
+	assert.equal([...source.entries("numbers:pages")].length, 5);
+	assert.throws(
+		() =>
+			storage.transaction(() => {
+				numbers.set(255, -99);
+				numbers.set(256, -98);
+				numbers.push(1025);
+				throw new Error("rollback");
+			}),
+		/rollback/,
+	);
+	const reopened = storedNumbers(new CachedStateStorage(source), "numbers");
+	assert.equal(reopened.length, 1025);
+	assert.equal(reopened.at(255), 254);
+	assert.equal(reopened.at(256), 255);
+	assert.equal(numbers.at(255), 254);
+	reopened.set(256, -42);
+	assert.equal(reopened.at(256), -42);
+	assert.throws(() => reopened.at(1025), /out of bounds/);
+	assert.throws(() => reopened.set(-1, 2), /out of bounds/);
+	assert.throws(() => reopened.push(NaN), /safe integers/);
+});
+
+test("numeric pages reject legacy or missing pages instead of fabricating values", () => {
+	const storage = new SqlState();
+	storage.write("legacy:meta", "length", 256);
+	const legacy = storedNumbers(storage, "legacy");
+	assert.throws(() => legacy.at(0), /canonical-log adoption/);
+	assert.throws(() => legacy.push(1), /canonical-log adoption/);
+	const numbers = storedNumbers(storage, "new");
+	numbers.push(5);
+	storage.remove("new:pages", "0");
+	assert.throws(() => numbers.at(0), /missing writer numeric page/);
+});
 
 test("stored graph reopens without replay and preserves moves, conflicts and new edits", () => {
 	const oracle = Repo.init({ "a.txt": lines("one", "two", "three"), "b.txt": "" });

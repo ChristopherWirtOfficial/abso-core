@@ -160,6 +160,56 @@ export class StableOverlaySet<T> extends StableSet<T> {
 const indexKey = (key: PropertyKey): key is string =>
 	typeof key === "string" && /^(0|[1-9][0-9]*)$/.test(key) && Number.isSafeInteger(Number(key));
 
+/** Fixed-size numeric pages; callers retain no pages outside the bounded storage cache. */
+export function storedNumbers(storage: GraphStateStorage, name: string) {
+	const pageSize = 256;
+	const meta = `${name}:meta`;
+	const length = () => (storage.read(meta, "length") as number | undefined) ?? 0;
+	// Older experimental writer indexes must be rebuilt from their canonical log.
+	// Never interpret per-element rows as pages or silently lose existing history.
+	const page = (index: number): number[] => {
+		if (storage.read(meta, "format") !== 2)
+			throw new Error(`writer numeric index ${name} requires canonical-log adoption`);
+		const values = storage.read(`${name}:pages`, String(Math.floor(index / pageSize))) as number[] | undefined;
+		if (!values) throw new Error(`missing writer numeric page in ${name}`);
+		return values;
+	};
+	return {
+		get length() {
+			return length();
+		},
+		at(index: number): number {
+			if (!Number.isSafeInteger(index) || index < 0 || index >= length())
+				throw new Error(`writer numeric index out of bounds in ${name}`);
+			const value = page(index)[index % pageSize];
+			if (value === undefined) throw new Error(`incomplete writer numeric page in ${name}`);
+			return value;
+		},
+		push(value: number): void {
+			if (!Number.isSafeInteger(value)) throw new Error("writer numeric indexes require safe integers");
+			const index = length();
+			if (index > 0 && storage.read(meta, "format") !== 2)
+				throw new Error(`writer numeric index ${name} requires canonical-log adoption`);
+			const offset = index % pageSize;
+			const values = offset === 0 ? [] : page(index);
+			if (values.length !== offset) throw new Error(`invalid writer numeric page length in ${name}`);
+			values.push(value);
+			storage.write(`${name}:pages`, String(Math.floor(index / pageSize)), values);
+			if (index === 0) storage.write(meta, "format", 2);
+			storage.write(meta, "length", index + 1);
+		},
+		set(index: number, value: number): void {
+			if (!Number.isSafeInteger(value)) throw new Error("writer numeric indexes require safe integers");
+			if (!Number.isSafeInteger(index) || index < 0 || index >= length())
+				throw new Error(`writer numeric index out of bounds in ${name}`);
+			const values = page(index);
+			if (index % pageSize >= values.length) throw new Error(`incomplete writer numeric page in ${name}`);
+			values[index % pageSize] = value;
+			storage.write(`${name}:pages`, String(Math.floor(index / pageSize)), values);
+		},
+	};
+}
+
 /** Array-shaped access without retaining its historical values in memory. */
 export function storedArray<T>(storage: GraphStateStorage, name: string, decode?: (value: T) => T): T[] {
 	const length = () => (storage.read(`${name}:meta`, "length") as number | undefined) ?? 0;
