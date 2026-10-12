@@ -28,7 +28,7 @@ export class ViewCache {
 		let total = 0;
 		for (const v of this.#cache.values()) total += v.weight();
 		for (const [key, v] of this.#cache) {
-			if (total <= VIEW_BUDGET && this.#cache.size < 32) break;
+			if (total <= VIEW_BUDGET && this.#cache.size <= 32) break;
 			total -= v.weight();
 			this.#cache.delete(key);
 		}
@@ -51,9 +51,11 @@ export class ViewCache {
 			this.#cache.delete(key);
 		} else {
 			view = new View(this.#graph, set());
-			this.#trim();
 		}
+		// Account the selected view, including growth since its last access,
+		// before evicting older entries. An oversized view may evict itself.
 		this.#cache.set(key, view);
+		this.#trim();
 		return view;
 	}
 }
