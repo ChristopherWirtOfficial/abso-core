@@ -1,9 +1,42 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { checkDraft, Graph, View } from "../index.ts";
-import { CachedStateStorage, storedNumbers } from "../state-source.ts";
+import { CachedStateStorage, storedLists, storedNumbers } from "../state-source.ts";
 import { lines, Repo } from "./helpers.ts";
 import { SqlState } from "./storage-helper.ts";
+
+test("per-file list pages append and reopen without reading the full historical list", () => {
+	const source = new SqlState();
+	try {
+		const storage = new CachedStateStorage(source);
+		const lists = storedLists<string>(storage, "files");
+		for (let i = 0; i < 1025; i++) storage.transaction(() => lists.append("a.txt", `a${i}`));
+		assert.equal(lists.length("a.txt"), 1025);
+		assert.deepEqual([...lists.keys()], ["a.txt"]);
+		storage.clear();
+		const before = source.reads;
+		storage.transaction(() => lists.append("a.txt", "a1025"));
+		assert.ok(source.reads - before <= 2, "append reads only one page and its length");
+		assert.throws(
+			() =>
+				storage.transaction(() => {
+					lists.append("a.txt", "rolled-back");
+					throw new Error("rollback");
+				}),
+			/rollback/,
+		);
+		const reopened = storedLists<string>(new CachedStateStorage(source), "files");
+		assert.deepEqual(
+			[...reopened.values("a.txt")],
+			Array.from({ length: 1026 }, (_, i) => `a${i}`),
+		);
+		for (const [, page] of source.entries("files:pages")) assert.ok((page as string[]).length <= 256);
+		source.write("legacy", "a.txt", ["a0"]);
+		assert.throws(() => [...storedLists(source, "legacy").keys()], /canonical-log adoption/);
+	} finally {
+		source.db.close();
+	}
+});
 
 test("numeric pages cross boundaries, reopen, mutate and roll back without retaining history", () => {
 	const source = new SqlState();

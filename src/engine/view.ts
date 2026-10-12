@@ -330,7 +330,7 @@ export class View {
 		const graph = this.graph;
 		// For each attribute, the highest-priority setter in the set wins.
 		const setters = new Map<string, { id: AtomId; value: string | null }>();
-		for (const id of graph.atomsIn(path)) {
+		for (const id of graph.eachAtomIn(path)) {
 			if (!this.#has(graph.atom(id).seq)) continue;
 			for (const a of graph.atom(id).attrs ?? []) {
 				if (a.file !== path) continue;
@@ -553,7 +553,7 @@ export class View {
 	#file(path: string, complete = false): FileState {
 		let state = this.#files.get(path);
 		if (!state || (complete && !state.complete)) {
-			state = this.graph.atomsIn(path).length === 0 ? NO_FILE : this.#layout(path, complete);
+			state = this.graph.hasAtomsIn(path) ? this.#layout(path, complete) : NO_FILE;
 			this.#files.set(path, state);
 		}
 		return state;

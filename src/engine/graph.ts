@@ -15,7 +15,14 @@ import {
 	seqOf,
 	startNode,
 } from "./keys.ts";
-import { type GraphStateStorage, type StateMap, storedArray, storedMap, storedNumbers } from "./state-source.ts";
+import {
+	type GraphStateStorage,
+	type StateMap,
+	storedArray,
+	storedLists,
+	storedMap,
+	storedNumbers,
+} from "./state-source.ts";
 import {
 	ATTR_NAMES,
 	type Atom,
@@ -314,7 +321,7 @@ export class Graph {
 			this.#dependents = storedMap(storage, "dependents");
 			this.#resolvers = storedMap(storage, "resolvers");
 			this.#together = storedMap(storage, "together");
-			this.#fileAtoms = storedMap(storage, "file-atoms");
+			this.#fileAtomPages = storedLists<AtomId>(storage, "file-atoms");
 			this.#runStarts = storedMap(storage, "run-starts");
 			this.#relocations = storedMap(storage, "relocations");
 			this.#relocatedTo = storedMap(storage, "relocated-to");
@@ -420,6 +427,7 @@ export class Graph {
 	#resolvers: StateMap<AtomId, AtomId | AtomId[]> = new Map();
 	#together: StateMap<AtomId, TogetherLink[]> = new Map();
 	#fileAtoms: StateMap<string, AtomId[]> = new Map();
+	#fileAtomPages: ReturnType<typeof storedLists<AtomId>> | undefined;
 	/** First lines of runs (their n), by the node they were written after: a line's n, or -1 - a path's index. */
 	#runStarts: StateMap<number, number | number[]> = new Map();
 	/** 1 for the first line of a run whose atom deleted the line it hangs off: the run replaces it. */
@@ -702,12 +710,20 @@ export class Graph {
 
 	/** Every atom that inserts or deletes a line of the file, in seq order. */
 	atomsIn(file: string): readonly AtomId[] {
+		if (this.#fileAtomPages) return [...this.#fileAtomPages.values(file)];
 		return this.#fileAtoms.get(file) ?? EMPTY;
+	}
+	*eachAtomIn(file: string): IterableIterator<AtomId> {
+		if (this.#fileAtomPages) yield* this.#fileAtomPages.values(file);
+		else yield* this.#fileAtoms.get(file) ?? EMPTY;
+	}
+	hasAtomsIn(file: string): boolean {
+		return this.#fileAtomPages ? this.#fileAtomPages.length(file) > 0 : this.#fileAtoms.has(file);
 	}
 
 	/** Unique historical file paths, streamed without collecting their names. */
 	*knownFiles(): IterableIterator<string> {
-		yield* this.#fileAtoms.keys();
+		yield* this.#fileAtomPages ? this.#fileAtomPages.keys() : this.#fileAtoms.keys();
 	}
 
 	/**
@@ -981,7 +997,10 @@ export class Graph {
 			files.add(isStartNode(m.parent) ? m.parent.slice(1) : this.lineFile(m.parent)!);
 		}
 		this.#atomFiles.push(Object.freeze([...files].sort()));
-		for (const file of files) pushIndex(this.#fileAtoms, file, frozen.id);
+		for (const file of files) {
+			if (this.#fileAtomPages) this.#fileAtomPages.append(file, frozen.id);
+			else pushIndex(this.#fileAtoms, file, frozen.id);
+		}
 		for (const r of frozen.reasons) {
 			if (r.kind !== "together" || r.to === frozen.id) continue;
 			pushIndex(this.#together, frozen.id, { other: r.to, text: r.text, from: frozen.id });

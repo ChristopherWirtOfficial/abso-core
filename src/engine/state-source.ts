@@ -259,6 +259,56 @@ export interface StateMap<K, V> {
 	values(): IterableIterator<V>;
 }
 
+/** Append-only per-key lists, retaining at most one fixed-size page per iterator. */
+export function storedLists<V>(storage: GraphStateStorage, name: string) {
+	const pageSize = 256;
+	// The previous experimental layout stored one whole historical list per key.
+	const length = (key: string) => {
+		const stored = storage.read(`${name}:lengths`, key) as number | undefined;
+		if (stored === undefined && storage.read(name, JSON.stringify(["string", key])) !== undefined)
+			throw new Error(`writer list index ${name} requires canonical-log adoption`);
+		const count = stored ?? 0;
+		if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid writer list count in ${name}`);
+		return count;
+	};
+	const pageKey = (key: string, page: number) => JSON.stringify([key, page]);
+	const page = (key: string, index: number): V[] => {
+		const values = storage.read(`${name}:pages`, pageKey(key, index)) as V[] | undefined;
+		if (!Array.isArray(values) || values.length < 1 || values.length > pageSize)
+			throw new Error(`missing or invalid writer list page in ${name}`);
+		return values;
+	};
+	return {
+		length,
+		*keys(): IterableIterator<string> {
+			for (const entry of storage.entries(name)) {
+				void entry;
+				throw new Error(`writer list index ${name} requires canonical-log adoption`);
+			}
+			for (const [key] of storage.entries(`${name}:lengths`)) yield key;
+		},
+		*values(key: string): IterableIterator<V> {
+			const count = length(key);
+			for (let start = 0; start < count; start += pageSize) {
+				const values = page(key, start / pageSize);
+				if (values.length !== Math.min(pageSize, count - start))
+					throw new Error(`incomplete writer list page in ${name}`);
+				yield* values;
+			}
+		},
+		append(key: string, value: V): void {
+			const count = length(key);
+			const offset = count % pageSize;
+			const index = Math.floor(count / pageSize);
+			const values = offset === 0 ? [] : page(key, index);
+			if (values.length !== offset) throw new Error(`invalid writer list length in ${name}`);
+			values.push(value);
+			storage.write(`${name}:pages`, pageKey(key, index), values);
+			storage.write(`${name}:lengths`, key, count + 1);
+		},
+	};
+}
+
 /** Keys are tagged so numeric graph codes cannot collide with string keys. */
 export function storedMap<K extends string | number, V>(storage: GraphStateStorage, name: string): StateMap<K, V> {
 	const keyOf = (key: K) => JSON.stringify([typeof key, key]);
