@@ -8,6 +8,20 @@ import type { AtomId } from "../types.ts";
 import { lines, Repo } from "./helpers.ts";
 
 describe("View", () => {
+	it("current indexed paths do not retain deleted historical file layouts", () => {
+		const retained = (count: number) => {
+			const files: Record<string, string> = { "live.txt": "live\n" };
+			for (let i = 0; i < count; i++) files[`old-${i}.txt`] = "gone\n";
+			const repo = Repo.init(files);
+			repo.edit({ edits: Array.from({ length: count }, (_, i) => ({ file: `old-${i}.txt`, old: "gone\n", new: "" })) });
+			const view = new View(repo.graph, new StableOverlaySet<AtomId>(["a0", "a1"]));
+			assert.deepEqual(view.files(), { "live.txt": "live\n" });
+			const weight = view.weight();
+			assert.equal(view.knownPaths().length, count + 1, "explicit historical enumeration is preserved");
+			return weight;
+		};
+		assert.equal(retained(200), retained(20), "deleted path count must not grow current-view retained state");
+	});
 	it("reuses indexed membership across a long run of lines without a history-sized memo", () => {
 		const repo = Repo.init({ "long.txt": "line\n".repeat(1000) });
 		class CountingSet extends StableOverlaySet<AtomId> {

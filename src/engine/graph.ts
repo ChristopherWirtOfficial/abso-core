@@ -705,6 +705,11 @@ export class Graph {
 		return this.#fileAtoms.get(file) ?? EMPTY;
 	}
 
+	/** Unique historical file paths, streamed without collecting their names. */
+	*knownFiles(): IterableIterator<string> {
+		yield* this.#fileAtoms.keys();
+	}
+
 	/**
 	 * The files an atom inserts, deletes or moves lines in, or sets attributes
 	 * of, sorted. For lines, the file each was written in (or, for a move to a

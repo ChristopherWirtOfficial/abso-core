@@ -386,6 +386,14 @@ export class View {
 
 	/** Files with at least one visible line, sorted. */
 	paths(): string[] {
+		if (this.#stable) {
+			const paths: string[] = [];
+			for (const path of this.graph.knownFiles()) {
+				if (this.hasFile(path)) paths.push(path);
+				else this.#files.delete(path);
+			}
+			return paths.sort();
+		}
 		return this.#known.filter((p) => this.hasFile(p));
 	}
 

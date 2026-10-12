@@ -251,6 +251,7 @@ export function storedArray<T>(storage: GraphStateStorage, name: string, decode?
 }
 
 export interface StateMap<K, V> {
+	keys(): IterableIterator<K>;
 	get(key: K): V | undefined;
 	set(key: K, value: V): StateMap<K, V>;
 	has(key: K): boolean;
@@ -262,6 +263,9 @@ export interface StateMap<K, V> {
 export function storedMap<K extends string | number, V>(storage: GraphStateStorage, name: string): StateMap<K, V> {
 	const keyOf = (key: K) => JSON.stringify([typeof key, key]);
 	const map: StateMap<K, V> = {
+		*keys() {
+			for (const [key] of storage.entries(name)) yield (JSON.parse(key) as [string, K])[1];
+		},
 		get: (key) => storage.read(name, keyOf(key)) as V | undefined,
 		has: (key) => storage.read(name, keyOf(key)) !== undefined,
 		set(key, value) {
