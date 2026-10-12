@@ -28,7 +28,8 @@ test("hot claim indexes stream bounded pages after reopening", (t) => {
 		assert.equal(iterator.next().value, "a1");
 		assert.equal(pagesRead, 1, "first claimant reads one claim page, not the entire hot-key history");
 		assert.deepEqual(reopened.writersOf("L:a0.0"), oracle.graph.writersOf("L:a0.0"));
-		for (const name of ["writers", "readers", "holders"]) {
+		assert.deepEqual([...reopened.eachDependentOf("a0")], oracle.graph.dependentsOf("a0"));
+		for (const name of ["writers", "readers", "holders", "dependents", "resolvers"]) {
 			assert.equal([...source.entries(name)].length, 0, "no whole-list claim rows remain");
 			for (const [, page] of source.entries(`${name}:pages`)) assert.ok((page as string[]).length <= 256);
 		}

@@ -39,7 +39,7 @@ export function dependentsIn(graph: Graph, set: AtomSet, id: AtomId): Set<AtomId
 	const stack = [id];
 	while (stack.length > 0) {
 		const cur = stack.pop()!;
-		for (const d of graph.dependentsOf(cur)) {
+		for (const d of graph.eachDependentOf(cur)) {
 			if (set.has(d) && !out.has(d)) {
 				out.add(d);
 				stack.push(d);

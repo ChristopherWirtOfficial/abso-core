@@ -318,8 +318,8 @@ export class Graph {
 			this.#writersPages = storedLists<AtomId>(storage, "writers", (key) => key);
 			this.#readersPages = storedLists<AtomId>(storage, "readers", (key) => key);
 			this.#holdersPages = storedLists<AtomId>(storage, "holders", (key) => key);
-			this.#dependents = storedMap(storage, "dependents");
-			this.#resolvers = storedMap(storage, "resolvers");
+			this.#dependentsPages = storedLists<AtomId>(storage, "dependents");
+			this.#resolversPages = storedLists<AtomId>(storage, "resolvers");
 			this.#together = storedMap(storage, "together");
 			this.#fileAtomPages = storedLists<AtomId>(storage, "file-atoms");
 			this.#runStarts = storedMap(storage, "run-starts");
@@ -427,7 +427,9 @@ export class Graph {
 	#holders: StateMap<Key | number, AtomId | AtomId[]> = new Map();
 	#holdersPages: ReturnType<typeof storedLists<AtomId>> | undefined;
 	#dependents: StateMap<AtomId, AtomId | AtomId[]> = new Map();
+	#dependentsPages: ReturnType<typeof storedLists<AtomId>> | undefined;
 	#resolvers: StateMap<AtomId, AtomId | AtomId[]> = new Map();
+	#resolversPages: ReturnType<typeof storedLists<AtomId>> | undefined;
 	#together: StateMap<AtomId, TogetherLink[]> = new Map();
 	#fileAtoms: StateMap<string, AtomId[]> = new Map();
 	#fileAtomPages: ReturnType<typeof storedLists<AtomId>> | undefined;
@@ -795,12 +797,20 @@ export class Graph {
 
 	/** Atoms that list this one directly in their deps. */
 	dependentsOf(id: AtomId): readonly AtomId[] {
-		return listOf(this.#dependents.get(id));
+		return [...this.eachDependentOf(id)];
+	}
+	*eachDependentOf(id: AtomId): IterableIterator<AtomId> {
+		if (this.#dependentsPages) yield* this.#dependentsPages.values(id);
+		else yield* listOf(this.#dependents.get(id));
 	}
 
 	/** Atoms whose `resolves` names this one. */
 	resolversOf(id: AtomId): readonly AtomId[] {
-		return listOf(this.#resolvers.get(id));
+		return [...this.eachResolverOf(id)];
+	}
+	*eachResolverOf(id: AtomId): IterableIterator<AtomId> {
+		if (this.#resolversPages) yield* this.#resolversPages.values(id);
+		else yield* listOf(this.#resolvers.get(id));
 	}
 
 	/** `together` reasons touching this atom, in either direction. */
@@ -1016,8 +1026,14 @@ export class Graph {
 			if (this.#holdersPages) this.#holdersPages.append(JSON.stringify([typeof code, code]), frozen.id);
 			else pushOne(this.#holders, code, frozen.id);
 		}
-		for (const d of deps) pushOne(this.#dependents, d, frozen.id);
-		for (const r of new Set(frozen.resolves)) pushOne(this.#resolvers, r, frozen.id);
+		for (const d of deps) {
+			if (this.#dependentsPages) this.#dependentsPages.append(d, frozen.id);
+			else pushOne(this.#dependents, d, frozen.id);
+		}
+		for (const r of new Set(frozen.resolves)) {
+			if (this.#resolversPages) this.#resolversPages.append(r, frozen.id);
+			else pushOne(this.#resolvers, r, frozen.id);
+		}
 		const files = new Set<string>();
 		for (const run of atom.inserts) files.add(run.file);
 		for (const n of deletedN) files.add(this.#paths[this.#lineFile.at(n)]!);

@@ -126,11 +126,19 @@ function side(atom: Atom): Side {
 /** `a` has the lower seq. */
 function makeConflict(graph: Graph, set: AtomSet | undefined, a: Atom, b: Atom, keys: ConflictKey[]): Conflict {
 	const kind = keys.every((k) => k.relation === "hold") ? "semantic" : "edit-edit";
-	let resolvedBy: AtomId[] = [];
+	const resolvedBy: AtomId[] = [];
 	if (set) {
-		const fromA = graph.resolversOf(a.id).filter((r) => set.has(r));
-		const fromB = new Set(graph.resolversOf(b.id));
-		resolvedBy = fromA.filter((r) => fromB.has(r)).sort((p, q) => graph.atom(p).seq - graph.atom(q).seq);
+		// Resolver indexes append in sequence order: intersect without copying either history.
+		const left = graph.eachResolverOf(a.id);
+		const right = graph.eachResolverOf(b.id);
+		let p = left.next();
+		let q = right.next();
+		while (!p.done && !q.done) {
+			const order = graph.atom(p.value).seq - graph.atom(q.value).seq;
+			if (order === 0 && set.has(p.value)) resolvedBy.push(p.value);
+			if (order <= 0) p = left.next();
+			if (order >= 0) q = right.next();
+		}
 	}
 	return { atoms: [a.id, b.id], kind, keys, sides: [side(a), side(b)], resolvedBy };
 }
