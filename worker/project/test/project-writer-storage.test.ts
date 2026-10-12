@@ -4,6 +4,7 @@ import { storedArray } from "../../../src/engine/state-source.ts";
 import { SqlState } from "../../../src/engine/test/storage-helper.ts";
 import { MemoryStore, Project } from "../project.ts";
 import type { Entry, ProjectStore } from "../project-types.ts";
+import { WriterAgents } from "../writer-agents.ts";
 
 function setup() {
 	const storage = new SqlState();
@@ -29,6 +30,25 @@ function setup() {
 		},
 	};
 }
+
+test("actor fence reads neither enumerate other agents nor project their files", (t) => {
+	const { storage, entries, store } = setup();
+	let project = new Project(store, { writerStorage: storage });
+	storage.transaction(() => project.init({ "a.txt": "one\n" }, 0));
+	storage.transaction(() => project.record("writer", { "a.txt": "ONE\n" }, 1));
+	storage.transaction(() => project.record("other", { "a.txt": "OTHER\n" }, 2));
+	const status = project.status().agents.find((agent) => agent.agent === "writer")!;
+	project = Project.openWriter(store, storage, entries.length);
+	t.mock.method(WriterAgents.prototype, "entries", () => {
+		throw new Error("all-agent scan forbidden");
+	});
+	t.mock.method(Project.prototype, "status", () => {
+		throw new Error("full status projection forbidden");
+	});
+	assert.deepEqual(project.actorHead("writer"), { base: status.base, draftChanges: status.draftChanges, draft: null });
+	assert.equal(project.actorHead("absent"), undefined);
+	storage.db.close();
+});
 
 test("actual Project record and publish use persistent graph, membership and positional indexes", (t) => {
 	t.mock.method(Date, "now", () => 100);

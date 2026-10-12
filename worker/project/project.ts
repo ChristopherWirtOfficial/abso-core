@@ -2430,6 +2430,16 @@ export class Project {
 		return snapshotStatus(this.#snapshot);
 	}
 
+	/** The operation fence needs one actor's heads, not every agent's file projection. */
+	actorHead(name: string): { base: number; draftChanges: number; draft: string | null } | undefined {
+		const agent = this.#agents.get(name);
+		if (!agent) return undefined;
+		const published = this.#setOf(this.#spaceOf(agent));
+		let draftChanges = 0;
+		for (const id of agent.mine) if (!published.has(id)) draftChanges++;
+		return { base: agent.base, draftChanges, draft: agent.space === SHARED ? null : agent.space };
+	}
+
 	/** A space's contents at one of its versions. */
 	#at(space: Space, version: number): ReadonlySet<AtomId> {
 		return this.#membership.at(space, version);
