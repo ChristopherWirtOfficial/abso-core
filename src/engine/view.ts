@@ -83,6 +83,7 @@ const MAP_HEADER_BYTES = 32;
 const MAP_ENTRY_BYTES = 40;
 const SET_ENTRY_BYTES = 32;
 const REFERENCE_BYTES = 8;
+const FILE_LOCATION_MEMO_ENTRIES = 256;
 
 /**
  * The projection of a closed set. Construct once, then ask for files, lines
@@ -110,6 +111,7 @@ export class View {
 	#relocs: Map<LineId, RelocationInfo> | undefined;
 	/** The same, by n, with the new parent's code. */
 	#relocsN: Map<number, { readonly r: RelocationInfo; readonly parent: number }> | undefined;
+	/** Bounded memo: ancestry can span the entire history even for one visible line. */
 	#fileOf = new Map<number, string>();
 	/** The latest records asked for: one file's lines, one file's sequence, one file's text. */
 	#linesCache: { path: string; lines: readonly VisibleLine[] } | undefined;
@@ -286,7 +288,10 @@ export class View {
 		const graph = this.graph;
 		if (!this.#hasMoves) return graph.writtenIn(n);
 		const relocs = this.#relocationsN();
+		// Keep only a fixed tail of the walk for path compression. The selected
+		// relocation graph is acyclic, so traversal needs no history-sized stack.
 		const path: number[] = [];
+		let visited = 0;
 		let cur = n;
 		let file: string | undefined;
 		while (file === undefined) {
@@ -294,12 +299,16 @@ export class View {
 			else {
 				file = this.#fileOf.get(cur);
 				if (file === undefined) {
-					path.push(cur);
+					path[visited++ % FILE_LOCATION_MEMO_ENTRIES] = cur;
 					cur = relocs.get(cur)?.parent ?? graph.parentCodeOf(cur);
 				}
 			}
 		}
-		for (const l of path) this.#fileOf.set(l, file);
+		for (const l of path) {
+			if (!this.#fileOf.has(l) && this.#fileOf.size >= FILE_LOCATION_MEMO_ENTRIES)
+				this.#fileOf.delete(this.#fileOf.keys().next().value!);
+			this.#fileOf.set(l, file);
+		}
 		return file;
 	}
 

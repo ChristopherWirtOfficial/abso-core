@@ -8,6 +8,23 @@ import type { AtomId } from "../types.ts";
 import { lines, Repo } from "./helpers.ts";
 
 describe("View", () => {
+	it("bounds file-location memo growth across long ancestry walks with moves", () => {
+		const retained = (count: number) => {
+			const repo = Repo.init({ "long.txt": "line\n".repeat(count), "a.txt": "move\n", "b.txt": "base\n" });
+			repo.edit({ move: { file: "a.txt", start: 0, end: 1, to: "b.txt", at: 1 } });
+			const view = new View(repo.graph, new StableOverlaySet<AtomId>(["a0", "a1"]));
+			const oracle = repo.view();
+			// Resolve the deepest ancestry first, then force repeated cache eviction.
+			const sequence = oracle.sequence("long.txt");
+			assert.equal(sequence.length, count);
+			assert.equal(view.fileOf(sequence[count - 1]!.id), "long.txt");
+			for (const line of sequence) assert.equal(view.fileOf(line.id), "long.txt");
+			for (const line of oracle.lines("b.txt")) assert.equal(view.fileOf(line.id), "b.txt");
+			assert.equal(view.fileOf(sequence[count - 1]!.id), "long.txt");
+			return view.weight();
+		};
+		assert.equal(retained(2048), retained(512), "file-location retained state must not grow with ancestry depth");
+	});
 	it("current indexed paths do not retain deleted historical file layouts", () => {
 		const retained = (count: number) => {
 			const files: Record<string, string> = { "live.txt": "live\n" };
