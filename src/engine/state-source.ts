@@ -13,6 +13,83 @@ export interface GraphStateStorage {
 	transaction<T>(body: () => T): T;
 }
 
+/**
+ * Operation-local read cache with fixed payload and entry limits. Serialized
+ * values preserve the storage copy contract. Discard it after an outer host
+ * rollback or any mutation made through another storage instance.
+ */
+export class CachedStateStorage implements GraphStateStorage {
+	readonly #source: GraphStateStorage;
+	readonly #cache = new Map<string, { json: string; bytes: number }>();
+	readonly #maxBytes: number;
+	readonly #maxEntries: number;
+	#bytes = 0;
+	constructor(source: GraphStateStorage, maxBytes = 1_048_576, maxEntries = 4096) {
+		if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || !Number.isSafeInteger(maxEntries) || maxEntries < 0)
+			throw new Error("invalid writer cache limits");
+		this.#source = source;
+		this.#maxBytes = maxBytes;
+		this.#maxEntries = maxEntries;
+	}
+	get retainedBytes(): number {
+		return this.#bytes;
+	}
+	get retainedEntries(): number {
+		return this.#cache.size;
+	}
+	clear(): void {
+		this.#cache.clear();
+		this.#bytes = 0;
+	}
+	#drop(key: string): void {
+		const previous = this.#cache.get(key);
+		if (previous) {
+			this.#cache.delete(key);
+			this.#bytes -= previous.bytes;
+		}
+	}
+	read(collection: string, key: string): unknown {
+		const cacheKey = JSON.stringify([collection, key]);
+		const hit = this.#cache.get(cacheKey);
+		if (hit) {
+			this.#cache.delete(cacheKey);
+			this.#cache.set(cacheKey, hit);
+			return (JSON.parse(hit.json) as { value?: unknown }).value;
+		}
+		const value = this.#source.read(collection, key);
+		const json = JSON.stringify({ value });
+		// Charge two bytes per UTF-16 unit and a conservative fixed entry cost.
+		// This bounds retained payload; it is not an isolate heap measurement.
+		const bytes = 2 * (json.length + cacheKey.length) + 128;
+		if (bytes <= this.#maxBytes && this.#maxEntries > 0) {
+			while (this.#bytes + bytes > this.#maxBytes || this.#cache.size >= this.#maxEntries)
+				this.#drop(this.#cache.keys().next().value!);
+			this.#cache.set(cacheKey, { json, bytes });
+			this.#bytes += bytes;
+		}
+		return value;
+	}
+	write(collection: string, key: string, value: unknown): void {
+		this.#drop(JSON.stringify([collection, key]));
+		this.#source.write(collection, key, value);
+	}
+	remove(collection: string, key: string): void {
+		this.#drop(JSON.stringify([collection, key]));
+		this.#source.remove(collection, key);
+	}
+	entries(collection: string): Iterable<readonly [string, unknown]> {
+		return this.#source.entries(collection);
+	}
+	transaction<T>(body: () => T): T {
+		try {
+			return this.#source.transaction(body);
+		} catch (error) {
+			this.clear();
+			throw error;
+		}
+	}
+}
+
 /** Immutable membership whose implementation does not retain its enumerated keys. */
 export abstract class StableSet<T> implements ReadonlySet<T> {
 	abstract has(value: T): boolean;

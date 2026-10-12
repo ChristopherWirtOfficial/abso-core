@@ -2,13 +2,16 @@ import { DatabaseSync } from "node:sqlite";
 import type { GraphStateStorage } from "../state-source.ts";
 
 export class SqlState implements GraphStateStorage {
-	readonly db = new DatabaseSync(":memory:");
+	readonly db: DatabaseSync;
 	reads = 0;
 	writes = 0;
 	scans = 0;
 	failWrite = Infinity;
-	constructor() {
-		this.db.exec("CREATE TABLE state (collection TEXT, key TEXT, value TEXT, PRIMARY KEY(collection,key))");
+	constructor(filename = ":memory:") {
+		this.db = new DatabaseSync(filename);
+		this.db.exec(
+			"CREATE TABLE IF NOT EXISTS state (collection TEXT, key TEXT, value TEXT, PRIMARY KEY(collection,key))",
+		);
 	}
 	read(collection: string, key: string): unknown {
 		this.reads++;

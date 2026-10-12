@@ -14,6 +14,7 @@
 
 import { type Atom, type AtomId, EngineError, Graph, type LineId, type View } from "../../src/engine/index.ts";
 import {
+	CachedStateStorage,
 	type GraphStateStorage,
 	StableOverlaySet,
 	StableSet,
@@ -346,9 +347,9 @@ export class Project {
 
 	constructor(store: ProjectStore, options: ProjectOptions = {}, checkpoint?: typeof WRITER_REOPEN) {
 		this.#store = store;
-		this.#writerStorage = options.writerStorage;
-		if (options.writerStorage) {
-			const storage = options.writerStorage;
+		this.#writerStorage = options.writerStorage ? new CachedStateStorage(options.writerStorage) : undefined;
+		if (this.#writerStorage) {
+			const storage = this.#writerStorage;
 			// A stored Graph cannot be replayed over itself. Check before any
 			// constructor writes so an accidental reopen preserves the namespace.
 			if (
@@ -398,8 +399,8 @@ export class Project {
 			throw new Error(`log entry ${at} holds no atom ${seq}`);
 		};
 		// Line text and each atom's deletes and claim keys stay in the log (#46), read back when asked for.
-		this.#graph = options.writerStorage
-			? new Graph({ storage: options.writerStorage })
+		this.#graph = this.#writerStorage
+			? new Graph({ storage: this.#writerStorage })
 			: entryAt
 				? new Graph({ texts: (seq) => stored(seq).inserts.map((r) => r.lines), lists: (seq) => stored(seq) })
 				: new Graph();
