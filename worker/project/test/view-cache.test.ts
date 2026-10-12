@@ -1,9 +1,33 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildBase, Graph, View } from "../../../src/engine/index.ts";
+import { StableOverlaySet } from "../../../src/engine/state-source.ts";
+import type { AtomId } from "../../../src/engine/types.ts";
 import { ViewCache } from "../views.ts";
 
 const VIEW_BUDGET = 24_000_000;
+
+test("indexed view cache keys never enumerate membership and remain bounded by eviction", () => {
+	class Counted extends StableOverlaySet<AtomId> {
+		iterations = 0;
+		override values(): SetIterator<AtomId> {
+			this.iterations++;
+			return super.values();
+		}
+	}
+	const graph = new Graph();
+	graph.add(buildBase({ "a.txt": "one\n" }, { author: "test", message: "base" }));
+	const cache = new ViewCache(graph);
+	const set = new Counted(["a0"]);
+	const view = cache.view(set);
+	assert.equal(set.iterations, 1, "only View closure validation enumerates membership");
+	assert.equal(cache.view(set), view);
+	assert.equal(set.iterations, 1, "cache hit must not construct a full-history key");
+	assert.equal(view.text("a.txt"), "one\n");
+	for (let i = 0; i < 33; i++) cache.view(new Counted(["a0"]));
+	assert.notEqual(cache.view(set), view, "indexed identities obey the same cache eviction limit");
+	assert.equal(set.iterations, 2);
+});
 
 type WeightControls = {
 	setIncomingWeights(values: number[]): void;

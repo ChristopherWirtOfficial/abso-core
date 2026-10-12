@@ -1,7 +1,9 @@
 // The views a project lays out from sets of atoms, cached under a byte budget (#46, disk-first 1). Published
-// versions never change, so their views are kept by name; any other set is kept by its exact contents.
+// versions never change, so their views are kept by name. Immutable indexed sets use their identity;
+// ordinary in-memory sets use their exact contents.
 
 import { type AtomId, type Graph, View } from "../../src/engine/index.ts";
+import { StableSet } from "../../src/engine/state-source.ts";
 
 /**
  * About how many bytes the cached views may hold together (#46). A laid-out
@@ -13,7 +15,7 @@ const VIEW_BUDGET = 24_000_000;
 /** Views by key, most recently used last, held under VIEW_BUDGET bytes and 32 views. */
 export class ViewCache {
 	readonly #graph: Graph;
-	readonly #cache = new Map<string, View>();
+	readonly #cache = new Map<string | StableSet<AtomId>, View>();
 
 	constructor(graph: Graph) {
 		this.#graph = graph;
@@ -34,8 +36,11 @@ export class ViewCache {
 		}
 	}
 
-	/** A view of a set, cached by the set's exact contents. */
+	/** Indexed snapshots use identity; ordinary sets use their exact contents. */
 	view(set: ReadonlySet<AtomId>): View {
+		// Immutable indexed membership is already a stable identity. Building
+		// a sorted history-sized key defeats its external-storage contract.
+		if (set instanceof StableSet) return this.#get(set, () => set);
 		const key = [...set]
 			.map((id) => this.#graph.atom(id).seq)
 			.sort((a, b) => a - b)
@@ -45,6 +50,10 @@ export class ViewCache {
 
 	/** A view cached under `key`, made from `set()` when it isn't there. */
 	keyed(key: string, set: () => ReadonlySet<AtomId>): View {
+		return this.#get(key, set);
+	}
+
+	#get(key: string | StableSet<AtomId>, set: () => ReadonlySet<AtomId>): View {
 		let view = this.#cache.get(key);
 		if (view) {
 			// Most recently used last, so eviction takes the oldest.
