@@ -2512,7 +2512,25 @@ export class Project {
 	 * A discarded atom that a later publish still depends on stays in the view
 	 * (abso issue 80). A closed set is unchanged.
 	 */
-	#closed(set: Iterable<AtomId>): Set<AtomId> {
+	#closed(set: Iterable<AtomId>): ReadonlySet<AtomId> {
+		if (set instanceof StableSet) {
+			// Keep indexed membership external. Only dependencies absent from
+			// that snapshot belong in the operation's closure overlay.
+			const missing = new Set<AtomId>();
+			const visit = (id: AtomId) => {
+				const stack = [id];
+				while (stack.length) {
+					for (const dependency of this.#graph.atom(stack.pop()!).deps) {
+						if (!set.has(dependency) && !missing.has(dependency)) {
+							missing.add(dependency);
+							stack.push(dependency);
+						}
+					}
+				}
+			};
+			for (const id of set) visit(id);
+			return missing.size ? new StableUnionSet(set, new StableOverlaySet(missing)) : set;
+		}
 		return this.#graph.closureOf(set);
 	}
 

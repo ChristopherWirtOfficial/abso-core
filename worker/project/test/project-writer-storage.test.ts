@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { storedArray } from "../../../src/engine/state-source.ts";
+import { StableSet, storedArray } from "../../../src/engine/state-source.ts";
 import { SqlState } from "../../../src/engine/test/storage-helper.ts";
 import { MemoryStore, Project } from "../project.ts";
 import type { Entry, ProjectStore } from "../project-types.ts";
@@ -58,6 +58,7 @@ test("empty writer drafts reuse their exact published base projection without co
 	storage.transaction(() => project.publish("writer", "Two", 2));
 	project = Project.openWriter(store, storage, entries.length);
 	const base = project.sharedView();
+	assert.ok(base.set instanceof StableSet, "published membership must remain indexed rather than copied into a Set");
 	assert.equal(project.draftOf("writer")!.view, base);
 	assert.equal(base.text("a.txt"), "two\n");
 	storage.transaction(() => project.record("other", { "a.txt": "three\n" }, 3));
