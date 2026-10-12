@@ -204,7 +204,7 @@ export class View {
 		const ignored = new Set<string>();
 		const pick = (line: LineId): RelocationInfo | undefined => {
 			let best: RelocationInfo | undefined;
-			for (const r of graph.relocationsOf(line)) {
+			for (const r of graph.eachRelocationOf(line)) {
 				if (this.#has(graph.atom(r.atom).seq) && !ignored.has(identity(r)) && (!best || stronger(r, best))) best = r;
 			}
 			return best;
@@ -328,7 +328,7 @@ export class View {
 			out.push({ n, replaces: graph.replacesN(n) ? 1 : 0, lamport: graph.lamportOfSeq(seq), seq, k: graph.kOf(n) });
 		}
 		if (relocs) {
-			for (const r of graph.relocatedToCode(code)) {
+			for (const r of graph.eachRelocatedToCode(code)) {
 				const n = graph.lineN(r.line);
 				const selected = relocs.get(n)?.r;
 				if (!selected || selected.atom !== r.atom || selected.k !== r.k) continue;

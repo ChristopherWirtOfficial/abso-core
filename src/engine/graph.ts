@@ -323,9 +323,11 @@ export class Graph {
 			this.#together = storedMap(storage, "together");
 			this.#fileAtomPages = storedLists<AtomId>(storage, "file-atoms");
 			this.#runStarts = storedMap(storage, "run-starts");
-			this.#relocations = storedMap(storage, "relocations");
-			this.#relocatedTo = storedMap(storage, "relocated-to");
-			this.#relocatedToCode = storedMap(storage, "relocated-to-code");
+			this.#relocationPages = storedLists<RelocationInfo>(storage, "relocations");
+			this.#relocatedToPages = storedLists<RelocationInfo>(storage, "relocated-to");
+			this.#relocatedToCodePages = storedLists<RelocationInfo>(storage, "relocated-to-code", (key) =>
+				JSON.stringify(["number", Number(key)]),
+			);
 			this.#labels = storedMap(storage, "labels");
 		}
 	}
@@ -438,9 +440,12 @@ export class Graph {
 	/** 1 for the first line of a run whose atom deleted the line it hangs off: the run replaces it. */
 	#replacing: NumberIndex = new Ints(true);
 	#relocations: StateMap<LineId, RelocationInfo[]> = new Map();
+	#relocationPages: ReturnType<typeof storedLists<RelocationInfo>> | undefined;
 	#relocatedTo: StateMap<NodeId, RelocationInfo[]> = new Map();
+	#relocatedToPages: ReturnType<typeof storedLists<RelocationInfo>> | undefined;
 	/** The same relocations by node code (a line's n, or -1 - a path's index), for views laid out by number. */
 	#relocatedToCode: StateMap<number, RelocationInfo[]> = new Map();
+	#relocatedToCodePages: ReturnType<typeof storedLists<RelocationInfo>> | undefined;
 	#movers: AtomId[] = [];
 	#atomFiles: (readonly string[])[] = [];
 	/** Each atom's deleted lines by n, packed (#46), or undefined when it deletes none. */
@@ -631,7 +636,12 @@ export class Graph {
 
 	/** Every relocation that puts a line right after the node with this code. */
 	relocatedToCode(code: number): readonly RelocationInfo[] {
+		if (this.#relocatedToCodePages) return [...this.eachRelocatedToCode(code)];
 		return this.#relocatedToCode.get(code) ?? EMPTY;
+	}
+	*eachRelocatedToCode(code: number): IterableIterator<RelocationInfo> {
+		if (this.#relocatedToCodePages) yield* this.#relocatedToCodePages.values(String(code));
+		else yield* this.#relocatedToCode.get(code) ?? EMPTY;
 	}
 
 	/** How many lines every atom together has written. */
@@ -782,11 +792,17 @@ export class Graph {
 
 	/** Every relocation of a line, in seq order. */
 	relocationsOf(line: LineId): readonly RelocationInfo[] {
+		if (this.#relocationPages) return [...this.eachRelocationOf(line)];
 		return this.#relocations.get(line) ?? EMPTY;
+	}
+	*eachRelocationOf(line: LineId): IterableIterator<RelocationInfo> {
+		if (this.#relocationPages) yield* this.#relocationPages.values(line);
+		else yield* this.#relocations.get(line) ?? EMPTY;
 	}
 
 	/** Every relocation that puts a line right after this node, in seq order. */
 	relocatedTo(node: NodeId): readonly RelocationInfo[] {
+		if (this.#relocatedToPages) return [...this.#relocatedToPages.values(node)];
 		return this.#relocatedTo.get(node) ?? EMPTY;
 	}
 
@@ -998,13 +1014,13 @@ export class Graph {
 		}
 		(frozen.moves ?? []).forEach((m, i) => {
 			const info: RelocationInfo = Object.freeze({ atom: frozen.id, line: m.line, parent: m.parent, k: i });
-			pushIndex(this.#relocations, m.line, info);
-			pushIndex(this.#relocatedTo, m.parent, info);
-			pushIndex(
-				this.#relocatedToCode,
-				isStartNode(m.parent) ? -1 - this.#pathOf(m.parent.slice(1)) : this.#lineN(m.parent),
-				info,
-			);
+			if (this.#relocationPages) this.#relocationPages.append(m.line, info);
+			else pushIndex(this.#relocations, m.line, info);
+			if (this.#relocatedToPages) this.#relocatedToPages.append(m.parent, info);
+			else pushIndex(this.#relocatedTo, m.parent, info);
+			const parentCode = isStartNode(m.parent) ? -1 - this.#pathOf(m.parent.slice(1)) : this.#lineN(m.parent);
+			if (this.#relocatedToCodePages) this.#relocatedToCodePages.append(String(parentCode), info);
+			else pushIndex(this.#relocatedToCode, parentCode, info);
 		});
 		if (frozen.moves) this.#movers.push(frozen.id);
 		for (const n of deletedN) {

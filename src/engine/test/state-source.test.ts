@@ -5,6 +5,49 @@ import { CachedStateStorage, StableOverlaySet, storedLists, storedNumbers } from
 import { lines, Repo } from "./helpers.ts";
 import { SqlState } from "./storage-helper.ts";
 
+test("relocation indexes stream one fixed page before yielding and preserve order", () => {
+	class ObservedStorage extends SqlState {
+		pageReads = 0;
+		largestPage = 0;
+		override read(collection: string, key: string): unknown {
+			if (collection.startsWith("relocat") && collection.endsWith(":pages")) this.pageReads++;
+			return super.read(collection, key);
+		}
+		override write(collection: string, key: string, value: unknown): void {
+			if (collection.startsWith("relocat") && collection.endsWith(":pages")) {
+				assert.ok(Array.isArray(value));
+				this.largestPage = Math.max(this.largestPage, value.length);
+			}
+			super.write(collection, key, value);
+		}
+	}
+	const storage = new ObservedStorage();
+	try {
+		const oracle = Repo.init({ "a.txt": "one\n", "b.txt": "" });
+		const move = oracle.draft({ move: { file: "a.txt", start: 0, end: 1, to: "b.txt", at: 0 } });
+		const graph = new Graph({ storage });
+		graph.add(oracle.graph.atom("a0"));
+		for (let seq = 1; seq <= 513; seq++) {
+			const atom = { ...move, id: `a${seq}`, seq };
+			graph.add(atom);
+			oracle.graph.add(atom);
+		}
+		const reopened = new Graph({ storage });
+		storage.pageReads = 0;
+		const iterator = reopened.eachRelocationOf("a0.0");
+		assert.deepEqual(iterator.next().value, oracle.graph.relocationsOf("a0.0")[0]);
+		assert.equal(storage.pageReads, 1, "first result must decode only one page");
+		assert.deepEqual(reopened.relocationsOf("a0.0"), oracle.graph.relocationsOf("a0.0"));
+		const parent = move.moves![0]!.parent;
+		const code = reopened.codeOf(parent)!;
+		assert.deepEqual(reopened.relocatedTo(parent), oracle.graph.relocatedTo(parent));
+		assert.deepEqual([...reopened.eachRelocatedToCode(code)], oracle.graph.relocatedToCode(code));
+		assert.equal(storage.largestPage, 256);
+	} finally {
+		storage.db.close();
+	}
+});
+
 test("hot claim indexes stream bounded pages after reopening", (t) => {
 	const oracle = Repo.init({ "a.txt": lines("one", "two") });
 	const draft = oracle.draft({ edits: [{ file: "a.txt", old: "one", new: "ONE" }] });
