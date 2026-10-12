@@ -246,16 +246,44 @@ describe("issues commands, the client's part (#54)", () => {
 	});
 
 	it("shows a search hit as the issue, then where it matched, without the match markers", () => {
-		const issue = { id: 12, title: "Pull is slow", status: "open" as const, updated: 0, labels: [] };
+		const unknownAuthorship = {
+			kind: "unknown" as const,
+			actor: null,
+			provenance: "unknown" as const,
+			authorField: null,
+		};
+		const issue = {
+			id: 12,
+			title: "Pull is slow",
+			status: "open" as const,
+			updated: 0,
+			labels: [],
+			authorship: { title: unknownAuthorship },
+		};
 		assert.deepEqual(
-			searchLines({ issue, where: "comment", comment: 40, snippet: "the \u0001network\u0002 drops mid-sync" }),
+			searchLines({
+				issue,
+				where: "comment",
+				comment: 40,
+				snippet: "the \u0001network\u0002 drops mid-sync",
+				matchedAuthorship: unknownAuthorship,
+			}),
 			['   12  open         "Pull is slow"', '       in comment 40: "the network drops mid-sync"'],
 		);
-		assert.deepEqual(searchLines({ issue, where: "description", snippet: "Pages load late.", meaning: true }), [
-			'   12  open         "Pull is slow"',
-			'       by meaning: "Pages load late."',
-		]);
-		assert.deepEqual(searchLines({ issue, where: "title", snippet: "Pull is slow" })[1], "       in the title");
+		assert.deepEqual(
+			searchLines({
+				issue,
+				where: "description",
+				snippet: "Pages load late.",
+				meaning: true,
+				matchedAuthorship: unknownAuthorship,
+			}),
+			['   12  open         "Pull is slow"', '       by meaning: "Pages load late."'],
+		);
+		assert.deepEqual(
+			searchLines({ issue, where: "title", snippet: "Pull is slow", matchedAuthorship: unknownAuthorship })[1],
+			"       in the title",
+		);
 	});
 
 	it("withdraw is one POST to the asker's own withdraw/<ask> route", async () => {

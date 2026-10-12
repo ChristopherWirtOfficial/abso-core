@@ -8,6 +8,14 @@ export type Status = "open" | "in progress" | "in review" | "blocked" | "done" |
 /** Who is acting: an agent through the client, or a signed-in person through the website. */
 export type Actor = { agent: string } | { person: string };
 
+/** Public per-field author classification; missing legacy evidence is unknown. */
+export interface ProseAuthorship {
+	kind: "human" | "agent" | "unknown";
+	actor: string | null;
+	provenance: "native" | "copy" | "import" | "historical" | "unknown";
+	authorField: string | null;
+}
+
 export interface Lines {
 	file: string;
 	from: number;
@@ -18,6 +26,7 @@ export interface Lines {
 export interface IssueRow {
 	id: number;
 	title: string;
+	authorship: { title: ProseAuthorship };
 	parent: number | null;
 	status: Status;
 	/** Who it's for: set when it's written or edited, else the first agent whose start note named it. */
@@ -44,6 +53,7 @@ export interface Comment {
 	by: string;
 	kind: "comment" | "objection";
 	text: string;
+	authorship: ProseAuthorship;
 	at: number;
 	/** Images it carries (abso issue 171); left out when none. */
 	attachments?: Attachment[];
@@ -68,6 +78,7 @@ export interface Ask {
 	of: string;
 	kind: "question" | "task";
 	question: string;
+	authorship: { question: ProseAuthorship };
 	/** Files the question carries; absent when none, and from older servers. */
 	attachments?: Attachment[];
 	review: boolean;
@@ -78,13 +89,13 @@ export interface Ask {
 	blocks: number[];
 	at: number;
 	/** Its answer; for a withdrawn ask, the asker's note on why, with the asker as `by`. */
-	answer: { by: string; words: string; at: number; attachments?: Attachment[] } | null;
+	answer: { by: string; words: string; at: number; authorship: ProseAuthorship; attachments?: Attachment[] } | null;
 	/** When waiting first listed it to the one it's asked of; null until then (abso issue 124). */
 	seen: number | null;
 	/** "withdrawn" when the asker took it back; absent for an open or answered ask, and from older servers. */
 	outcome?: "withdrawn";
 	/** When the one asked acknowledged it without answering yet, with their note; it stays open. Absent until then. */
-	ack?: { at: number; note: string };
+	ack?: { at: number; note: string; authorship: { note: ProseAuthorship } };
 	/** Its thread: what the asker and the one asked said on it, oldest first. The answer closes it and isn't one of these. Absent from older servers. */
 	replies?: AskReply[];
 	/** Who it waits on now: the one asked, or the asker while the newest reply is a question from the one asked. Null once it's closed. Absent from older servers. */
@@ -96,6 +107,7 @@ export interface AskReply {
 	id: number;
 	by: string;
 	text: string;
+	authorship: ProseAuthorship;
 	at: number;
 	/** A question back from the one asked: the ask waits on the asker until they reply. */
 	question?: true;
@@ -108,7 +120,13 @@ export interface Claim {
 }
 
 export interface IssuePage {
-	issue: IssueRow & { description: string; lines: Lines | null; watchers: string[]; attachments?: Attachment[] };
+	issue: IssueRow & {
+		description: string;
+		authorship: { title: ProseAuthorship; description: ProseAuthorship };
+		lines: Lines | null;
+		watchers: string[];
+		attachments?: Attachment[];
+	};
 	comments: Comment[];
 	edits: Edit[];
 	asks: Ask[];
@@ -157,8 +175,16 @@ export interface Draft {
 
 /** One issue search hit: the issue, where it matched, a few words around it. */
 export interface IssueSearchHit {
-	issue: { id: number; title: string; status: Status; updated: number; labels: string[] };
+	issue: {
+		id: number;
+		title: string;
+		status: Status;
+		updated: number;
+		labels: string[];
+		authorship: { title: ProseAuthorship };
+	};
 	where: "title" | "description" | "comment";
+	matchedAuthorship: ProseAuthorship;
 	comment?: number;
 	/** The words around the match; char(1) and char(2) bracket each matched span. */
 	snippet: string;
