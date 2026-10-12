@@ -947,6 +947,32 @@ export class Graph {
 	 */
 	#reaches(from: Iterable<AtomId>, target: AtomId): boolean {
 		const floor = this.#lamport[this.#seq(target)]!;
+		if (this.#storage) {
+			// Roots belong to the current atom's dependency list, not its history.
+			const roots = [...from];
+			if (roots.includes(target)) return true;
+			if (roots.every((id) => this.#lamport[this.#seq(id)]! <= floor)) return false;
+			return this.withProjectionScratch((scratch) => {
+				let length = 0;
+				const push = (id: AtomId): void => {
+					if (scratch.read("seen", id)) return;
+					scratch.write("seen", id, true);
+					scratch.write("stack", String(length++), id);
+				};
+				for (const id of roots) push(id);
+				while (length > 0) {
+					const key = String(--length);
+					const current = scratch.read("stack", key) as AtomId;
+					scratch.remove("stack", key);
+					if (this.#lamport[this.#seq(current)]! <= floor) continue;
+					for (const dependency of this.atom(current).deps) {
+						if (dependency === target) return true;
+						push(dependency);
+					}
+				}
+				return false;
+			});
+		}
 		const seen = new Set<AtomId>();
 		const stack = [...from];
 		while (stack.length > 0) {
