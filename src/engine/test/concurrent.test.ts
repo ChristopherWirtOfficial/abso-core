@@ -453,10 +453,18 @@ describe("property: claim width", () => {
 				[before, "before"],
 			] as const) {
 				subset(claimsOf(narrow), claimsOf(both), `claims ${name} ⊆ both`);
-				subset(narrow.deps, both.deps, `deps ${name} ⊆ both`);
+				subset(
+					[...repo.graph.closureOf(narrow.deps)],
+					[...repo.graph.closureOf(both.deps)],
+					`dependency closure ${name} ⊆ both`,
+				);
 			}
 			subset(claimsOf(both), claimsOf(wide), "claims both ⊆ wide");
-			subset(both.deps, wide.deps, "deps both ⊆ wide");
+			subset(
+				[...repo.graph.closureOf(both.deps)],
+				[...repo.graph.closureOf(wide.deps)],
+				"dependency closure both ⊆ wide",
+			);
 			for (const other of pool) {
 				const [hitAfter, hitBefore, hitBoth, hitWide] = [after, before, both, wide].map(
 					(v) => keyOverlap(v, other).length > 0,

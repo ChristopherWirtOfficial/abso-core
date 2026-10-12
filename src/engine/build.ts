@@ -333,7 +333,12 @@ function planMove(view: View, move: MoveInput, writes: Set<Key>, reads: Set<Key>
  * - creating a file over a deleted one: the atoms that deleted its lines;
  * - needs and resolves.
  * Nothing else from the view: not the line below an insertion, not the
- * tombstones around it.
+ * tombstones around it. New atoms encode implicit dependencies as maximal
+ * tips: ancestors reachable through another tip are omitted from direct deps.
+ * Explicit needs/resolves always remain direct. Existing atoms are not rewritten.
+ * Direct-edge diagnostics (including why/Deps trailers and missingDeps) therefore
+ * show fewer redundant edges; transitive closure and dependency ordering remain
+ * the semantic contract. A missing tip still implies its required ancestors.
  */
 function deriveDeps(
 	view: View,
@@ -347,16 +352,30 @@ function deriveDeps(
 	},
 ): AtomId[] {
 	const graph = view.graph;
-	const deps = new Set<AtomId>(parts.emptiedBy);
+	// New atoms retain maximal implicit dependencies. Their transitive closure is
+	// unchanged; explicit needs/resolves remain direct edges below.
+	const deps = new Set<AtomId>();
+	const addImplicit = (candidate: AtomId): void => {
+		if (deps.has(candidate)) return;
+		const candidateClock = graph.lamport(candidate);
+		for (const previous of deps) {
+			const previousClock = graph.lamport(previous);
+			// Equal Lamport clocks cannot reach each other; check only the possible direction.
+			if (previousClock > candidateClock && graph.dependsOn(previous, candidate)) return;
+			if (candidateClock > previousClock && graph.dependsOn(candidate, previous)) deps.delete(previous);
+		}
+		deps.add(candidate);
+	};
+	for (const id of parts.emptiedBy) addImplicit(id);
 	for (const key of [...parts.writes, ...parts.reads, ...parts.holds]) {
 		const { kind, node } = parseKey(key);
 		// An attribute builds on whoever set it last in the view, the way an insertion builds on a gap's writers;
 		// a move builds on the earlier moves of its lines.
-		if (kind !== "attr" && !isStartNode(node)) deps.add(writerOf(node));
-		if (kind !== "line") for (const writer of graph.eachWriterOf(key)) if (view.set.has(writer)) deps.add(writer);
+		if (kind !== "attr" && !isStartNode(node)) addImplicit(writerOf(node));
+		if (kind !== "line") for (const writer of graph.eachWriterOf(key)) if (view.set.has(writer)) addImplicit(writer);
 	}
 	for (const key of parts.writes) {
-		for (const reader of graph.eachReaderOf(key)) if (view.set.has(reader)) deps.add(reader);
+		for (const reader of graph.eachReaderOf(key)) if (view.set.has(reader)) addImplicit(reader);
 	}
 	for (const id of parts.needs) deps.add(id);
 	for (const id of parts.resolves) deps.add(id);

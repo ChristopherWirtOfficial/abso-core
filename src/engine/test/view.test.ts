@@ -117,8 +117,9 @@ describe("View", () => {
 		assert.equal(repo.text("f.txt"), lines("top", "r", "q", "p", "bottom"));
 		assert.deepEqual(
 			r.deps,
-			["a0", p.id, q.id].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))),
+			[p.id, q.id].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))),
 		);
+		assert.deepEqual(repo.graph.closureOf(r.deps), repo.graph.closureOf(["a0", p.id, q.id]));
 	});
 
 	it("puts a line's replacements ahead of the lines inserted after it, whatever their priority", () => {

@@ -24,7 +24,8 @@ describe("record-query replay contract", () => {
 		// Nine existing atoms make a finite, repeatable history. The last query
 		// both replaces a line and inserts at the repeatedly written gap.
 		assert.equal(repo.graph.size, 9);
-		assert.deepEqual(recreation.deps, ["a0", deletion.id]);
+		assert.deepEqual(recreation.deps, [deletion.id]);
+		assert.deepEqual(repo.graph.closureOf(recreation.deps), repo.graph.closureOf(["a0", deletion.id]));
 		assert.deepEqual(repo.view().attrs("src.txt"), {
 			exists: false,
 			exec: false,
@@ -43,9 +44,10 @@ describe("record-query replay contract", () => {
 			attrs: [{ file: "src.txt", name: "exec" as const, value: "1" }],
 		};
 		const liveAtom = buildAtom(repo.view(), input);
-		const expectedDeps = ["a0", writerOne.id, writerTwo.id, readerOne.id, readerTwo.id, attrOne.id, attrTwo.id];
+		const expectedDeps = [writerOne.id, writerTwo.id, readerOne.id, readerTwo.id, attrOne.id, attrTwo.id];
 		assert.deepEqual(liveAtom.deps, expectedDeps);
-		assert.equal(liveAtom.deps.length, 7);
+		assert.deepEqual(repo.graph.closureOf(liveAtom.deps), repo.graph.closureOf(["a0", ...expectedDeps]));
+		assert.equal(liveAtom.deps.length, 6);
 		assert.equal(liveAtom.writes.length, 3);
 		assert.equal(liveAtom.reads.length, 2);
 		assert.equal(liveAtom.holds.length, 0);

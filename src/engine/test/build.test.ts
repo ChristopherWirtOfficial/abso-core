@@ -335,7 +335,8 @@ describe("files", () => {
 		assert.equal(repo.text("g.txt"), "g1\ng2\n");
 		const edited = repo.edit({ edits: [{ file: "g.txt", old: "g2", new: "G2" }] });
 		const removed = repo.edit({ edits: [{ file: "g.txt", old: "g1\nG2\n", new: "" }] });
-		assert.deepEqual(removed.deps, [created.id, edited.id]);
+		assert.deepEqual(removed.deps, [edited.id]);
+		assert.deepEqual(repo.graph.closureOf(removed.deps), repo.graph.closureOf([created.id, edited.id]));
 		assert.equal(repo.view().hasFile("g.txt"), false);
 		assert.deepEqual(Object.keys(repo.files()), ["f.txt"]);
 		assert.deepEqual(repo.view().knownPaths(), ["f.txt", "g.txt"]);
@@ -343,7 +344,8 @@ describe("files", () => {
 		// lines hang off the start (gap rule) and on the deletions: it relies on
 		// the file being empty, so its closure shows only the new text.
 		const again = repo.edit({ edits: [{ file: "g.txt", old: "", new: "fresh\n" }] });
-		assert.deepEqual(again.deps, [created.id, edited.id, removed.id]);
+		assert.deepEqual(again.deps, [removed.id]);
+		assert.deepEqual(repo.graph.closureOf(again.deps), repo.graph.closureOf([created.id, edited.id, removed.id]));
 		assert.equal(repo.text("g.txt"), "fresh\n");
 		assert.equal(repo.text("g.txt", repo.graph.closure(again.id)), "fresh\n");
 	});
@@ -395,7 +397,8 @@ describe("explicit claims", () => {
 			reliesOn: [{ file: "g.txt", start: 0, end: 1 }],
 		});
 		assert.deepEqual(atom.holds, [lineKey(`${g2.id}.0`)]);
-		assert.deepEqual(atom.deps, ["a0", g2.id]);
+		assert.deepEqual(atom.deps, [g2.id]);
+		assert.deepEqual(repo.graph.closureOf(atom.deps), repo.graph.closureOf(["a0", g2.id]));
 	});
 
 	it("reliesOn a range of lines also holds the gaps between them", () => {
@@ -436,7 +439,8 @@ describe("derived dependencies", () => {
 		const three = repo.edit({ edits: [{ file: "f.txt", old: "three", new: "THREE" }] });
 		// Inserting after "two": the gap holds mid (a tombstone hanging off "two") and then THREE.
 		const atom = repo.edit({ edits: [{ file: "f.txt", old: "two\n", new: "two\nnew\n", mode: "after" }] });
-		assert.deepEqual(atom.deps, ["a0", added.id]);
+		assert.deepEqual(atom.deps, [added.id]);
+		assert.deepEqual(repo.graph.closureOf(atom.deps), repo.graph.closureOf(["a0", added.id]));
 		assert.equal(repo.text("f.txt"), lines("one", "two", "new", "THREE", "four", "five"));
 		// It outranks mid, so it sits directly after "two" in any set; in its own
 		// closure mid is back (the deletion isn't in it) and stays below it.
@@ -481,7 +485,8 @@ describe("derived dependencies", () => {
 		const draft = repo.draft({ message: "N after X", edits: [{ file: "f.txt", start: 1, end: 1, lines: ["N"] }] });
 		assert.deepEqual(repo.check(draft).conflicts, []);
 		const N = repo.edit({ message: "N after X", edits: [{ file: "f.txt", start: 1, end: 1, lines: ["N"] }] });
-		assert.deepEqual(N.deps, ["a0", A.id, B.id]);
+		assert.deepEqual(N.deps, [A.id, B.id]);
+		assert.deepEqual(repo.graph.closureOf(N.deps), repo.graph.closureOf(["a0", A.id, B.id]));
 		assert.equal(repo.text("f.txt"), lines("X", "N", "B", "A", "Y"));
 		assert.deepEqual(
 			conflicts(repo.graph, repo.shared).map((c) => c.atoms),
@@ -504,7 +509,8 @@ describe("derived dependencies", () => {
 		// Deleting "three" (the line below the insert) touches nothing the insert wrote,
 		// but it changes a line the insert read: a sequential edit, so a dependency.
 		const atom = repo.edit({ edits: [{ file: "f.txt", old: "three\n", new: "" }] });
-		assert.deepEqual(atom.deps, ["a0", between.id]);
+		assert.deepEqual(atom.deps, [between.id]);
+		assert.deepEqual(repo.graph.closureOf(atom.deps), repo.graph.closureOf(["a0", between.id]));
 		assert.deepEqual(
 			checkDraft(repo.graph, repo.shared, repo.draft({ edits: [{ file: "f.txt", old: "four\n", new: "" }] })).conflicts,
 			[],
