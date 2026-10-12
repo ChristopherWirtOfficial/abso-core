@@ -315,3 +315,50 @@ test("removing a stored label rolls back dependent rewrites on failure", () => {
 	assert.equal(new Graph({ storage }).label("child")?.base, "a0");
 	storage.db.close();
 });
+
+test("together links stream bounded pages in both directions after storage reopen", () => {
+	class ObservedStorage extends SqlState {
+		pageReads = 0;
+		largestPage = 0;
+		override read(collection: string, key: string): unknown {
+			if (collection === "together:pages") this.pageReads++;
+			return super.read(collection, key);
+		}
+		override write(collection: string, key: string, value: unknown): void {
+			if (collection === "together:pages") {
+				assert.ok(Array.isArray(value));
+				this.largestPage = Math.max(this.largestPage, value.length);
+			}
+			super.write(collection, key, value);
+		}
+	}
+	const storage = new ObservedStorage();
+	try {
+		const oracle = Repo.init({ "a.txt": "one\n" });
+		const draft = oracle.draft({ edits: [{ file: "a.txt", old: "one", new: "ONE" }] });
+		const graph = new Graph({ storage });
+		graph.add(oracle.graph.atom("a0"));
+		for (let seq = 1; seq <= 513; seq++) {
+			const atom = {
+				...draft,
+				id: `a${seq}`,
+				seq,
+				reasons: [{ to: "a0", kind: "together" as const, text: `reason ${seq}` }],
+			};
+			graph.add(atom);
+			oracle.graph.add(atom);
+		}
+		const reopened = new Graph({ storage });
+		storage.pageReads = 0;
+		const iterator = reopened.eachTogetherLink("a0");
+		assert.deepEqual(iterator.next().value, oracle.graph.togetherLinks("a0")[0]);
+		assert.equal(storage.pageReads, 1);
+		storage.pageReads = 0;
+		assert.deepEqual(reopened.togetherLinks("a0"), oracle.graph.togetherLinks("a0"));
+		assert.equal(storage.pageReads, 3);
+		assert.deepEqual(reopened.togetherLinks("a513"), oracle.graph.togetherLinks("a513"));
+		assert.equal(storage.largestPage, 256);
+	} finally {
+		storage.db.close();
+	}
+});

@@ -261,7 +261,7 @@ export function reasonWarnings(graph: Graph, set: AtomSet, atom: Atom): ReasonWa
 	const seen = new Set<string>();
 	for (const a of [...changed].sort(bySeq(graph))) {
 		if (a === atom.id) continue;
-		for (const link of graph.togetherLinks(a)) {
+		for (const link of graph.eachTogetherLink(a)) {
 			const b = link.other;
 			if (b === atom.id || !set.has(b) || acknowledged.has(b)) continue;
 			const tag = `${a} ${b}`;

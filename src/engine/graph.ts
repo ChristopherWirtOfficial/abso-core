@@ -322,7 +322,7 @@ export class Graph {
 			this.#holdersPages = storedLists<AtomId>(storage, "holders", (key) => key);
 			this.#dependentsPages = storedLists<AtomId>(storage, "dependents");
 			this.#resolversPages = storedLists<AtomId>(storage, "resolvers");
-			this.#together = storedMap(storage, "together");
+			this.#togetherPages = storedLists<TogetherLink>(storage, "together");
 			this.#fileAtomPages = storedLists<AtomId>(storage, "file-atoms");
 			this.#runStarts = storedMap(storage, "run-starts");
 			this.#relocationPages = storedLists<RelocationInfo>(storage, "relocations");
@@ -436,6 +436,7 @@ export class Graph {
 	#resolvers: StateMap<AtomId, AtomId | AtomId[]> = new Map();
 	#resolversPages: ReturnType<typeof storedLists<AtomId>> | undefined;
 	#together: StateMap<AtomId, TogetherLink[]> = new Map();
+	#togetherPages: ReturnType<typeof storedLists<TogetherLink>> | undefined;
 	#fileAtoms: StateMap<string, AtomId[]> = new Map();
 	#fileAtomPages: ReturnType<typeof storedLists<AtomId>> | undefined;
 	/** First lines of runs (their n), by the node they were written after: a line's n, or -1 - a path's index. */
@@ -833,7 +834,11 @@ export class Graph {
 
 	/** `together` reasons touching this atom, in either direction. */
 	togetherLinks(id: AtomId): readonly TogetherLink[] {
-		return this.#together.get(id) ?? EMPTY;
+		return [...this.eachTogetherLink(id)];
+	}
+	*eachTogetherLink(id: AtomId): IterableIterator<TogetherLink> {
+		if (this.#togetherPages) yield* this.#togetherPages.values(id);
+		else yield* this.#together.get(id) ?? EMPTY;
 	}
 
 	/**
@@ -1068,8 +1073,16 @@ export class Graph {
 		}
 		for (const r of frozen.reasons) {
 			if (r.kind !== "together" || r.to === frozen.id) continue;
-			pushIndex(this.#together, frozen.id, { other: r.to, text: r.text, from: frozen.id });
-			pushIndex(this.#together, r.to, { other: frozen.id, text: r.text, from: frozen.id });
+
+			const forward = { other: r.to, text: r.text, from: frozen.id };
+			const reverse = { other: frozen.id, text: r.text, from: frozen.id };
+			if (this.#togetherPages) {
+				this.#togetherPages.append(frozen.id, forward);
+				this.#togetherPages.append(r.to, reverse);
+			} else {
+				pushIndex(this.#together, frozen.id, forward);
+				pushIndex(this.#together, r.to, reverse);
+			}
 		}
 	}
 
