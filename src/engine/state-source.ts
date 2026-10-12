@@ -220,7 +220,11 @@ export class StoredMap<K extends string | number, V> extends Map<K, V> {
 		}
 	}
 	override *keys(): MapIterator<K> {
-		for (const [key] of this.entries()) yield key;
+		const keys = storedArray<K>(this.#storage, `${this.#name}:order`);
+		for (let slot = 0; slot < keys.length; slot++) {
+			const key = keys[slot]!;
+			if (this.#row(key)?.slot === slot) yield key;
+		}
 	}
 	override *values(): MapIterator<V> {
 		for (const [, value] of this.entries()) yield value;

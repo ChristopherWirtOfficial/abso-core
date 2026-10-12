@@ -49,6 +49,8 @@ const NONE: readonly never[] = Object.freeze([]);
 
 interface FileState {
 	readonly attrs: FileAttrs;
+	/** Full history is retained only when a sequence caller explicitly requests it. */
+	readonly complete: boolean;
 	/** The file's sequence, tombstones included: each line's n. */
 	readonly seq: Int32Array;
 	/** Its visible lines' n, in order. */
@@ -70,7 +72,7 @@ interface Child {
 }
 
 const EMPTY_INTS = new Int32Array(0);
-const NO_FILE: FileState = { attrs: NO_ATTRS, seq: EMPTY_INTS, vis: EMPTY_INTS, deletedBy: new Map() };
+const NO_FILE: FileState = { attrs: NO_ATTRS, complete: true, seq: EMPTY_INTS, vis: EMPTY_INTS, deletedBy: new Map() };
 
 // Approximate retained-container costs for View.weight(): reference slots,
 // object headers, and map/set entries. These are cache-budget units, not V8
@@ -314,7 +316,7 @@ export class View {
 	}
 
 	/** Lay out one file: its line tree from the set's atoms, linearized. */
-	#layout(path: string): FileState {
+	#layout(path: string, complete: boolean): FileState {
 		const graph = this.graph;
 		// For each attribute, the highest-priority setter in the set wins.
 		const setters = new Map<string, { id: AtomId; value: string | null }>();
@@ -343,9 +345,10 @@ export class View {
 			const n = stack.pop()!;
 			const deleters = graph.deleterSeqsOf(n);
 			const by = deleters.length === 0 ? NONE : deleters.filter((d) => this.#has(d));
-			if (by.length > 0) deletedBy.set(seq.length, by.length > 1 ? [...by].sort(priority) : by);
-			else vis.push(n);
-			seq.push(n);
+			if (by.length > 0) {
+				if (complete) deletedBy.set(seq.length, by.length > 1 ? [...by].sort(priority) : by);
+			} else vis.push(n);
+			if (complete) seq.push(n);
 			pushChildren(n);
 		}
 		const attrs: FileAttrs = {
@@ -354,7 +357,7 @@ export class View {
 			link: setters.get("link")?.value ?? null,
 			blob: setters.get("blob")?.value ?? null,
 		};
-		return { attrs, seq: Int32Array.from(seq), vis: Int32Array.from(vis), deletedBy };
+		return { attrs, complete, seq: Int32Array.from(seq), vis: Int32Array.from(vis), deletedBy };
 	}
 
 	get #known(): string[] {
@@ -431,7 +434,7 @@ export class View {
 	sequence(path: string): readonly SeqLine[] {
 		if (this.#seqCache?.path === path) return this.#seqCache.seq;
 		const graph = this.graph;
-		const f = this.#file(path);
+		const f = this.#file(path, true);
 		const out: SeqLine[] = new Array(f.seq.length);
 		for (let i = 0; i < f.seq.length; i++) {
 			const n = f.seq[i]!;
@@ -450,7 +453,7 @@ export class View {
 
 	/** Index of a line in `sequence(path)`, or -1. */
 	sequenceIndex(path: string, line: LineId): number {
-		const f = this.#file(path);
+		const f = this.#file(path, true);
 		if (!f.seqIndex) {
 			f.seqIndex = new Map();
 			for (let i = 0; i < f.seq.length; i++) f.seqIndex.set(f.seq[i]!, i);
@@ -528,10 +531,10 @@ export class View {
 		return n;
 	}
 
-	#file(path: string): FileState {
+	#file(path: string, complete = false): FileState {
 		let state = this.#files.get(path);
-		if (!state) {
-			state = this.graph.atomsIn(path).length === 0 ? NO_FILE : this.#layout(path);
+		if (!state || (complete && !state.complete)) {
+			state = this.graph.atomsIn(path).length === 0 ? NO_FILE : this.#layout(path, complete);
 			this.#files.set(path, state);
 		}
 		return state;

@@ -32,6 +32,12 @@ describe("View", () => {
 		assert.equal(second.weight(), weight, "membership resident size does not increase with historical atom count");
 		assert.equal(first.text("a.txt"), "40\n");
 		assert.equal(second.text("a.txt"), "80\n");
+		assert.equal(second.weight(), first.weight(), "current text retains visible lines, not historical tombstones");
+		const currentWeight = second.weight();
+		assert.equal(second.sequence("a.txt").length, 81);
+		assert.equal(second.sequence("a.txt").filter((line) => line.visible).length, 1);
+		assert.ok(second.weight() > currentWeight, "explicit history reads may retain their requested sequence");
+		assert.equal(second.text("a.txt"), "80\n");
 		assert.equal(first.set.has("a80"), false);
 		assert.throws(() => new View(repo.graph, new StableOverlaySet<AtomId>(["a1"])), /not closed/);
 	});

@@ -5,6 +5,29 @@ import { SqlState } from "../../../src/engine/test/storage-helper.ts";
 import { MemoryStore, Project } from "../project.ts";
 import { Membership } from "../spaces.ts";
 
+test("key-only scans do not decode or retain values through overridden entry iterators", () => {
+	const storage = new SqlState();
+	const seed = new StoredMap<string, number>(storage, "keys-only");
+	seed.set("old", 1).set("kept", 2);
+	seed.delete("old");
+	seed.set("old", 3);
+	class ValuesForbidden extends StoredMap<string, number> {
+		override entries(): MapIterator<[string, number]> {
+			throw new Error("key scans must not invoke retaining value iterators");
+		}
+	}
+	const map = new ValuesForbidden(storage, "keys-only", {
+		encode: (value) => value,
+		decode: () => {
+			throw new Error("value decoding forbidden");
+		},
+	});
+	assert.deepEqual([...map.keys()], ["kept", "old"]);
+	map.clear();
+	assert.equal(map.size, 0);
+	storage.db.close();
+});
+
 test("persistent collections preserve insertion order, deletion, reinsert and undefined values", () => {
 	const storage = new SqlState();
 	const map = new StoredMap<string, number | undefined>(storage, "map");
