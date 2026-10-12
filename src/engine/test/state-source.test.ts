@@ -506,7 +506,7 @@ test("ordered layout refuses missing format or child metadata instead of droppin
 			() => new Graph({ storage }).add(oracle.draft({ edits: [{ file: "a.txt", old: "one", new: "two" }] })),
 			/fresh adoption/,
 		);
-		storage.write("ordered-children", "format", 1);
+		storage.write("ordered-children", "format", 2);
 		const parent = graph.startCodeOf("a.txt")!;
 		storage.remove("ordered-children", JSON.stringify([String(parent), "meta"]));
 		assert.throws(() => [...graph.orderedChildrenN(parent)], /missing ordered index metadata/);

@@ -2,6 +2,7 @@
 // the codebase) are separate values; the graph only answers questions about
 // atoms and keeps indexes so those questions are cheap.
 
+import { ChildCounts } from "./child-counts.ts";
 import {
 	atomId,
 	attrKey,
@@ -254,6 +255,7 @@ function parseLineId(id: string): { seq: number; k: number } | undefined {
 
 export class Graph {
 	readonly #storage?: GraphStateStorage;
+	readonly #childCounts?: ChildCounts;
 	#atoms: Atom[] = [];
 	#lamport: number[] = [];
 	// Lines, packed (#46): line n is the k-th line atom seq wrote, n = #lineBase[seq] + k. Each holds its
@@ -293,6 +295,7 @@ export class Graph {
 		}
 		if (options.lists) this.#lists = options.lists;
 		this.#storage = options.storage;
+		if (options.storage) this.#childCounts = new ChildCounts(options.storage);
 		if (options.storage) {
 			const storage = options.storage;
 			const numbers = (name: string): NumberIndex => storedNumbers(storage, name);
@@ -663,10 +666,11 @@ export class Graph {
 	*orderedChildrenN(code: number, after?: number): IterableIterator<number> {
 		if (!this.#storage) throw new Error("ordered children require indexed storage");
 		const index = new OrderedIndex(this.#storage, "ordered-children", String(code));
-		if (this.#storage.read("ordered-children", "format") !== 1)
+		if (this.#storage.read("ordered-children", "format") !== 2)
 			throw new Error("ordered children require fresh adoption");
-		const count = index.size;
-		if (count !== this.#runStartPages!.length(String(code))) throw new Error("ordered child index count mismatch");
+		const count = code >= 0 ? this.#childCounts!.at(code, this.#lineTotal) : index.size;
+		if ((code < 0 || count > 0) && (count !== index.size || count !== this.#runStartPages!.length(String(code))))
+			throw new Error("ordered child index count mismatch");
 		let implicit: number | undefined;
 		if (
 			code >= 0 &&
@@ -967,9 +971,9 @@ export class Graph {
 	}
 
 	#add(atom: Atom): void {
-		if (this.#storage && this.#storage.read("ordered-children", "format") !== 1) {
+		if (this.#storage && this.#storage.read("ordered-children", "format") !== 2) {
 			if (this.#atoms.length !== 0) throw new Error("ordered children require fresh adoption");
-			this.#storage.write("ordered-children", "format", 1);
+			this.#storage.write("ordered-children", "format", 2);
 		}
 
 		validateShape(atom);
@@ -1069,6 +1073,7 @@ export class Graph {
 			const file = this.#pathOf(run.file);
 			let parent = isStartNode(run.parent) ? -1 - file : this.#lineN(run.parent);
 			const first = this.#lineTotal;
+			if (parent >= 0) this.#childCounts?.increment(parent, first);
 			if (this.#storage)
 				new OrderedIndex(this.#storage, "ordered-children", String(parent)).insert(
 					orderedChildKey({
@@ -1085,6 +1090,7 @@ export class Graph {
 			else pushOne(this.#runStarts, parent, first);
 			for (let i = 0; i < run.lines.length; i++) {
 				const n = this.#lineTotal;
+				this.#childCounts?.append(n);
 				this.#lineAtom.push(seq);
 				this.#lineFile.push(file);
 				this.#lineParent.push(parent);
