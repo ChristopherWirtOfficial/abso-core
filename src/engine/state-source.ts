@@ -260,12 +260,16 @@ export interface StateMap<K, V> {
 }
 
 /** Append-only per-key lists, retaining at most one fixed-size page per iterator. */
-export function storedLists<V>(storage: GraphStateStorage, name: string) {
+export function storedLists<V>(
+	storage: GraphStateStorage,
+	name: string,
+	legacyKey = (key: string) => JSON.stringify(["string", key]),
+) {
 	const pageSize = 256;
 	// The previous experimental layout stored one whole historical list per key.
 	const length = (key: string) => {
 		const stored = storage.read(`${name}:lengths`, key) as number | undefined;
-		if (stored === undefined && storage.read(name, JSON.stringify(["string", key])) !== undefined)
+		if (stored === undefined && storage.read(name, legacyKey(key)) !== undefined)
 			throw new Error(`writer list index ${name} requires canonical-log adoption`);
 		const count = stored ?? 0;
 		if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid writer list count in ${name}`);

@@ -315,9 +315,9 @@ export class Graph {
 			this.#lineText = storedArray(storage, "line-text");
 			this.#pathIndex = storedMap(storage, "path-index");
 			this.#moreDeleters = storedMap(storage, "more-deleters");
-			this.#writers = storedMap(storage, "writers");
-			this.#readers = storedMap(storage, "readers");
-			this.#holders = storedMap(storage, "holders");
+			this.#writersPages = storedLists<AtomId>(storage, "writers", (key) => key);
+			this.#readersPages = storedLists<AtomId>(storage, "readers", (key) => key);
+			this.#holdersPages = storedLists<AtomId>(storage, "holders", (key) => key);
 			this.#dependents = storedMap(storage, "dependents");
 			this.#resolvers = storedMap(storage, "resolvers");
 			this.#together = storedMap(storage, "together");
@@ -421,8 +421,11 @@ export class Graph {
 	#deleter: NumberIndex = new Ints();
 	#moreDeleters: StateMap<number, number[]> = new Map();
 	#writers: StateMap<Key | number, AtomId | AtomId[]> = new Map();
+	#writersPages: ReturnType<typeof storedLists<AtomId>> | undefined;
 	#readers: StateMap<Key | number, AtomId | AtomId[]> = new Map();
+	#readersPages: ReturnType<typeof storedLists<AtomId>> | undefined;
 	#holders: StateMap<Key | number, AtomId | AtomId[]> = new Map();
+	#holdersPages: ReturnType<typeof storedLists<AtomId>> | undefined;
 	#dependents: StateMap<AtomId, AtomId | AtomId[]> = new Map();
 	#resolvers: StateMap<AtomId, AtomId | AtomId[]> = new Map();
 	#together: StateMap<AtomId, TogetherLink[]> = new Map();
@@ -695,17 +698,32 @@ export class Graph {
 	}
 
 	writersOf(key: Key): readonly AtomId[] {
-		return listOf(this.#writers.get(this.#code(key)));
+		return [...this.eachWriterOf(key)];
+	}
+	*eachWriterOf(key: Key): IterableIterator<AtomId> {
+		const code = this.#code(key);
+		if (this.#writersPages) yield* this.#writersPages.values(JSON.stringify([typeof code, code]));
+		else yield* listOf(this.#writers.get(code));
 	}
 
 	/** Atoms whose implicit reads include the key. */
 	readersOf(key: Key): readonly AtomId[] {
-		return listOf(this.#readers.get(this.#code(key)));
+		return [...this.eachReaderOf(key)];
+	}
+	*eachReaderOf(key: Key): IterableIterator<AtomId> {
+		const code = this.#code(key);
+		if (this.#readersPages) yield* this.#readersPages.values(JSON.stringify([typeof code, code]));
+		else yield* listOf(this.#readers.get(code));
 	}
 
 	/** Atoms whose explicit holds include the key. */
 	holdersOf(key: Key): readonly AtomId[] {
-		return listOf(this.#holders.get(this.#code(key)));
+		return [...this.eachHolderOf(key)];
+	}
+	*eachHolderOf(key: Key): IterableIterator<AtomId> {
+		const code = this.#code(key);
+		if (this.#holdersPages) yield* this.#holdersPages.values(JSON.stringify([typeof code, code]));
+		else yield* listOf(this.#holders.get(code));
 	}
 
 	/** Every atom that inserts or deletes a line of the file, in seq order. */
@@ -983,9 +1001,21 @@ export class Graph {
 			if (this.#deleter.at(n) < 0) this.#deleter.set(n, seq);
 			else pushIndex(this.#moreDeleters, n, seq);
 		}
-		for (const key of new Set(atom.writes)) pushOne(this.#writers, this.#code(key), frozen.id);
-		for (const key of new Set(atom.reads)) pushOne(this.#readers, this.#code(key), frozen.id);
-		for (const key of new Set(atom.holds)) pushOne(this.#holders, this.#code(key), frozen.id);
+		for (const key of new Set(atom.writes)) {
+			const code = this.#code(key);
+			if (this.#writersPages) this.#writersPages.append(JSON.stringify([typeof code, code]), frozen.id);
+			else pushOne(this.#writers, code, frozen.id);
+		}
+		for (const key of new Set(atom.reads)) {
+			const code = this.#code(key);
+			if (this.#readersPages) this.#readersPages.append(JSON.stringify([typeof code, code]), frozen.id);
+			else pushOne(this.#readers, code, frozen.id);
+		}
+		for (const key of new Set(atom.holds)) {
+			const code = this.#code(key);
+			if (this.#holdersPages) this.#holdersPages.append(JSON.stringify([typeof code, code]), frozen.id);
+			else pushOne(this.#holders, code, frozen.id);
+		}
 		for (const d of deps) pushOne(this.#dependents, d, frozen.id);
 		for (const r of new Set(frozen.resolves)) pushOne(this.#resolvers, r, frozen.id);
 		const files = new Set<string>();

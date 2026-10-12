@@ -5,6 +5,44 @@ import { CachedStateStorage, storedLists, storedNumbers } from "../state-source.
 import { lines, Repo } from "./helpers.ts";
 import { SqlState } from "./storage-helper.ts";
 
+test("hot claim indexes stream bounded pages after reopening", (t) => {
+	const oracle = Repo.init({ "a.txt": lines("one", "two") });
+	const draft = oracle.draft({ edits: [{ file: "a.txt", old: "one", new: "ONE" }] });
+	const source = new SqlState();
+	try {
+		const graph = new Graph({ storage: source });
+		graph.add(oracle.graph.atom("a0"));
+		for (let i = 0; i < 513; i++) {
+			const atom = { ...draft, id: `a${i + 1}`, seq: i + 1 };
+			graph.add(atom);
+			oracle.graph.add(atom);
+		}
+		const reopened = new Graph({ storage: source });
+		const read = source.read.bind(source);
+		let pagesRead = 0;
+		t.mock.method(source, "read", (collection: string, key: string) => {
+			if (collection === "writers:pages") pagesRead++;
+			return read(collection, key);
+		});
+		const iterator = reopened.eachWriterOf("L:a0.0");
+		assert.equal(iterator.next().value, "a1");
+		assert.equal(pagesRead, 1, "first claimant reads one claim page, not the entire hot-key history");
+		assert.deepEqual(reopened.writersOf("L:a0.0"), oracle.graph.writersOf("L:a0.0"));
+		for (const name of ["writers", "readers", "holders"]) {
+			assert.equal([...source.entries(name)].length, 0, "no whole-list claim rows remain");
+			for (const [, page] of source.entries(`${name}:pages`)) assert.ok((page as string[]).length <= 256);
+		}
+		const key = JSON.stringify(["number", 0]);
+		source.write("legacy-claims", key, ["old"]);
+		assert.throws(
+			() => [...storedLists(source, "legacy-claims", (value) => value).values(key)],
+			/canonical-log adoption/,
+		);
+	} finally {
+		source.db.close();
+	}
+});
+
 test("per-file list pages append and reopen without reading the full historical list", () => {
 	const source = new SqlState();
 	try {

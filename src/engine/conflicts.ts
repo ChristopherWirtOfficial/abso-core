@@ -138,7 +138,7 @@ function makeConflict(graph: Graph, set: AtomSet | undefined, a: Atom, b: Atom, 
 /** Atoms in the set that claim (write, read or hold) a key. */
 function claimersIn(graph: Graph, set: AtomSet, key: Key): AtomId[] {
 	const out: AtomId[] = [];
-	for (const list of [graph.writersOf(key), graph.readersOf(key), graph.holdersOf(key)]) {
+	for (const list of [graph.eachWriterOf(key), graph.eachReaderOf(key), graph.eachHolderOf(key)]) {
 		for (const id of list) if (set.has(id)) out.push(id);
 	}
 	return out;
@@ -302,7 +302,7 @@ export function checkDraft(graph: Graph, set: AtomSet, draft: Atom): DraftReport
 	const below = graph.closureOf(draft.deps);
 	const candidates = new Set<AtomId>();
 	for (const key of draft.writes) for (const id of claimersIn(graph, set, key)) candidates.add(id);
-	for (const key of claimsOf(draft)) for (const id of graph.writersOf(key)) if (set.has(id)) candidates.add(id);
+	for (const key of claimsOf(draft)) for (const id of graph.eachWriterOf(key)) if (set.has(id)) candidates.add(id);
 	const found: Conflict[] = [];
 	for (const id of [...candidates].sort(bySeq(graph))) {
 		const other = graph.atom(id);

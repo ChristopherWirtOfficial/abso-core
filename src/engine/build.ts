@@ -353,10 +353,10 @@ function deriveDeps(
 		// An attribute builds on whoever set it last in the view, the way an insertion builds on a gap's writers;
 		// a move builds on the earlier moves of its lines.
 		if (kind !== "attr" && !isStartNode(node)) deps.add(writerOf(node));
-		if (kind !== "line") for (const writer of graph.writersOf(key)) if (view.set.has(writer)) deps.add(writer);
+		if (kind !== "line") for (const writer of graph.eachWriterOf(key)) if (view.set.has(writer)) deps.add(writer);
 	}
 	for (const key of parts.writes) {
-		for (const reader of graph.readersOf(key)) if (view.set.has(reader)) deps.add(reader);
+		for (const reader of graph.eachReaderOf(key)) if (view.set.has(reader)) deps.add(reader);
 	}
 	for (const id of parts.needs) deps.add(id);
 	for (const id of parts.resolves) deps.add(id);
