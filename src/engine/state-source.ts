@@ -14,13 +14,19 @@ export interface GraphStateStorage {
 }
 
 /**
- * Operation-local read cache with fixed payload and entry limits. Serialized
- * values preserve the storage copy contract. Discard it after an outer host
+ * Operation-local read cache with fixed payload and entry limits. Private numeric
+ * pages, immutable scalars and serialized objects preserve the copy contract. Discard it after an outer host
  * rollback or any mutation made through another storage instance.
  */
+type CachedValue = { bytes: number } & (
+	| { kind: "scalar"; value: string | number | boolean | null | undefined }
+	| { kind: "numbers"; value: readonly number[] }
+	| { kind: "json"; json: string }
+);
+
 export class CachedStateStorage implements GraphStateStorage {
 	readonly #source: GraphStateStorage;
-	readonly #cache = new Map<string, { json: string; bytes: number }>();
+	readonly #cache = new Map<string, CachedValue>();
 	readonly #maxBytes: number;
 	readonly #maxEntries: number;
 	#bytes = 0;
@@ -54,18 +60,40 @@ export class CachedStateStorage implements GraphStateStorage {
 		if (hit) {
 			this.#cache.delete(cacheKey);
 			this.#cache.set(cacheKey, hit);
+			if (hit.kind === "scalar") return hit.value;
+			if (hit.kind === "numbers") return hit.value.slice();
 			return (JSON.parse(hit.json) as { value?: unknown }).value;
 		}
 		const value = this.#source.read(collection, key);
-		const json = JSON.stringify({ value });
-		// Charge two bytes per UTF-16 unit and a conservative fixed entry cost.
-		// This bounds retained payload; it is not an isolate heap measurement.
-		const bytes = 2 * (json.length + cacheKey.length) + 128;
-		if (bytes <= this.#maxBytes && this.#maxEntries > 0) {
-			while (this.#bytes + bytes > this.#maxBytes || this.#cache.size >= this.#maxEntries)
+		const overhead = 2 * cacheKey.length + 160;
+		let entry: CachedValue;
+		if (
+			value === undefined ||
+			value === null ||
+			typeof value === "string" ||
+			typeof value === "boolean" ||
+			(typeof value === "number" && Number.isFinite(value))
+		) {
+			entry = { kind: "scalar", value, bytes: overhead + (typeof value === "string" ? 2 * value.length : 16) };
+		} else if (
+			Array.isArray(value) &&
+			value.length <= 256 &&
+			Object.keys(value).length === value.length &&
+			value.every(Number.isSafeInteger)
+		) {
+			// Store one private, bounded numeric page. Public reads still receive a
+			// fresh copy; neither the source result nor a reader can mutate the cache.
+			entry = { kind: "numbers", value: value.slice(), bytes: overhead + 32 + value.length * 8 };
+		} else {
+			const json = JSON.stringify({ value });
+			entry = { kind: "json", json, bytes: overhead + 2 * json.length };
+		}
+		// Payload accounting is bounded, not a measurement of actual isolate heap.
+		if (entry.bytes <= this.#maxBytes && this.#maxEntries > 0) {
+			while (this.#bytes + entry.bytes > this.#maxBytes || this.#cache.size >= this.#maxEntries)
 				this.#drop(this.#cache.keys().next().value!);
-			this.#cache.set(cacheKey, { json, bytes });
-			this.#bytes += bytes;
+			this.#cache.set(cacheKey, entry);
+			this.#bytes += entry.bytes;
 		}
 		return value;
 	}
