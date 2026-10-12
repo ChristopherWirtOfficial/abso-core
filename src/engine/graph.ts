@@ -324,7 +324,9 @@ export class Graph {
 			this.#resolversPages = storedLists<AtomId>(storage, "resolvers");
 			this.#togetherPages = storedLists<TogetherLink>(storage, "together");
 			this.#fileAtomPages = storedLists<AtomId>(storage, "file-atoms");
-			this.#runStarts = storedMap(storage, "run-starts");
+			this.#runStartPages = storedLists<number>(storage, "run-starts", (key) =>
+				JSON.stringify(["number", Number(key)]),
+			);
 			this.#relocationPages = storedLists<RelocationInfo>(storage, "relocations");
 			this.#relocatedToPages = storedLists<RelocationInfo>(storage, "relocated-to");
 			this.#relocatedToCodePages = storedLists<RelocationInfo>(storage, "relocated-to-code", (key) =>
@@ -441,6 +443,7 @@ export class Graph {
 	#fileAtomPages: ReturnType<typeof storedLists<AtomId>> | undefined;
 	/** First lines of runs (their n), by the node they were written after: a line's n, or -1 - a path's index. */
 	#runStarts: StateMap<number, number | number[]> = new Map();
+	#runStartPages: ReturnType<typeof storedLists<number>> | undefined;
 	/** 1 for the first line of a run whose atom deleted the line it hangs off: the run replaces it. */
 	#replacing: NumberIndex = new Ints(true);
 	#relocations: StateMap<LineId, RelocationInfo[]> = new Map();
@@ -612,18 +615,20 @@ export class Graph {
 	}
 
 	/** The lines (their n) written right after a node, as childrenOf, into `out`. */
+
 	childrenN(code: number, out: number[]): void {
+		for (const n of this.eachChildN(code)) out.push(n);
+	}
+	*eachChildN(code: number): IterableIterator<number> {
 		if (
 			code >= 0 &&
 			code + 1 < this.#lineTotal &&
 			this.#lineAtom.at(code + 1) === this.#lineAtom.at(code) &&
 			this.#lineParent.at(code + 1) === code
 		)
-			out.push(code + 1);
-		const starts = this.#runStarts.get(code);
-		if (starts === undefined) return;
-		if (Array.isArray(starts)) out.push(...starts);
-		else out.push(starts);
+			yield code + 1;
+		if (this.#runStartPages) yield* this.#runStartPages.values(String(code));
+		else yield* listOf(this.#runStarts.get(code));
 	}
 
 	replacesN(n: number): boolean {
@@ -770,21 +775,10 @@ export class Graph {
 	}
 
 	/** Lines written right after a node (not counting moves), in seq order. */
+
 	childrenOf(node: NodeId): LineId[] {
-		const out: LineId[] = [];
 		const code = this.#nodeCode(node);
-		if (code === undefined) return out;
-		// The next line of the same run hangs off this one.
-		if (
-			code >= 0 &&
-			code + 1 < this.#lineTotal &&
-			this.#lineAtom.at(code + 1) === this.#lineAtom.at(code) &&
-			this.#lineParent.at(code + 1) === code
-		) {
-			out.push(this.#lineName(code + 1));
-		}
-		for (const n of listOf(this.#runStarts.get(code))) out.push(this.#lineName(n));
-		return out;
+		return code === undefined ? [] : [...this.eachChildN(code)].map((n) => this.#lineName(n));
 	}
 
 	/** Whether a line starts a run whose atom deleted the line it hangs off. */
@@ -1007,7 +1001,8 @@ export class Graph {
 			const file = this.#pathOf(run.file);
 			let parent = isStartNode(run.parent) ? -1 - file : this.#lineN(run.parent);
 			const first = this.#lineTotal;
-			pushOne(this.#runStarts, parent, first);
+			if (this.#runStartPages) this.#runStartPages.append(String(parent), first);
+			else pushOne(this.#runStarts, parent, first);
 			for (let i = 0; i < run.lines.length; i++) {
 				const n = this.#lineTotal;
 				this.#lineAtom.push(seq);

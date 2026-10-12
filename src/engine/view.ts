@@ -319,10 +319,8 @@ export class View {
 	#children(code: number): Child[] {
 		const graph = this.graph;
 		const relocs = this.#hasMoves ? this.#relocationsN() : undefined;
-		const ns: number[] = [];
-		graph.childrenN(code, ns);
 		const out: Child[] = [];
-		for (const n of ns) {
+		for (const n of graph.eachChildN(code)) {
 			const seq = graph.writerSeqOf(n);
 			if (!this.#has(seq) || relocs?.has(n)) continue;
 			out.push({ n, replaces: graph.replacesN(n) ? 1 : 0, lamport: graph.lamportOfSeq(seq), seq, k: graph.kOf(n) });

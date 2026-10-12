@@ -362,3 +362,60 @@ test("together links stream bounded pages in both directions after storage reope
 		storage.db.close();
 	}
 });
+
+test("child indexes stream bounded pages before filtering historical siblings", () => {
+	class ObservedStorage extends SqlState {
+		pageReads = 0;
+		largestPage = 0;
+		override read(collection: string, key: string): unknown {
+			if (collection === "run-starts:pages") this.pageReads++;
+			return super.read(collection, key);
+		}
+		override write(collection: string, key: string, value: unknown): void {
+			if (collection === "run-starts:pages") {
+				assert.ok(Array.isArray(value));
+				this.largestPage = Math.max(this.largestPage, value.length);
+			}
+			super.write(collection, key, value);
+		}
+	}
+	const storage = new ObservedStorage();
+	try {
+		const oracle = Repo.init({ "a.txt": "one\ntwo\n" });
+		const draft = oracle.draft({ edits: [{ file: "a.txt", old: "one", new: "ONE" }] });
+		const graph = new Graph({ storage });
+		graph.add(oracle.graph.atom("a0"));
+		for (let seq = 1; seq <= 513; seq++) {
+			const atom = { ...draft, id: `a${seq}`, seq };
+			graph.add(atom);
+			oracle.graph.add(atom);
+		}
+		const reopened = new Graph({ storage });
+		const parent = draft.inserts[0]!.parent;
+		const code = reopened.codeOf(parent)!;
+		storage.pageReads = 0;
+		const iterator = reopened.eachChildN(code);
+		const first = iterator.next().value!;
+		assert.equal(first, reopened.lineN(oracle.graph.childrenOf(parent)[0]!));
+		assert.ok(storage.pageReads <= 1);
+		if (storage.pageReads === 0) {
+			iterator.next();
+			assert.equal(storage.pageReads, 1, "the implicit child needs no page; the next sibling needs one");
+		}
+		assert.deepEqual(reopened.childrenOf(parent), oracle.graph.childrenOf(parent));
+		assert.deepEqual(
+			reopened.childrenOf("a0.0"),
+			oracle.graph.childrenOf("a0.0"),
+			"implicit same-run child order is retained",
+		);
+		assert.equal(storage.largestPage, 256);
+		const membership = new StableOverlaySet(["a0"]);
+		assert.equal(new View(reopened, membership).text("a.txt"), "one\ntwo\n");
+		assert.deepEqual(
+			new View(reopened, membership).sequence("a.txt"),
+			new View(oracle.graph, membership).sequence("a.txt"),
+		);
+	} finally {
+		storage.db.close();
+	}
+});
