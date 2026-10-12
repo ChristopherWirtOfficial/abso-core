@@ -469,6 +469,31 @@ test("persistent layout uses ordered successors without retaining deep or wide h
 	}
 });
 
+test("implicit ordered successors avoid priority reads but retain index validation", () => {
+	class ObservedStorage extends SqlState {
+		priorityReads = 0;
+		override read(collection: string, key: string): unknown {
+			if (collection === "lamport" || collection.startsWith("replacing:")) this.priorityReads++;
+			return super.read(collection, key);
+		}
+	}
+	const storage = new ObservedStorage();
+	try {
+		const oracle = Repo.init({ "a.txt": "one\ntwo\nthree\n" });
+		const graph = new Graph({ storage });
+		graph.add(oracle.graph.atom("a0"));
+		storage.priorityReads = 0;
+		assert.deepEqual([...graph.orderedChildrenN(0)], [1]);
+		assert.deepEqual([...graph.orderedChildrenN(0, 1)], []);
+		assert.deepEqual([...graph.orderedChildrenN(2)], []);
+		assert.equal(storage.priorityReads, 0, "single-child traversal does not decode sort priority");
+		storage.remove("ordered-children", "format");
+		assert.throws(() => [...graph.orderedChildrenN(0)], /fresh adoption/);
+	} finally {
+		storage.db.close();
+	}
+});
+
 test("ordered layout refuses missing format or child metadata instead of dropping history", () => {
 	const storage = new SqlState();
 	try {

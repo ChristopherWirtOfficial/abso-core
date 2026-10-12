@@ -665,8 +665,8 @@ export class Graph {
 		const index = new OrderedIndex(this.#storage, "ordered-children", String(code));
 		if (this.#storage.read("ordered-children", "format") !== 1)
 			throw new Error("ordered children require fresh adoption");
-		if (index.size !== this.#runStartPages!.length(String(code))) throw new Error("ordered child index count mismatch");
-		const cursor = after === undefined ? undefined : this.#childPriority(after);
+		const count = index.size;
+		if (count !== this.#runStartPages!.length(String(code))) throw new Error("ordered child index count mismatch");
 		let implicit: number | undefined;
 		if (
 			code >= 0 &&
@@ -675,6 +675,14 @@ export class Graph {
 			this.#lineParent.at(code + 1) === code
 		)
 			implicit = code + 1;
+		// Most historical run lines have no explicit child. With zero or one
+		// child, traversal needs no priority decoding or radix lookup. Keep the
+		// format/count checks above even on this path.
+		if (count === 0 && (after === undefined || after === implicit)) {
+			if (implicit !== undefined && after !== implicit) yield implicit;
+			return;
+		}
+		const cursor = after === undefined ? undefined : this.#childPriority(after);
 		if (implicit !== undefined && cursor !== undefined && this.#childPriority(implicit) <= cursor) implicit = undefined;
 		for (const n of index.values(cursor)) {
 			if (implicit !== undefined && this.#childPriority(implicit) < this.#childPriority(n)) {
