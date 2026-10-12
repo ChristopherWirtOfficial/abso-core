@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { checkDraft, Graph, View } from "../index.ts";
-import { CachedStateStorage, storedLists, storedNumbers } from "../state-source.ts";
+import { CachedStateStorage, StableOverlaySet, storedLists, storedNumbers } from "../state-source.ts";
 import { lines, Repo } from "./helpers.ts";
 import { SqlState } from "./storage-helper.ts";
 
@@ -42,6 +42,27 @@ test("hot claim indexes stream bounded pages after reopening", (t) => {
 	} finally {
 		source.db.close();
 	}
+});
+
+test("stable views stream movers instead of allocating a filtered history array", (t) => {
+	const oracle = Repo.init({ "a.txt": lines("one", "two"), "b.txt": "" });
+	oracle.edit({ move: { file: "a.txt", start: 0, end: 1, to: "b.txt", at: 0 } });
+	const expected = oracle.files();
+	const movers = oracle.graph.movers();
+	t.mock.method(
+		oracle.graph,
+		"movers",
+		() =>
+			new Proxy(movers, {
+				get(target, key, receiver) {
+					if (key === "filter") throw new Error("whole mover history copied");
+					return Reflect.get(target, key, receiver);
+				},
+			}),
+	);
+	const view = new View(oracle.graph, new StableOverlaySet(oracle.shared));
+	assert.equal(view.hasMoves(), true);
+	assert.deepEqual(view.files(), expected);
 });
 
 test("per-file list pages append and reopen without reading the full historical list", () => {

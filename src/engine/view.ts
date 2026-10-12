@@ -104,7 +104,8 @@ export class View {
 	/** 1 for each atom (by seq) in the set. */
 	#in: Uint8Array;
 	/** Atoms in the set that move lines. */
-	#movers: AtomId[];
+	#movers: AtomId[] | undefined;
+	#hasMoves = false;
 	/** Each moved line's relocation that counts in this set; built on first use. */
 	#relocs: Map<LineId, RelocationInfo> | undefined;
 	/** The same, by n, with the new parent's code. */
@@ -129,9 +130,14 @@ export class View {
 						throw new EngineError("not-closed", `set is not closed: ${id} depends on ${dependency}`);
 				}
 			}
-			this.#movers = graph.movers().filter((id) => set.has(id));
-			this.#relocs = this.#movers.length === 0 ? new Map() : undefined;
-			this.#relocsN = this.#movers.length === 0 ? new Map() : undefined;
+			for (const id of graph.movers()) {
+				if (set.has(id)) {
+					this.#hasMoves = true;
+					break;
+				}
+			}
+			this.#relocs = this.#hasMoves ? undefined : new Map();
+			this.#relocsN = this.#hasMoves ? undefined : new Map();
 			return;
 		}
 		const inSet = new Uint8Array(graph.size);
@@ -152,6 +158,7 @@ export class View {
 		this.graph = graph;
 		this.#in = inSet;
 		this.#movers = graph.movers().filter((id) => inSet[graph.atom(id).seq] === 1);
+		this.#hasMoves = this.#movers.length > 0;
 		this.#relocs = this.#movers.length === 0 ? new Map() : undefined;
 		this.#relocsN = this.#movers.length === 0 ? new Map() : undefined;
 	}
@@ -198,7 +205,7 @@ export class View {
 			return best;
 		};
 		const relocs = new Map<LineId, RelocationInfo>();
-		for (const id of this.#movers) {
+		for (const id of this.#eachMover()) {
 			for (const m of graph.atom(id).moves!) {
 				if (!relocs.has(m.line)) relocs.set(m.line, pick(m.line)!);
 			}
@@ -252,7 +259,7 @@ export class View {
 
 	/** The node a line hangs off in this set: where it was written, or where a move put it. */
 	parentOf(line: LineId): NodeId {
-		const r = this.#movers.length === 0 ? undefined : this.#relocations().get(line);
+		const r = this.#hasMoves ? this.#relocations().get(line) : undefined;
 		if (r) return r.parent;
 		const parent = this.graph.lineParent(line);
 		if (parent === undefined) throw new EngineError("unknown-line", `no line ${line}`);
@@ -261,7 +268,11 @@ export class View {
 
 	/** Whether any atom in the set moves lines. */
 	hasMoves(): boolean {
-		return this.#movers.length > 0;
+		return this.#hasMoves;
+	}
+	*#eachMover(): IterableIterator<AtomId> {
+		if (this.#movers) yield* this.#movers;
+		else for (const id of this.graph.movers()) if (this.#stable!.has(id)) yield id;
 	}
 
 	/** The file a line is in, in this set: the one its chain of parents reaches. */
@@ -273,7 +284,7 @@ export class View {
 
 	#fileOfN(n: number): string {
 		const graph = this.graph;
-		if (this.#movers.length === 0) return graph.writtenIn(n);
+		if (!this.#hasMoves) return graph.writtenIn(n);
 		const relocs = this.#relocationsN();
 		const path: number[] = [];
 		let cur = n;
@@ -295,7 +306,7 @@ export class View {
 	/** The lines hanging off a node in this set, in layout order. */
 	#children(code: number): Child[] {
 		const graph = this.graph;
-		const relocs = this.#movers.length === 0 ? undefined : this.#relocationsN();
+		const relocs = this.#hasMoves ? this.#relocationsN() : undefined;
 		const ns: number[] = [];
 		graph.childrenN(code, ns);
 		const out: Child[] = [];
@@ -517,7 +528,7 @@ export class View {
 	weight(): number {
 		let n = this.#in.byteLength;
 		n += 2 * ARRAY_HEADER_BYTES + this.#membershipSeq.byteLength + this.#membershipValue.byteLength;
-		n += ARRAY_HEADER_BYTES + REFERENCE_BYTES * this.#movers.length;
+		if (this.#movers) n += ARRAY_HEADER_BYTES + REFERENCE_BYTES * this.#movers.length;
 		n += MAP_HEADER_BYTES; // #files exists from construction.
 		n += MAP_HEADER_BYTES; // #fileOf exists from construction.
 		if (this.#stable) n += this.#stable.retainedBytes;
