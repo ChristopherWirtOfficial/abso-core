@@ -95,6 +95,9 @@ export class View {
 	/** The set, made from #in the first time it's asked for: a view keeps a byte per atom, not a copy of the set (#46). */
 	#set: AtomSet | undefined;
 	readonly #stable: StableSet<AtomId> | undefined;
+	/** Fixed-size memo for immutable indexed membership, independent of history size. */
+	#membershipSeq = new Float64Array(256).fill(-1);
+	#membershipValue = new Uint8Array(256);
 	#files = new Map<string, FileState>();
 	/** Every file the set wrote in, sorted; worked out the first time it's asked for. */
 	#knownList: string[] | undefined;
@@ -165,7 +168,14 @@ export class View {
 
 	/** Whether the atom with this seq is in the set. */
 	#has(seq: number): boolean {
-		if (this.#stable) return this.#stable.has(this.graph.idOfSeq(seq));
+		if (this.#stable) {
+			const slot = seq % this.#membershipSeq.length;
+			if (this.#membershipSeq[slot] === seq) return this.#membershipValue[slot] === 1;
+			const present = this.#stable.has(this.graph.idOfSeq(seq));
+			this.#membershipSeq[slot] = seq;
+			this.#membershipValue[slot] = present ? 1 : 0;
+			return present;
+		}
 		return seq < this.#in.length && this.#in[seq] === 1;
 	}
 
@@ -498,6 +508,7 @@ export class View {
 	 */
 	weight(): number {
 		let n = this.#in.byteLength;
+		n += 2 * ARRAY_HEADER_BYTES + this.#membershipSeq.byteLength + this.#membershipValue.byteLength;
 		n += ARRAY_HEADER_BYTES + REFERENCE_BYTES * this.#movers.length;
 		n += MAP_HEADER_BYTES; // #files exists from construction.
 		n += MAP_HEADER_BYTES; // #fileOf exists from construction.

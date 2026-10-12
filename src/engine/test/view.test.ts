@@ -8,6 +8,21 @@ import type { AtomId } from "../types.ts";
 import { lines, Repo } from "./helpers.ts";
 
 describe("View", () => {
+	it("reuses indexed membership across a long run of lines without a history-sized memo", () => {
+		const repo = Repo.init({ "long.txt": "line\n".repeat(1000) });
+		class CountingSet extends StableOverlaySet<AtomId> {
+			calls = 0;
+			override has(id: AtomId): boolean {
+				this.calls++;
+				return super.has(id);
+			}
+		}
+		const set = new CountingSet(["a0"]);
+		const view = new View(repo.graph, set);
+		set.calls = 0;
+		assert.equal(view.text("long.txt"), "line\n".repeat(1000));
+		assert.ok(set.calls <= 2, `membership was queried ${set.calls} times for one atom`);
+	});
 	it("immutable indexed membership avoids a history-sized bitmap and remains a snapshot", () => {
 		class RangeMembership extends StableSet<AtomId> {
 			readonly retainedBytes = 64;
@@ -40,6 +55,17 @@ describe("View", () => {
 		assert.equal(second.text("a.txt"), "80\n");
 		assert.equal(first.set.has("a80"), false);
 		assert.throws(() => new View(repo.graph, new StableOverlaySet<AtomId>(["a1"])), /not closed/);
+	});
+	it("membership memo collisions preserve both included and excluded historical atoms", () => {
+		const repo = Repo.init({ "f.txt": "0\n" });
+		for (let i = 1; i <= 257; i++) repo.edit({ edits: [{ file: "f.txt", old: `${i - 1}\n`, new: `${i}\n` }] });
+		const old = new View(repo.graph, new StableOverlaySet<AtomId>(["a0"]));
+		assert.equal(old.text("f.txt"), "0\n");
+		assert.deepEqual(
+			old.sequence("f.txt").map((line) => line.text),
+			["0"],
+		);
+		assert.equal(repo.view().text("f.txt"), "257\n");
 	});
 	it("keeps deleted lines as tombstones in the full sequence", () => {
 		const repo = Repo.init({ "f.txt": lines("one", "two", "three") });
