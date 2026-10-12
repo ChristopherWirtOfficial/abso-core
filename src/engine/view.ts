@@ -346,6 +346,53 @@ export class View {
 		return out;
 	}
 
+	/** Parent/successor traversal keeps no history-sized ancestry or sibling frontier. */
+	*#layoutNodes(start: number): IterableIterator<number> {
+		const graph = this.graph;
+		if (graph.hasOrderedChildren && !this.#hasMoves) {
+			const first = (parent: number, after?: number): number | undefined => {
+				for (const n of graph.orderedChildrenN(parent, after)) if (this.#has(graph.writerSeqOf(n))) return n;
+				return undefined;
+			};
+			let n = first(start);
+			while (n !== undefined) {
+				yield n;
+				const child = first(n);
+				if (child !== undefined) {
+					n = child;
+					continue;
+				}
+				let previous = n;
+				for (;;) {
+					const parent = graph.parentCodeOf(previous);
+					const sibling = first(parent, previous);
+					if (sibling !== undefined) {
+						n = sibling;
+						break;
+					}
+					if (parent === start) {
+						n = undefined;
+						break;
+					}
+					if (parent < 0 || parent >= previous) throw new Error("invalid persistent layout ancestry");
+					previous = parent;
+				}
+			}
+			return;
+		}
+		const stack: number[] = [];
+		const push = (parent: number): void => {
+			const children = this.#children(parent);
+			for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]!.n);
+		};
+		push(start);
+		while (stack.length) {
+			const n = stack.pop()!;
+			yield n;
+			push(n);
+		}
+	}
+
 	/** Lay out one file: its line tree from the set's atoms, linearized. */
 	#layout(path: string, complete: boolean): FileState {
 		const graph = this.graph;
@@ -363,17 +410,10 @@ export class View {
 		const seq: number[] = [];
 		const vis: number[] = [];
 		const deletedBy = new Map<number, readonly number[]>();
-		// Depth-first, iteratively (a file of n lines can be a chain n deep).
-		const stack: number[] = [];
-		const pushChildren = (code: number): void => {
-			const list = this.#children(code);
-			for (let i = list.length - 1; i >= 0; i--) stack.push(list[i]!.n);
-		};
+
 		const start = graph.startCodeOf(path);
-		if (start !== undefined) pushChildren(start);
 		const priority = (a: number, b: number) => graph.lamportOfSeq(a) - graph.lamportOfSeq(b) || a - b;
-		while (stack.length > 0) {
-			const n = stack.pop()!;
+		for (const n of start === undefined ? [] : this.#layoutNodes(start)) {
 			let deleted = false;
 			const by: number[] = [];
 			for (const deleter of graph.eachDeleterSeqOf(n)) {
@@ -386,7 +426,6 @@ export class View {
 				if (complete) deletedBy.set(seq.length, by.length > 1 ? by.sort(priority) : by);
 			} else vis.push(n);
 			if (complete) seq.push(n);
-			pushChildren(n);
 		}
 		const attrs: FileAttrs = {
 			exists: setters.get("exists")?.value === "1",

@@ -419,3 +419,73 @@ test("child indexes stream bounded pages before filtering historical siblings", 
 		storage.db.close();
 	}
 });
+
+test("persistent layout uses ordered successors without retaining deep or wide history frontiers", () => {
+	for (const shape of ["deep", "wide"] as const) {
+		const storage = new SqlState();
+		try {
+			const oracle = Repo.init({
+				"a.txt": shape === "deep" ? Array.from({ length: 1024 }, (_, n) => `line ${n}\n`).join("") : "base\n",
+			});
+			if (shape === "wide") {
+				const draft = oracle.draft({ edits: [{ file: "a.txt", old: "base", new: "branch" }] });
+				for (let seq = 1; seq <= 256; seq++) {
+					const atom = { ...draft, id: `a${seq}`, seq };
+					oracle.graph.add(atom);
+					oracle.shared.add(atom.id);
+				}
+			}
+			const before = oracle.view().text("a.txt");
+			oracle.edit({ edits: [{ file: "a.txt", old: before, new: "live\n" }] });
+			const graph = new Graph({ storage });
+			for (const id of oracle.shared) graph.add(oracle.graph.atom(id));
+			const reopened = new Graph({ storage });
+			reopened.eachChildN = () => {
+				throw Error("unordered child collection forbidden");
+			};
+			reopened.childrenN = () => {
+				throw Error("materialized child collection forbidden");
+			};
+			const original = reopened.orderedChildrenN.bind(reopened);
+			let active = 0,
+				maximum = 0;
+			reopened.orderedChildrenN = function* (parent: number, after?: number) {
+				active++;
+				maximum = Math.max(maximum, active);
+				try {
+					yield* original(parent, after);
+				} finally {
+					active--;
+				}
+			};
+			const view = new View(reopened, new StableOverlaySet(oracle.shared));
+			assert.equal(view.text("a.txt"), "live\n");
+			assert.equal(active, 0);
+			assert.equal(maximum, 1, "no ordered iterator retained per historical ancestor");
+			assert.deepEqual(view.sequence("a.txt"), oracle.view().sequence("a.txt"));
+		} finally {
+			storage.db.close();
+		}
+	}
+});
+
+test("ordered layout refuses missing format or child metadata instead of dropping history", () => {
+	const storage = new SqlState();
+	try {
+		const oracle = Repo.init({ "a.txt": "one\n" });
+		const graph = new Graph({ storage });
+		graph.add(oracle.graph.atom("a0"));
+		storage.remove("ordered-children", "format");
+		assert.throws(() => new View(new Graph({ storage }), new StableOverlaySet(["a0"])).text("a.txt"), /fresh adoption/);
+		assert.throws(
+			() => new Graph({ storage }).add(oracle.draft({ edits: [{ file: "a.txt", old: "one", new: "two" }] })),
+			/fresh adoption/,
+		);
+		storage.write("ordered-children", "format", 1);
+		const parent = graph.startCodeOf("a.txt")!;
+		storage.remove("ordered-children", JSON.stringify([String(parent), "meta"]));
+		assert.throws(() => [...graph.orderedChildrenN(parent)], /missing ordered index metadata/);
+	} finally {
+		storage.db.close();
+	}
+});

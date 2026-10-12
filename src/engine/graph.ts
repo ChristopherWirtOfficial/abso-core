@@ -15,6 +15,7 @@ import {
 	seqOf,
 	startNode,
 } from "./keys.ts";
+import { OrderedIndex, orderedChildKey } from "./ordered-index.ts";
 import {
 	type GraphStateStorage,
 	type StateMap,
@@ -631,6 +632,46 @@ export class Graph {
 		else yield* listOf(this.#runStarts.get(code));
 	}
 
+	get hasOrderedChildren(): boolean {
+		return this.#storage !== undefined;
+	}
+	#childPriority(n: number): string {
+		const seq = this.writerSeqOf(n);
+		return orderedChildKey({
+			n,
+			replaces: this.replacesN(n) ? 1 : 0,
+			lamport: this.lamportOfSeq(seq),
+			seq,
+			k: this.kOf(n),
+		});
+	}
+	/** Persistent layout order with a strict successor cursor; moves are separate. */
+	*orderedChildrenN(code: number, after?: number): IterableIterator<number> {
+		if (!this.#storage) throw new Error("ordered children require indexed storage");
+		const index = new OrderedIndex(this.#storage, "ordered-children", String(code));
+		if (this.#storage.read("ordered-children", "format") !== 1)
+			throw new Error("ordered children require fresh adoption");
+		if (index.size !== this.#runStartPages!.length(String(code))) throw new Error("ordered child index count mismatch");
+		const cursor = after === undefined ? undefined : this.#childPriority(after);
+		let implicit: number | undefined;
+		if (
+			code >= 0 &&
+			code + 1 < this.#lineTotal &&
+			this.#lineAtom.at(code + 1) === this.#lineAtom.at(code) &&
+			this.#lineParent.at(code + 1) === code
+		)
+			implicit = code + 1;
+		if (implicit !== undefined && cursor !== undefined && this.#childPriority(implicit) <= cursor) implicit = undefined;
+		for (const n of index.values(cursor)) {
+			if (implicit !== undefined && this.#childPriority(implicit) < this.#childPriority(n)) {
+				yield implicit;
+				implicit = undefined;
+			}
+			yield n;
+		}
+		if (implicit !== undefined) yield implicit;
+	}
+
 	replacesN(n: number): boolean {
 		return this.#replacing.at(n) === 1;
 	}
@@ -904,6 +945,11 @@ export class Graph {
 	}
 
 	#add(atom: Atom): void {
+		if (this.#storage && this.#storage.read("ordered-children", "format") !== 1) {
+			if (this.#atoms.length !== 0) throw new Error("ordered children require fresh adoption");
+			this.#storage.write("ordered-children", "format", 1);
+		}
+
 		validateShape(atom);
 		const seq = this.#atoms.length;
 		const bad = (why: string): never => {
@@ -1001,6 +1047,18 @@ export class Graph {
 			const file = this.#pathOf(run.file);
 			let parent = isStartNode(run.parent) ? -1 - file : this.#lineN(run.parent);
 			const first = this.#lineTotal;
+			if (this.#storage)
+				new OrderedIndex(this.#storage, "ordered-children", String(parent)).insert(
+					orderedChildKey({
+						n: first,
+						replaces: deletes?.has(run.parent) ? 1 : 0,
+						lamport: lam,
+						seq,
+						k: first - this.#lineBase[seq]!,
+					}),
+					first,
+				);
+
 			if (this.#runStartPages) this.#runStartPages.append(String(parent), first);
 			else pushOne(this.#runStarts, parent, first);
 			for (let i = 0; i < run.lines.length; i++) {
