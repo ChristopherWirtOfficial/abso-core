@@ -300,7 +300,17 @@ export class ProjectionSequence {
 					save(node);
 				}
 			} else throw Error("unknown operation");
-			for (const [id, node] of changed) map = this.set(map, id, node);
+			// Keep locator staging bounded even if a valid split/merge changes more
+			// than one batch. The enclosing transaction commits all batches together.
+			let batch: Array<readonly [number, SequenceNode]> = [];
+			for (const entry of changed) {
+				batch.push(entry);
+				if (batch.length === 256) {
+					map = this.#locator.setMany(map, batch);
+					batch = [];
+				}
+			}
+			map = this.#locator.setMany(map, batch);
 			return { map, root, next };
 		});
 	}

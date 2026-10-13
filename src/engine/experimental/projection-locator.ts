@@ -63,6 +63,46 @@ export class ProjectionLocator<T> {
 		this.#storage.write(this.#collection, "next", next + 1);
 		return next;
 	}
+	/** Persist only pages reachable from the final root of a bounded update batch. */
+	setMany(root: Page, values: ReadonlyArray<readonly [number, T]>): Page {
+		page(root);
+		if (values.length > 256) throw Error("locator batch limit");
+		return this.#storage.transaction(() => {
+			const staged = new Map<string, unknown>();
+			const storage: GraphStateStorage = {
+				read: (collection, key) =>
+					collection === this.#collection && staged.has(key) ? staged.get(key) : this.#storage.read(collection, key),
+				write: (collection, key, value) => {
+					if (collection !== this.#collection) throw Error("unexpected batch collection");
+					staged.set(key, value);
+				},
+				remove: () => {
+					throw Error("unexpected batch removal");
+				},
+				entries: () => {
+					throw Error("unexpected batch scan");
+				},
+				transaction: (body) => body(),
+			};
+			// The namespace is encoded into the collection at construction.
+			const namespace = JSON.parse(this.#collection.slice("experimental-locator:".length)) as string;
+			const index = new ProjectionLocator<T>(storage, namespace, this.#decode);
+			let result = root;
+			for (const [id, value] of values) result = index.set(result, id, value);
+			const retained = new Set<number>();
+			const visit = (id: Page): void => {
+				if (id === null || retained.has(id) || !staged.has(String(id))) return;
+				retained.add(id);
+				const node = staged.get(String(id)) as Node;
+				if (node.kind === "branch") for (const child of Object.values(node.children)) visit(child);
+			};
+			visit(result);
+			for (const id of retained) this.#storage.write(this.#collection, String(id), staged.get(String(id)));
+			if (staged.has("next")) this.#storage.write(this.#collection, "next", staged.get("next"));
+			return result;
+		});
+	}
+
 	get(root: Page, id: number): T | undefined {
 		page(root);
 		const key = keyOf(id);

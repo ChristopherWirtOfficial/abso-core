@@ -47,3 +47,59 @@ test("experimental locator preserves sparse old roots and rejects corrupt storag
 		storage.db.close();
 	}
 });
+
+test("bounded locator batches preserve old roots, discard intermediate pages, and roll back writes", () => {
+	const db = new SqlState();
+	try {
+		const index = new ProjectionLocator(db, "batch", decode);
+		const old = index.set(null, 0, 1);
+		const values = Array.from({ length: 64 }, (_, i) => [i, i + 10] as const);
+		const before = db.writes;
+		const root = index.setMany(old, values);
+		const batchWrites = db.writes - before;
+		assert.equal(index.get(old, 0), 1);
+		for (const [id, value] of values) assert.equal(index.get(root, id), value);
+		const plain = new ProjectionLocator(db, "plain", decode);
+		let sequential: number | null = plain.set(null, 0, 1);
+		const baseline = db.writes;
+		for (const [id, value] of values) sequential = plain.set(sequential, id, value);
+		assert.ok(batchWrites < (db.writes - baseline) / 2);
+		const rows = db.db.prepare("SELECT * FROM state ORDER BY collection,key").all();
+		// Fail every persisted page and the final allocation-counter write.
+		for (let offset = 1; offset <= batchWrites; offset++) {
+			db.failWrite = db.writes + offset;
+			assert.throws(() => index.setMany(old, values), /injected/);
+			assert.deepEqual(db.db.prepare("SELECT * FROM state ORDER BY collection,key").all(), rows);
+		}
+		db.failWrite = Infinity;
+		assert.throws(
+			() =>
+				index.setMany(
+					root,
+					Array.from({ length: 257 }, () => [0, 1] as const),
+				),
+			/batch limit/,
+		);
+		assert.equal(index.setMany(root, []), root);
+		const duplicate = index.setMany(root, [
+			[0, 100],
+			[0, 200],
+			[0xffffffff, 300],
+		]);
+		assert.equal(index.get(duplicate, 0), 200);
+		assert.equal(index.get(duplicate, 0xffffffff), 300);
+		assert.equal(index.get(root, 0), 10);
+		const stable = db.db.prepare("SELECT * FROM state ORDER BY collection,key").all();
+		assert.throws(
+			() =>
+				index.setMany(duplicate, [
+					[1, 3],
+					[2 ** 32, 4],
+				]),
+			/identity limit/,
+		);
+		assert.deepEqual(db.db.prepare("SELECT * FROM state ORDER BY collection,key").all(), stable);
+	} finally {
+		db.db.close();
+	}
+});
