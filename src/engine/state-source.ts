@@ -88,6 +88,11 @@ export class CachedStateStorage implements GraphStateStorage {
 			const json = JSON.stringify({ value });
 			entry = { kind: "json", json, bytes: overhead + 2 * json.length };
 		}
+		this.#remember(cacheKey, entry);
+		return value;
+	}
+	#remember(cacheKey: string, entry: CachedValue): void {
+		this.#drop(cacheKey);
 		// Payload accounting is bounded, not a measurement of actual isolate heap.
 		if (entry.bytes <= this.#maxBytes && this.#maxEntries > 0) {
 			while (this.#bytes + entry.bytes > this.#maxBytes || this.#cache.size >= this.#maxEntries)
@@ -95,11 +100,15 @@ export class CachedStateStorage implements GraphStateStorage {
 			this.#cache.set(cacheKey, entry);
 			this.#bytes += entry.bytes;
 		}
-		return value;
 	}
 	write(collection: string, key: string, value: unknown): void {
-		this.#drop(JSON.stringify([collection, key]));
+		const cacheKey = JSON.stringify([collection, key]);
+		this.#drop(cacheKey);
 		this.#source.write(collection, key, value);
+		// Allocation counters are immutable scalars. Keep successful writes within
+		// the existing cache budget instead of immediately reading them back.
+		if (typeof value === "number" && Number.isSafeInteger(value) && !Object.is(value, -0))
+			this.#remember(cacheKey, { kind: "scalar", value, bytes: 2 * cacheKey.length + 176 });
 	}
 	remove(collection: string, key: string): void {
 		this.#drop(JSON.stringify([collection, key]));

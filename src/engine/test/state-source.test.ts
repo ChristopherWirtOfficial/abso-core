@@ -5,6 +5,48 @@ import { CachedStateStorage, StableOverlaySet, storedLists, storedNumbers } from
 import { lines, Repo } from "./helpers.ts";
 import { SqlState } from "./storage-helper.ts";
 
+test("counter writes avoid rereads while respecting failed writes, rollback and cache bounds", () => {
+	const source = new SqlState();
+	try {
+		const cache = new CachedStateStorage(source, 512, 2);
+		const before = source.reads;
+		for (let n = 0; n < 100; n++) {
+			cache.write("counter", "next", n);
+			assert.equal(cache.read("counter", "next"), n);
+			assert.ok(cache.retainedBytes <= 512);
+			assert.ok(cache.retainedEntries <= 2);
+		}
+		assert.equal(source.reads, before);
+		source.failWrite = source.writes + 1;
+		assert.throws(() => cache.write("counter", "next", 100), /injected/);
+		assert.equal(cache.read("counter", "next"), 99);
+		source.failWrite = Infinity;
+		assert.throws(
+			() =>
+				cache.transaction(() => {
+					cache.write("counter", "next", 101);
+					assert.equal(cache.read("counter", "next"), 101);
+					throw Error("counter rollback");
+				}),
+			/counter rollback/,
+		);
+		assert.equal(cache.retainedEntries, 0);
+		assert.equal(cache.read("counter", "next"), 99);
+		for (let n = 0; n < 20; n++) cache.write("counter", String(n), n);
+		assert.ok(cache.retainedBytes <= 512);
+		assert.ok(cache.retainedEntries <= 2);
+		assert.equal(cache.read("counter", "0"), 0);
+		const disabled = new CachedStateStorage(source, 0, 0);
+		disabled.write("counter", "next", 102);
+		assert.equal(disabled.retainedEntries, 0);
+		assert.equal(disabled.read("counter", "next"), 102);
+		cache.write("counter", "negative-zero", -0);
+		assert.equal(Object.is(cache.read("counter", "negative-zero"), source.read("counter", "negative-zero")), true);
+	} finally {
+		source.db.close();
+	}
+});
+
 test("current visibility stops at the first included deletion while history retains every deleter", () => {
 	class ObservedStorage extends SqlState {
 		pageReads = 0;

@@ -32,11 +32,12 @@ test("projection scratch is isolated, detached and rolled back inside canonical 
 			);
 			assert.deepEqual(result, { value: 99, data: new Int32Array([1, 2]) });
 			assert.throws(() => escaped!.write("x", "y", true), /ended/);
+			assert.equal(storage.retainedEntries, 0, "scratch rollback invalidates every cached value");
 			assert.equal(storage.read("canonical", "before"), 1);
 			storage.write("canonical", "after", 2);
 		});
 		assert.equal(source.db.prepare("SELECT count(*) AS n FROM state").get()!.n, 2);
-		assert.equal(storage.retainedEntries, 1);
+		assert.equal(storage.retainedEntries, 2, "only the canonical read and successful counter write remain");
 		assert.equal(storage.read("canonical", "after"), 2);
 	} finally {
 		source.db.close();
