@@ -3,6 +3,7 @@
 // which space) is applied first, in spaces.ts.
 
 import type { AtomId, Graph } from "../../src/engine/index.ts";
+import { outlastsSync } from "./news.ts";
 import { ProjectError } from "./project-error.ts";
 import type {
 	AgentState,
@@ -211,11 +212,11 @@ export function applyEntry(host: ApplyEntryHost, entry: Entry, at: number, time:
 		}
 		case "heard": {
 			const agent = host.agentOf(entry.agent);
-			// A sync's stale heard keeps announcements, so it hears no tell.
+			// A sync's stale heard keeps announcements and settles' news (outlastsSync), so it hears no tell.
 			if (entry.stale !== true)
 				for (const tell of host.tells.values())
 					if (tell.heard.get(agent.name) === null) tell.heard.set(agent.name, { at: time });
-			const keep = agent.news.map((t) => entry.stale === true && t.startsWith("Announcement from "));
+			const keep = agent.news.map((t) => entry.stale === true && outlastsSync(t));
 			agent.news = agent.news.filter((_, i) => keep[i]);
 			agent.newsAt = agent.newsAt.filter((_, i) => keep[i]);
 			break;

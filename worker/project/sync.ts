@@ -3,6 +3,7 @@ import { View } from "../../src/engine/index.ts";
 // SyncHost; today the host is Project.
 
 import type { AtomId, Graph, ReadView } from "../../src/engine/index.ts";
+import { outlastsSync } from "./news.ts";
 import { ProjectError } from "./project-error.ts";
 import type { AgentState, Entry, MergedLine, SyncAnswer } from "./project-types.ts";
 import { last, SHARED, type Space } from "./spaces.ts";
@@ -79,7 +80,7 @@ export function sync(host: SyncHost, agentName: string, options: { label?: strin
 	entries.push({ type: "sync", agent: agent.name, version: target });
 	host.apply(entries[entries.length - 1]!);
 	// News about versions the agent has now synced past is moot: the sync answer lists what's still open (#37).
-	if (agent.news.some((t) => !t.startsWith("Announcement from "))) {
+	if (agent.news.some((t) => !outlastsSync(t))) {
 		const heard: Entry = { type: "heard", agent: agent.name, stale: true };
 		entries.push(heard);
 		host.apply(heard);

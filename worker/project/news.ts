@@ -122,6 +122,14 @@ export function markedItem(draftId: string, file: string, blocks: number): NewsI
 	};
 }
 
+/**
+ * News a sync doesn't make moot, so it is kept through one: announcements,
+ * and what a settle kept (the pull brings the file, not whose side survived).
+ */
+export function outlastsSync(text: string): boolean {
+	return text.startsWith("Announcement from ") || / settled its collision with your version \d+ in /.test(text);
+}
+
 const SETTLED_WHAT: Record<Kept, string> = {
 	theirs: "it kept your lines",
 	yours: "it kept its own lines, not yours",

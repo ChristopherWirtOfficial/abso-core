@@ -103,6 +103,17 @@ describe("a held push", () => {
 		assert.ok(news.out.includes(`Its held push said: "${HELD}"`), news.out);
 	});
 
+	it("a pull doesn't drop the news of what a settle kept", async () => {
+		const { alice, bob } = await held();
+		assert.equal((await run(bob, "pull")).exit, 0);
+		assert.equal((await run(bob, "settle", "store-policy.md", "--both")).exit, 0);
+		assert.equal((await run(bob, "push", "-m", "Settle: keep both")).exit, 0);
+		const pulled = await run(alice, "pull");
+		assert.equal(pulled.exit, 0, pulled.out);
+		const news = await run(alice, "news");
+		assert.match(news.out, /bob settled its collision with your version 1 in store-policy\.md, pushing version 2/);
+	});
+
 	it("the change page says what a settle kept in words that read for each choice", async () => {
 		for (const [how, said] of [
 			["yours", "kept bob's"],
