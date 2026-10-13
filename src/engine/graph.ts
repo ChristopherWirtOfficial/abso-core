@@ -1089,7 +1089,7 @@ export class Graph {
 		// Accept.
 		const frozen = freezeAtom(
 			atom,
-			(id) => this.#atoms[seqOf(id)]!.id,
+			(id) => this.idOfSeq(seqOf(id)),
 			(author) => {
 				if (this.#storage) return author;
 				let a = this.#authors.get(author);

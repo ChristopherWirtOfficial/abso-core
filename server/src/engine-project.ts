@@ -17,14 +17,14 @@ export interface SqliteStorage {
 
 // Characters per row. SQLite's 2 MB cap is in bytes, and a character is at
 // most 3 bytes of UTF-8 (an emoji is 2 characters and 4 bytes), so 600,000 stays under it.
-const PART = 600_000;
+export const LOG_PART_CHARACTERS = 600_000;
 
-/** An entry's JSON in rows of at most PART characters, never cutting an emoji's two halves apart. */
+/** An entry's JSON in rows of at most LOG_PART_CHARACTERS characters, never cutting an emoji's two halves apart. */
 export function logParts(text: string): string[] {
 	const parts: string[] = [];
 	let at = 0;
 	do {
-		let end = Math.min(at + PART, text.length);
+		let end = Math.min(at + LOG_PART_CHARACTERS, text.length);
 		const c = text.charCodeAt(end - 1);
 		if (end < text.length && c >= 0xd800 && c <= 0xdbff) end--;
 		parts.push(text.slice(at, end));
@@ -93,6 +93,41 @@ export class SqliteLog implements LogStore {
 	/** The seq the next entry would take. A copy's next page must start here. */
 	seq(): number {
 		return this.next;
+	}
+
+	/** Reject an oversized canonical frame before loading its text into JavaScript. */
+	boundedFrame(seq: number, maxBytes: number): string {
+		if (
+			!Number.isSafeInteger(seq) ||
+			seq < 0 ||
+			!Number.isSafeInteger(maxBytes) ||
+			maxBytes < 1 ||
+			maxBytes > 8_000_000
+		)
+			throw new Error("invalid canonical frame bound");
+		const size = this.storage.sql
+			.exec(
+				"SELECT COUNT(*) AS parts, COALESCE(SUM(LENGTH(CAST(text AS BLOB))), 0) AS bytes FROM log WHERE seq = ?",
+				seq,
+			)
+			.toArray()[0] as { parts: number; bytes: number };
+		if (!size || size.parts < 1 || size.parts > 256 || size.bytes > maxBytes)
+			throw new Error("canonical frame exceeds adoption bound or is missing");
+		const rows = this.storage.sql.exec("SELECT part, text FROM log WHERE seq = ? ORDER BY part", seq).toArray() as {
+			part: number;
+			text: string;
+		}[];
+		if (rows.length !== size.parts || rows.some((row, part) => row.part !== part))
+			throw new Error("canonical frame parts are incomplete");
+		return rows.map((row) => row.text).join("");
+	}
+
+	/** Refreshes the in-memory cursor after an enclosing transaction rolls back. */
+	refreshSequence(): void {
+		const rows = this.storage.sql.exec("SELECT COALESCE(MAX(seq), -1) AS last FROM log").toArray() as {
+			last: number;
+		}[];
+		this.next = (rows[0]?.last ?? -1) + 1;
 	}
 
 	/** Monotonic cache invalidation epoch for every canonical log mutation. */

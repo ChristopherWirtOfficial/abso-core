@@ -5,8 +5,8 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { SqliteStorage } from "../src/engine-project.ts";
 
-export function memoryStorage(): SqliteStorage & { db: DatabaseSync } {
-	const db = new DatabaseSync(":memory:");
+export function memoryStorage(filename = ":memory:"): SqliteStorage & { db: DatabaseSync } {
+	const db = new DatabaseSync(filename);
 	let depth = 0;
 	return {
 		db,

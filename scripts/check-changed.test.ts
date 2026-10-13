@@ -14,7 +14,7 @@ test("a changed source file brings in the test files that import it, through oth
 	assert.ok(!files.includes("scripts/check-changed.test.ts"), "a test that doesn't reach the file stays out");
 	assert.deepEqual(
 		p.typechecks.map((c: { tsconfig: string }) => c.tsconfig),
-		["tsconfig.json"],
+		["tsconfig.json", "server/tsconfig.json"],
 	);
 	assert.deepEqual(p.lint, ["src/engine/text.ts"]);
 });
@@ -31,4 +31,10 @@ test("a changed test file runs itself", () => {
 test("a change to setup runs the full check", () => {
 	assert.deepEqual(plan(["src/engine/text.ts", "package.json"]).full, ["package.json"]);
 	assert.deepEqual(plan(["tsconfig.json"]).full, ["tsconfig.json"]);
+});
+
+test("server changes include their tests and worker types", () => {
+	const p = plan(["server/src/engine-project.ts"]);
+	assert.ok(p.tests.flatMap((t: { files: string[] }) => t.files).includes("server/test/engine-project.test.ts"));
+	assert.ok(p.typechecks.some((c: { tsconfig: string }) => c.tsconfig === "server/tsconfig.json"));
 });

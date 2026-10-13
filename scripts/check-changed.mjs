@@ -26,12 +26,18 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TESTS = [
 	{
 		cwd: ".",
-		globs: ["src/**/*.test.ts", "worker/project/**/*.test.ts", "client/test/**/*.test.ts", "scripts/**/*.test.ts"],
+		globs: [
+			"src/**/*.test.ts",
+			"worker/project/**/*.test.ts",
+			"client/test/**/*.test.ts",
+			"scripts/**/*.test.ts",
+			"server/test/**/*.test.ts",
+		],
 		args: ["--import", "./client/test/setup.ts"],
 	},
 ];
 /** Typechecks: a tsconfig, from the repo root. */
-const TYPECHECKS = [{ tsconfig: "tsconfig.json" }];
+const TYPECHECKS = [{ tsconfig: "tsconfig.json" }, { tsconfig: "server/tsconfig.json" }];
 /** Files whose change can reach anything: the full check runs instead. */
 const SETUP = [
 	"**/package.json",

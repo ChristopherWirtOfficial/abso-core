@@ -31,3 +31,28 @@ test("indexed identities and metadata do not decode atom payloads", () => {
 		db.db.close();
 	}
 });
+
+test("accepting an edit does not decode historical atoms to canonicalize identities", () => {
+	const db = new SqlState();
+	try {
+		const repo = Repo.init({ "a.txt": `first\n${"old\n".repeat(8191)}` });
+		const graph = new Graph({ storage: db });
+		graph.add(repo.graph.atom("a0"));
+		const edit = repo.edit({ edits: [{ file: "a.txt", old: "first\n", new: "changed\n" }] });
+		assert.ok(edit.deps.includes("a0"));
+		const read = db.read.bind(db);
+		db.read = (collection, key) => {
+			if (collection === "atoms") throw Error("historical atom payload read forbidden");
+			return read(collection, key);
+		};
+		graph.add(edit);
+		assert.equal(graph.size, 2);
+		assert.equal(graph.idOfSeq(1), edit.id);
+		assert.equal(graph.lamport(edit.id), repo.graph.lamport(edit.id));
+		assert.deepEqual(graph.filesOf(edit.id), repo.graph.filesOf(edit.id));
+		db.read = read;
+		assert.deepEqual(graph.atom(edit.id), repo.graph.atom(edit.id));
+	} finally {
+		db.db.close();
+	}
+});
