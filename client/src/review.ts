@@ -111,7 +111,7 @@ export function changePage(c: ChangeAnswer): string[] {
 			: []),
 		...(c.refusals.length > 0
 			? [
-					`Refused ${plural(c.refusals.length, "time")} on the way: ${c.refusals.map((r) => `${r.kinds.join(", ")} (${r.files.join(", ")})`).join("; ")}.`,
+					`Refused ${plural(c.refusals.length, "time")} on the way: ${c.refusals.map((r) => `${r.kinds.join(", ")} (${r.files.join(", ")})${r.message ? `: ${JSON.stringify(r.message)}` : ""}`).join("; ")}.`,
 				]
 			: []),
 		...((c.reviewers ?? []).length > 0

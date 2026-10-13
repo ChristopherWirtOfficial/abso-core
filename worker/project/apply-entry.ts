@@ -112,6 +112,7 @@ export function applyEntry(host: ApplyEntryHost, entry: Entry, at: number, time:
 			}
 			host.joinChange(agent, entry, at, space.name === SHARED ? null : space.name);
 			agent.marked = agent.marked.filter((r) => r.space !== (entry.space ?? SHARED));
+			delete agent.held;
 			if (entry.queued !== undefined) host.setQueued(host.queued().filter((q) => q.id !== entry.queued));
 			break;
 		}
@@ -243,23 +244,29 @@ export function applyEntry(host: ApplyEntryHost, entry: Entry, at: number, time:
 				via: entry.via,
 				time: entry.time,
 				collisions: entry.collisions.map((c) => ({ ...c })),
+				...(entry.message ? { message: entry.message } : {}),
 			});
 			{
 				// On the change the agent was working on, when there is one (#44).
 				const agent = host.agentOf(entry.agent);
 				host.active(agent, entry.time);
 				const id = host.currentChange(agent, entry.time);
+				const refusal = {
+					at,
+					time: entry.time,
+					kinds: [...new Set(entry.collisions.map((c) => c.kind))].sort(),
+					files: [...new Set(entry.collisions.map((c) => c.file))].sort(),
+					...(entry.message ? { message: entry.message } : {}),
+				};
 				if (id !== undefined) {
 					const rec = host.changeRecord(id, agent, entry.time);
-					rec.refusals.push({
-						at,
-						time: entry.time,
-						kinds: [...new Set(entry.collisions.map((c) => c.kind))].sort(),
-						files: [...new Set(entry.collisions.map((c) => c.file))].sort(),
-					});
+					rec.refusals.push({ ...refusal, files: [...refusal.files], kinds: [...refusal.kinds] });
 					rec.last = at;
 					host.changes.set(id, rec);
 				}
+				// Kept until it pushes: the settle tells the held push's reason, and its change lists the refusal.
+				if (entry.via === "publish")
+					agent.held = [...(agent.held ?? []), { ...refusal, ...(id !== undefined ? { change: id } : {}) }];
 			}
 			break;
 		case "switch": {

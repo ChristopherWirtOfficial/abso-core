@@ -129,7 +129,7 @@ const SETTLED_WHAT: Record<Kept, string> = {
 	rewrote: "it kept part of each side or rewrote them",
 };
 
-/** The other author of a marked collision a publish settled (#11): what was kept, and any lines lost. */
+/** The other author of a marked collision a publish settled (#11): what was kept, any lines lost, and the settler's held reason. */
 export function settledItem(by: string, version: number, s: Settled): NewsItem {
 	return {
 		key: `settled ${by} ${version} ${s.file} ${s.theirs.version}`,
@@ -138,6 +138,7 @@ export function settledItem(by: string, version: number, s: Settled): NewsItem {
 			(s.lost
 				? ` It also lost ${s.lost.length === 1 ? "a line" : `${s.lost.length} lines`} you both still had: ${s.lost.map((l) => `"${clip(l)}"`).join(", ")}.`
 				: "") +
+			(s.held ? ` Its held push said: "${clip(s.held)}".` : "") +
 			` abso show ${version}:${s.file} shows the file.`,
 	};
 }

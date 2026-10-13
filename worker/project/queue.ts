@@ -4,7 +4,7 @@
 import { type AtomId, buildAtom, type Graph, type ReadView } from "../../src/engine/index.ts";
 import type { Pair } from "./collisions.ts";
 import { definedTwice } from "./definitions.ts";
-import { keptOf, lostLines } from "./markers.ts";
+import { heldMessage, keptOf, lostLines } from "./markers.ts";
 import { clip } from "./news.ts";
 import { ProjectError } from "./project-error.ts";
 import { projectFileIn } from "./project-helpers.ts";
@@ -49,6 +49,7 @@ export interface QueueHost {
 		time: number,
 		collisions: Collision[],
 		entries: Entry[],
+		message?: string,
 	): { ok: false; collisions: Collision[] };
 	currentChange(agent: AgentState, time: number): number | undefined;
 	nextAt(): number;
@@ -149,7 +150,7 @@ export function enqueue(
 				});
 			}
 		}
-		if (collisions.length > 0) return host.refuse(agent, space, "publish", time, collisions, entries);
+		if (collisions.length > 0) return host.refuse(agent, space, "publish", time, collisions, entries, message);
 	}
 	const view = host.agentView(agent);
 	const settled: Settled[] = agent.marked
@@ -157,11 +158,13 @@ export function enqueue(
 		.map((r) => {
 			const lines = view.hasFile(r.file) ? view.lines(r.file).map((l) => l.text) : [];
 			const lost = lostLines(lines, r);
+			const held = heldMessage(agent, r.file);
 			return {
 				file: r.file,
 				kept: keptOf(lines, r),
 				theirs: { agent: r.agent, version: r.version },
 				...(lost.length > 0 ? { lost } : {}),
+				...(held ? { held } : {}),
 			};
 		});
 	const id = host.queuedId() + 1;

@@ -3,7 +3,8 @@
 // that change's author and message, and the publish that brought it into
 // shared, with its message. Why adds the change's reasons, what it settled,
 // and the reasons other changes give that point at it.
-import type { AtomId } from "../../src/engine/index.ts";
+import { type Atom, type AtomId, type LineId, type ReadView, View } from "../../src/engine/index.ts";
+import { blocksIn, isMarkerLine } from "./markers.ts";
 import { pathKey } from "./pathkey.ts";
 import type { Project } from "./project.ts";
 
@@ -66,7 +67,7 @@ function lines(project: Project, asked: string, where: BlameWhere) {
 	const { view, name } = viewOf(project, where);
 	const file = project.spellingIn(view, asked);
 	if (!view.hasFile(file)) throw badRequest(`${asked} isn't in ${name}`);
-	return { file, all: view.lines(file) };
+	return { file, all: view.lines(file), view };
 }
 
 /**
@@ -113,9 +114,59 @@ export function blame(
 	};
 }
 
+/**
+ * The settle a line was kept through, when its own change settled nothing:
+ * an edit that took out the markers of a block the line sat in (as yours or
+ * theirs), as abso settle --yours, --theirs or --both makes. The earliest,
+ * if several did.
+ */
+function keptThrough(project: Project, view: ReadView, file: string, line: LineId, author: Atom): Atom | undefined {
+	const graph = project.graph;
+	const set = view.set;
+	for (const s of graph.atoms()) {
+		if (s.seq <= author.seq || s.resolves.length === 0 || !set.has(s.id)) continue;
+		const marks = s.deletes.filter((id) => {
+			const info = graph.line(id);
+			return info !== undefined && info.file === file && isMarkerLine(info.text);
+		});
+		if (marks.length === 0) continue;
+		// The file just before the settle, markers and all.
+		const before = new View(
+			graph,
+			graph
+				.atoms()
+				.slice(0, s.seq)
+				.filter((a) => set.has(a.id))
+				.map((a) => a.id),
+		);
+		if (!before.hasFile(file)) continue;
+		const lines = before.lines(file);
+		const at = lines.findIndex((l) => l.id === line);
+		if (at < 0) continue;
+		const block = blocksIn(lines.map((l) => l.text)).find((b) => at > b.start && at < b.end);
+		if (block && marks.includes(lines[block.start]!.id)) return s;
+	}
+	return undefined;
+}
+
+/** The settler's push that was held for this collision, newest first: its message is that side's reason. */
+function heldPush(project: Project, settle: Atom, file: string, after: number) {
+	const held = project
+		.refusals({ agent: settle.author, limit: 1000 })
+		.refusals.find(
+			(r) =>
+				r.via === "publish" &&
+				r.message !== undefined &&
+				r.time <= settle.time &&
+				r.time >= after &&
+				r.collisions.some((c) => c.file === file),
+		);
+	return held ? { agent: held.agent, message: held.message!, time: held.time } : undefined;
+}
+
 /** One line: the change that wrote it, the publish behind it, its reasons, and what it settled. */
 export function why(project: Project, asked: string, n: number, where: BlameWhere = {}) {
-	const { file, all } = lines(project, asked, where);
+	const { file, all, view } = lines(project, asked, where);
 	const line = all[n - 1];
 	if (!line)
 		throw Object.assign(new Error(`${file} has ${all.length} lines; ask for one in 1-${all.length}`), {
@@ -163,10 +214,17 @@ export function why(project: Project, asked: string, n: number, where: BlameWher
 	builtOn.sort((a, b) =>
 		(a.draft === undefined) !== (b.draft === undefined) ? (a.draft === undefined ? -1 : 1) : b.version - a.version,
 	);
-	const settled = atom.resolves.map((id) => {
+	// What it settled: its own change, or the settle that kept it (both sides of a block it sat in).
+	const kept = atom.resolves.length === 0 ? keptThrough(project, view, file, line.id, atom) : undefined;
+	const settle = kept ?? atom;
+	const settled = settle.resolves.map((id) => {
 		const a = graph.atom(id);
 		return { atom: id, author: a.author, message: a.message, publish: publishOf(project, id) };
 	});
+	const held =
+		settled.length > 0
+			? heldPush(project, settle, file, Math.max(0, ...settled.map((s) => s.publish?.time ?? 0)))
+			: undefined;
 	return {
 		file,
 		line: n,
@@ -184,6 +242,8 @@ export function why(project: Project, asked: string, n: number, where: BlameWher
 		reasons,
 		reasonsIn,
 		settled,
+		...(kept ? { settledBy: { atom: kept.id, author: kept.author, publish: publishOf(project, kept.id) } } : {}),
+		...(held ? { held } : {}),
 		builtOn,
 	};
 }

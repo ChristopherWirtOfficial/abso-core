@@ -161,6 +161,10 @@ export interface WhyAnswer {
 		readonly message: string;
 		readonly publish: Publish | null;
 	}[];
+	/** When the line's own change settled nothing: the settle that kept it from a marker block. */
+	readonly settledBy?: { readonly atom: string; readonly author: string; readonly publish: Publish | null };
+	/** The settler's push that was held for the collision, with its message: that side's reason. */
+	readonly held?: { readonly agent: string; readonly message: string; readonly time: number };
 }
 export interface WhereAnswer {
 	readonly version: number;

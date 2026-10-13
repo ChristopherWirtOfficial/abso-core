@@ -1928,8 +1928,8 @@ export class Project {
 			collision: (agent, pair) => this.#collision(agent, pair),
 			definitionCollisions: (agent, newer) => this.#definitionCollisions(agent, newer),
 			duplicates: (agent) => this.#duplicates(agent),
-			refuse: (agent, space, via, time, collisions, entries) =>
-				this.#refuse(agent, space, via, time, collisions, entries),
+			refuse: (agent, space, via, time, collisions, entries, message) =>
+				this.#refuse(agent, space, via, time, collisions, entries, message),
 			markerCollisions: (agent) => this.#markerCollisions(agent),
 			enqueue: (agent, message, time, draft, resolves, entries) =>
 				this.#enqueue(agent, message, time, draft, resolves, entries),
@@ -1975,8 +1975,8 @@ export class Project {
 			pairs: (draft, against, settled) => this.#pairs(draft, against, settled),
 			describe: (pair, yoursView, theirsView, spaceName) => this.#describe(pair, yoursView, theirsView, spaceName),
 			touchedFiles: (ids, views) => this.#touchedFiles(ids, views),
-			refuse: (agent, space, via, time, collisions, entries) =>
-				this.#refuse(agent, space, via, time, collisions, entries),
+			refuse: (agent, space, via, time, collisions, entries, message) =>
+				this.#refuse(agent, space, via, time, collisions, entries, message),
 			currentChange: (agent, time) => this.#currentChange(agent, time),
 			nextAt: () => this.#nextAt,
 			apply: (entry) => this.#apply(entry),

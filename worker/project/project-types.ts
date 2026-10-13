@@ -166,6 +166,8 @@ export type Entry =
 			readonly space?: string;
 			readonly via: "publish" | "land";
 			readonly time: number;
+			/** The held push's message: its reason, which the settle that follows tells. */
+			readonly message?: string;
 			readonly collisions: readonly {
 				readonly kind: Collision["kind"];
 				readonly file: string;
@@ -343,7 +345,7 @@ export interface ChangeRecord {
 	readonly time: number;
 	readonly versions: { version: number; draft: string | null; message: string; time: number; at: number }[];
 	readonly settled: (Settled & { version: number })[];
-	readonly refusals: { at: number; time: number; kinds: string[]; files: string[] }[];
+	readonly refusals: { at: number; time: number; kinds: string[]; files: string[]; message?: string }[];
 	/** The log position of its newest entry. */
 	last: number;
 }
@@ -417,7 +419,7 @@ export interface ChangeAnswer {
 	versions: { version: number; draft: string | null; message: string; time: number; files: string[] }[];
 	files: string[];
 	settled: (Settled & { version: number })[];
-	refusals: { time: number; kinds: string[]; files: string[] }[];
+	refusals: { time: number; kinds: string[]; files: string[]; message?: string }[];
 	/** Its notes, replies included, oldest first. */
 	notes: NoteAnswer[];
 	/** The reviewers whose areas (avcs.json's "review") its files fall in, and whether each has left a note on it. */
@@ -448,6 +450,8 @@ export interface Settled {
 	theirs: { agent: string; version: number };
 	/** Lines both sides still had that the settled file lost (#37): check them. */
 	lost?: string[];
+	/** The message of the settler's push that was held for this collision: its side's reason. */
+	held?: string;
 }
 /** A line both sides changed that a sync merged word by word (#37): check it. */
 export interface MergedLine {
@@ -550,6 +554,8 @@ export interface Refusal {
 	via: "publish" | "land";
 	time: number;
 	collisions: { kind: Collision["kind"]; file: string; name?: string }[];
+	/** The held push's message. */
+	message?: string;
 }
 /** One file before and after: text, or null where it doesn't exist. */
 export interface FileChange {
@@ -727,6 +733,12 @@ export interface AgentState {
 	starting?: Starting;
 	/** Collisions a sync wrote markers for (#11), until it publishes in that space. */
 	marked: (MarkedRegion & { space: string })[];
+	/**
+	 * Its pushes refused since it last pushed, with their messages, so the
+	 * settle that follows can tell its reason; `change` is the change a
+	 * refusal was put on, if one was going.
+	 */
+	held?: { at: number; time: number; kinds: string[]; files: string[]; message?: string; change?: number }[];
 }
 
 /** Another agent with work on a file: unpublished changes, a starting note, or both. */

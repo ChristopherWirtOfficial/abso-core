@@ -5,7 +5,7 @@ import { type AtomId, buildAtom, type Hunk, joinLines, type ReadView } from "../
 import { differenceSet, unionOverlay } from "../../src/engine/state-source.ts";
 import type { Pair } from "./collisions.ts";
 import type { DefinitionCollision } from "./definition-rule.ts";
-import { keptOf, lostLines, settleLines } from "./markers.ts";
+import { heldMessage, keptOf, lostLines, settleLines } from "./markers.ts";
 import { ProjectError } from "./project-error.ts";
 import type { AgentState, Collision, Entry, Meta, Mode, PublishAnswer, Settled } from "./project-types.ts";
 import { last, SHARED, type Space } from "./spaces.ts";
@@ -48,6 +48,7 @@ export interface PublishHost {
 		time: number,
 		collisions: Collision[],
 		entries: Entry[],
+		message?: string,
 	): { ok: false; collisions: Collision[] };
 	markerCollisions(agent: AgentState): Collision[];
 	enqueue(
@@ -135,7 +136,7 @@ export function publishDraft(
 		...host.definitionCollisions(agent, newer).map((d) => d.collision),
 		...host.duplicates(agent),
 	];
-	if (collisions.length > 0) return host.refuse(agent, space, "publish", time, collisions, entries);
+	if (collisions.length > 0) return host.refuse(agent, space, "publish", time, collisions, entries, message);
 	// Settled means the markers are gone (#11): refused while the draft adds any.
 	const marked = host.markerCollisions(agent);
 	if (marked.length > 0) return host.refuse(agent, space, "publish", time, marked, entries);
@@ -173,11 +174,13 @@ export function publishDraft(
 		.map((r) => {
 			const lines = view.hasFile(r.file) ? view.lines(r.file).map((l) => l.text) : [];
 			const lost = lostLines(lines, r);
+			const held = heldMessage(agent, r.file);
 			return {
 				file: r.file,
 				kept: keptOf(lines, r),
 				theirs: { agent: r.agent, version: r.version },
 				...(lost.length > 0 ? { lost } : {}),
+				...(held ? { held } : {}),
 			};
 		});
 	entries.push({

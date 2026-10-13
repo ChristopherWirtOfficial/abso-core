@@ -11,7 +11,7 @@ export interface RefuseHost {
 	readonly refusals: readonly Refusal[];
 }
 
-/** Answer a refusal, and log it (an entry that changes nothing but the counts). */
+/** Answer a refusal, and log it (an entry that changes nothing but the counts, and keeps a push's message). */
 export function refuse(
 	host: RefuseHost,
 	agent: AgentState,
@@ -20,6 +20,7 @@ export function refuse(
 	time: number,
 	collisions: Collision[],
 	entries: Entry[],
+	message?: string,
 ): { ok: false; collisions: Collision[] } {
 	const entry: Entry = {
 		type: "refused",
@@ -32,6 +33,8 @@ export function refuse(
 			file: c.file,
 			...(c.name !== undefined ? { name: c.name } : {}),
 		})),
+		// A held push keeps its message: the settle that follows tells it as this side's reason.
+		...(message ? { message } : {}),
 	};
 	entries.push(entry);
 	host.apply(entry);

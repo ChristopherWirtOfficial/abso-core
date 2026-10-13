@@ -264,6 +264,11 @@ export function keptOf(lines: readonly string[], region: MarkedRegion): Kept {
 	return y === "nothing" && t === "nothing" ? "both" : "rewrote";
 }
 
+/** The message of the agent's newest held push that named `file`: its side's reason, for the settle to tell. */
+export function heldMessage(agent: AgentState, file: string): string | undefined {
+	return agent.held?.findLast((h) => h.message && h.files.includes(file))?.message;
+}
+
 /** What the marker reads need from a project. */
 export interface MarkerHost {
 	readonly graph: Graph;

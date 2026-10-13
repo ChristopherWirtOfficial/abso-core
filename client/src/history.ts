@@ -119,10 +119,13 @@ export async function runWhy(args: Parsed, env: Env): Promise<Output> {
 		...(w.change.message ? [`The change says: "${w.change.message}"`] : []),
 		...(w.settled.length > 0
 			? [
-					"It settled a collision between:",
+					w.settledBy
+						? `It was kept when ${w.settledBy.author} settled a collision between:`
+						: "It settled a collision between:",
 					...w.settled.map(
 						(s) => `  ${s.author}, ${published(s.publish)}${s.message ? ` (the change: "${s.message}")` : ""}`,
 					),
+					...(w.held ? [`  ${w.held.agent}, a held push: "${w.held.message}"`] : []),
 				]
 			: []),
 		...(w.reasons.length > 0

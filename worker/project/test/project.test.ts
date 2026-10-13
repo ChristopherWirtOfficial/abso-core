@@ -204,12 +204,13 @@ test("a collision refuses the push, sends news, and pull then an edit settles it
 	assert.equal(folderB["notes.md"], `one\ntwo\n${block}four\nfive\n`);
 	assert.deepEqual(Object.keys(synced.files), ["notes.md"]); // b's own engine.ts edit was already in its folder
 
-	// b settles it with an edit that takes the markers out, and publish goes through, saying what b kept.
+	// b settles it with an edit that takes the markers out, and publish goes through, saying what b kept
+	// and what its held push said.
 	project.edit("b", { file: "notes.md", old: block, new: "three (a and b)\n" }, 7);
 	const settled = project.publish("b", "Settle three", 8);
 	assert.deepEqual(settled.ok && "version" in settled && [settled.version, settled.settled], [
 		2,
-		[{ file: "notes.md", kept: "rewrote", theirs: { agent: "a", version: 1 } }],
+		[{ file: "notes.md", kept: "rewrote", theirs: { agent: "a", version: 1 }, held: "Mark three for b" }],
 	]);
 	assert.equal(project.files()["notes.md"], "one\ntwo\nthree (a and b)\nfour\nfive\n");
 	assert.equal(project.files()["engine.ts"], "export function match(p, s) {\n  return void 0;\n}\n");
@@ -357,7 +358,14 @@ test("a refused push is logged and counted, and the counts survive a reload", ()
 	assert.equal(project.publish("bob", "c", 3).ok, false);
 	assert.deepEqual(project.status().refusals, { total: 1, lines: 1, definition: 0, attribute: 0, duplicate: 0 });
 	assert.deepEqual(project.refusals().refusals, [
-		{ agent: "bob", draft: null, via: "publish", time: 3, collisions: [{ kind: "lines", file: "a.txt" }] },
+		{
+			agent: "bob",
+			draft: null,
+			via: "publish",
+			time: 3,
+			collisions: [{ kind: "lines", file: "a.txt" }],
+			message: "c",
+		},
 	]);
 	assert.deepEqual(Project.load(store.entries, new MemoryStore()).refusals(), project.refusals());
 });

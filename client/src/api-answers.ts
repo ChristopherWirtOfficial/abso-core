@@ -65,6 +65,8 @@ export interface Settled {
 	readonly theirs: { readonly agent: string; readonly version: number };
 	/** Lines both sides still had that the settled file no longer has (#37). */
 	readonly lost?: readonly string[];
+	/** The message of the settler's push that was held for this collision. */
+	readonly held?: string;
 }
 export interface RecordAnswer {
 	readonly ok: boolean;
@@ -124,6 +126,8 @@ export interface ChangeAnswer {
 		readonly time: number;
 		readonly kinds: readonly string[];
 		readonly files: readonly string[];
+		/** A held push's message. */
+		readonly message?: string;
 	}[];
 	readonly notes?: readonly NoteAnswer[];
 	readonly reviewers?: readonly { readonly agent: string; readonly files: readonly string[]; readonly read: boolean }[];

@@ -101,6 +101,11 @@ export function joinChange(
 	rec.versions.push({ version: entry.version, draft, message: entry.message, time: entry.time, at });
 	host.versionChange.set(`${draft ?? ""} ${entry.version}`, id);
 	if (entry.type === "publish") for (const s of entry.settled ?? []) rec.settled.push({ ...s, version: entry.version });
+	// Pushes held on the way, when no change was going to put them on: they belong to the push that follows.
+	if (entry.type === "publish")
+		for (const { change: on, ...h } of agent.held ?? [])
+			if (on === undefined && !rec.refusals.some((r) => r.at === h.at))
+				rec.refusals.push({ ...h, kinds: [...h.kinds], files: [...h.files] });
 	rec.last = at;
 	host.changes.set(id, rec);
 	if (old) {
@@ -138,7 +143,12 @@ export function changeAnswer(host: ChangeHost, rec: ChangeRecord, withFiles: boo
 		versions,
 		files: [...new Set(versions.flatMap((v) => v.files))].toSorted(),
 		settled: rec.settled.map((s) => ({ ...s })),
-		refusals: rec.refusals.map(({ time, kinds, files }) => ({ time, kinds: [...kinds], files: [...files] })),
+		refusals: rec.refusals.map(({ time, kinds, files, message }) => ({
+			time,
+			kinds: [...kinds],
+			files: [...files],
+			...(message ? { message } : {}),
+		})),
 		notes: [...host.notes.values()].filter((n) => n.change === rec.id).map((n) => host.noteAnswer(n)),
 		reviewers: host.reviewersOf(
 			versions.flatMap((v) => v.files),

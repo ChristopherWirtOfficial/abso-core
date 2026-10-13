@@ -1,6 +1,6 @@
 // A held push from end to end, as two agents meet it: alice and bob change
 // the same line, bob's push is held, he pulls, settles and pushes again.
-// What each step prints has to be true.
+// What each step prints has to be true, and the record has to keep his reason.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -66,6 +66,41 @@ describe("a held push", () => {
 		assert.match(refused, /Run abso pull: each of those files comes back holding both sides' lines/);
 		assert.equal((await run(bob, "pull")).exit, 0);
 		assert.match(policy(bob), /^<<<<<<< yours \(unpublished\)$/m, "the pull wrote a marker block");
+	});
+
+	for (const how of ["yours", "theirs", "both"] as const) {
+		it(`why names the collision a line was kept from, settled --${how}`, async () => {
+			const { alice, bob } = await held();
+			assert.equal((await run(bob, "pull")).exit, 0);
+			const settled = await run(bob, "settle", "store-policy.md", `--${how}`);
+			assert.equal(settled.exit, 0, settled.out);
+			const pushed = await run(bob, "push", "-m", `Settle: keep ${how}`);
+			assert.equal(pushed.exit, 0, pushed.out);
+			assert.equal((await run(alice, "pull")).exit, 0);
+			const why = await run(alice, "why", "store-policy.md:3");
+			assert.equal(why.exit, 0, why.out);
+			assert.match(why.out, /It was kept when bob settled a collision between:\n {2}alice, version 1 by alice/);
+			assert.match(why.out, new RegExp(`\\n {2}bob, a held push: "${HELD.replace(/\$/g, "\\$")}"`));
+		});
+	}
+
+	it("keeps its message: why on the settling line shows it, and so do the change page and the news", async () => {
+		const { alice, bob } = await held();
+		assert.equal((await run(bob, "pull")).exit, 0);
+		writeFileSync(join(bob, "store-policy.md"), POLICY.replace("$50", "$60"));
+		const pushed = await run(bob, "push", "-m", "Settle with alice: meet at $60");
+		assert.equal(pushed.exit, 0, pushed.out);
+		const why = await run(bob, "why", "store-policy.md:3");
+		assert.match(
+			why.out,
+			/It settled a collision between:\n {2}alice, version 1 by alice[^\n]*\n {2}bob, a held push: "/,
+		);
+		assert.ok(why.out.includes(HELD), why.out);
+		const review = await run(alice, "review", "bob");
+		assert.match(review.out, /Settled: store-policy\.md \(rewrote both sides, against alice's version 1\)\./);
+		assert.ok(review.out.includes(`Refused 1 time on the way: lines (store-policy.md): "${HELD}"`), review.out);
+		const news = await run(alice, "news");
+		assert.ok(news.out.includes(`Its held push said: "${HELD}"`), news.out);
 	});
 
 	it("the change page says what a settle kept in words that read for each choice", async () => {
