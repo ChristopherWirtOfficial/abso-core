@@ -128,5 +128,120 @@ Agents:
 - Per-agent keys (`AGENT_KEYS=on`, a local `KEY_HMAC_SECRET`): `POST /admin/agent-keys` without `x-abso-admin` is 403; with it, a writer key for `carol` is issued and listed. Carol's key syncs as carol; as `dave` it is 403 `that key is not for this agent`; on another project, 403 `that key is not for this project`.
 - Blobs: a PUT whose bytes don't hash to the name is 400 `the bytes hash to …, not …`; the right hash is stored and read back; a name that isn't a SHA-256 is 400.
 - `GET head` answers `{version, at}` from storage. `GET feed?from=<end>&wait=3` holds for 3 seconds, then answers with no events.
-- `/issues/p/<project>/...` reaches the issues stand-in (404 `issues aren't on this server yet`) after auth.
+- `/issues/p/<project>/...` reached the issues stand-in (404 `issues aren't on this server yet`) after auth, before the issues code landed; the run below is against the issues code itself.
 - `POST git-remote` with Artifacts off: 501 `this server has no Artifacts binding, so no git remote`.
+
+## Issues, asks and news, with no issues server named
+
+Server: `http://127.0.0.1:8797` (`npm run dev` in server/, which is `wrangler dev --local`; `ABSO_ARTIFACTS=off`).
+Token: an invented local test token in `server/.dev.vars`, given to the client as `ABSO_TOKEN`.
+HOME and USERPROFILE: a new empty temporary folder, so no `~/.abso/servers.json`; `ABSO_ISSUES_SERVER` unset.
+The client finds issues at `http://127.0.0.1:8797/issues`. Project: `e2e-issues-1791907724`. Run 2026-10-13T16:08Z.
+
+```
+(alice) $ abso init . --server http://127.0.0.1:8797 --project e2e-issues-1791907724 --agent alice
+Created project e2e-issues-1791907724 at version 0 from 2 text files in <temp>\alice.
+Wrote a starting .absoignore (Claude Code state and operating system files); edit it like .gitignore.
+No abso.json written: package.json gives no check or build to guess, so CI has nothing to run on each new version. To give it a check, push an abso.json like {"check": "npm test"} (abso ci --help says what it runs).
+This folder is agent alice. Settings are in .abso/config.json.
+Edits made by Claude Code reach the server through the abso mod, which isn't on this machine yet: node <abso-core>\client\install-mod.ts installs it, and new chats load it. Anything else: abso record.
+[exit 0]
+```
+
+```
+(bob) $ abso join e2e-issues-1791907724 --agent bob --dir . --server http://127.0.0.1:8797
+Joined e2e-issues-1791907724 as bob at version 0: wrote 2 files into <temp>\bob.
+Edits made by Claude Code reach the server through the abso mod, which isn't on this machine yet: node <abso-core>\client\install-mod.ts installs it, and new chats load it. Anything else: abso record.
+[exit 0]
+```
+
+```
+(alice) $ abso issue new "Sync is slow on big folders" --description "A pull of 5000 files takes a minute."
+Opened issue 1. abso start "..." --issue 1 starts on it.
+[exit 0]
+```
+
+```
+(bob) $ abso issue 1 --comment "Seen it too: most of the minute is hashing."
+Commented on issue 1. Its agents hear it.
+[exit 0]
+```
+
+```
+(alice) $ abso ask bob "Hash on the server or in the client?" --issue 1
+Asked bob (ask 1). They hear it; abso waiting shows what's open.
+[exit 0]
+```
+
+```
+(alice) $ abso ask carol "Can you review the hashing?" --issue 1
+abso ask: POST /a/alice/ask answered 400: "carol" isn't an agent in e2e-issues-1791907724, so nobody would hear the ask. abso status lists the agents.
+[exit 1]
+```
+
+```
+(bob) $ abso news
+1 news item:
+  alice (as claimed) told you, 16:08 UTC:
+    alice asks bob a question on issue 1 ("Sync is slow on big folders"): "Hash on the server or in the client?" Answer: abso answer 1 "..."
+[exit 0]
+```
+
+```
+(bob) $ abso waiting --mine
+1 open ask of bob, soonest due first:
+  ask 1: alice, 16:08 UTC, asks bob a question on issue 1 ("Sync is slow on big folders") (new): "Hash on the server or in the client?"
+abso ask <N> shows one with its thread; abso reply <N> "..." adds to it; abso answer <N> "..." answers one asked of you.
+[exit 0]
+```
+
+```
+(alice) $ abso issues
+1 issue, most recently updated first:
+    1  blocked      "Sync is slow on big folders" (waiting on bob; updated 16:08 UTC)
+abso issue <N> shows one.
+[exit 0]
+```
+
+```
+(bob) $ abso answer 1 "In the client: the server never sees unchanged files."
+Answered ask 1. alice hears it.
+[exit 0]
+```
+
+```
+(alice) $ abso news
+1 news item:
+  bob (as claimed) told you, 16:08 UTC:
+    bob answered alice's question on issue 1: "In the client: the server never sees unchanged files."
+[exit 0]
+```
+
+```
+(alice) $ abso issue 1
+Issue 1: "Sync is slow on big folders" [open]
+Opened by alice, 16:08 UTC.
+
+  A pull of 5000 files takes a minute.
+
+Asks:
+  ask 1: alice, 16:08 UTC, asks bob a question on issue 1 (answered by bob, 16:08 UTC): "Hash on the server or in the client?"
+    answer: "In the client: the server never sees unchanged files."
+
+Comments:
+  bob, 16:08 UTC: "Seen it too: most of the minute is hashing."
+
+Watchers: alice, bob.
+
+abso start "..." --issue 1 starts on it; abso issue 1 --comment "..." comments; abso ask <who> "..." --issue 1 asks.
+[exit 0]
+```
+
+```
+(alice) $ abso waiting --asked
+The latest answered:
+  ask 1: alice, 16:08 UTC, asks bob a question on issue 1 ("Sync is slow on big folders") (answered by bob, 16:08 UTC): "Hash on the server or in the client?"
+    answer: "In the client: the server never sees unchanged files."
+abso ask <N> shows one with its whole thread.
+[exit 0]
+```

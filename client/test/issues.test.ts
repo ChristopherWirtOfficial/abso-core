@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { readConfig, readMachineServers } from "../src/config.ts";
-import { issuesServerFor, tokenGoesTo } from "../src/core.ts";
+import { issuesServerFor, tokenGoesTo, tokenGoesToIssues } from "../src/core.ts";
 import { issuePage, searchLines } from "../src/issues.ts";
 import type { IssuePage } from "../src/issues-wire.ts";
 import { main } from "../src/main.ts";
@@ -176,14 +176,40 @@ describe("issues commands, the client's part (#54)", () => {
 		assert.equal(r.exit, 1, r.out);
 		assert.match(r.out, /sends your token only to its own servers and this machine/);
 		assert.equal(seen.length, before);
-		// A server with no Issues Worker beside it, and none named.
-		const { AVCS_ISSUES_SERVER: _, ...without } = ENV();
-		const none = await avcs(dave, ["waiting"], without);
-		assert.notEqual(none.exit, 0);
-		assert.match(
-			none.out,
-			/has no Issues Worker beside it that abso knows; ~\/\.abso\/servers\.json or ABSO_ISSUES_SERVER names one/,
-		);
+	});
+
+	it("with no Issues Worker named, uses the server's own /issues, as the open server keeps them", () => {
+		assert.equal(issuesServerFor("https://abso.example"), "https://abso.example/issues");
+		assert.equal(issuesServerFor("https://Abso.Example/"), "https://abso.example/issues");
+		assert.equal(issuesServerFor("http://localhost:8787"), "http://localhost:8787/issues");
+		assert.equal(issuesServerFor("not a server"), undefined);
+		// abso's hosted server keeps its own Issues Worker, and servers.json still comes first.
+		assert.equal(issuesServerFor("https://api.abso.dev"), "https://issues.abso.dev");
+		const machine = {
+			trusted: [],
+			issues: { "https://staging.abso.example": "https://issues-staging.abso.example" },
+		};
+		assert.equal(issuesServerFor("https://staging.abso.example", machine), "https://issues-staging.abso.example");
+		// The token goes to <server>/issues exactly where it goes to <server>.
+		assert.ok(tokenGoesToIssues("https://api.abso.dev/issues"));
+		assert.ok(tokenGoesToIssues("http://localhost:8787/issues"));
+		assert.ok(tokenGoesToIssues("https://mine.example/issues", "https://mine.example"));
+		assert.equal(tokenGoesToIssues("https://evil.example/issues"), false);
+		assert.equal(tokenGoesToIssues("https://api.abso.dev@evil.example/issues"), false);
+		assert.equal(tokenGoesToIssues("https://api.abso.dev/issues?x=1"), false);
+		assert.equal(tokenGoesToIssues("http://mine.example/issues", "http://mine.example"), false, "plain http only here");
+		// The server itself still takes no path.
+		assert.equal(tokenGoesTo("https://api.abso.dev/issues"), false);
+	});
+
+	it("calls <issues server>/p/<project>/... when the Issues Worker is at a path", async () => {
+		const fay = await folder("fay");
+		const before = seen.length;
+		const env = { ...ENV(), AVCS_ISSUES_SERVER: `${issuesUrl}/issues` };
+		const r = await main(["ask", "7"], { cwd: fay, env, write: () => {} });
+		assert.equal(r.exit, 0, r.stdout + r.stderr);
+		const { project } = readConfig(fay);
+		assert.deepEqual(seen.slice(before), [`GET /issues/p/${project}/ask/7`]);
 	});
 
 	it("finds a server's Issues Worker in this machine's servers.json, and may send it the token", async () => {
@@ -198,7 +224,7 @@ describe("issues commands, the client's part (#54)", () => {
 		assert.ok(seen.length > before, "the call went to the Issues Worker servers.json names");
 		const machine = readMachineServers({ AVCS_SERVERS_FILE: file });
 		assert.equal(issuesServerFor(fake.url, machine), issuesUrl);
-		assert.equal(issuesServerFor("https://abso.example", machine), undefined);
+		assert.equal(issuesServerFor("https://abso.example", machine), "https://abso.example/issues");
 		// abso's own server and its Issues Worker are built in.
 		assert.ok(tokenGoesTo("https://api.abso.dev"));
 		assert.ok(tokenGoesTo("https://issues.abso.dev"));

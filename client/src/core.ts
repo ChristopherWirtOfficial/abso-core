@@ -107,6 +107,22 @@ export function serverOrigin(s: string): string | undefined {
 }
 
 /**
+ * A server's base: its origin and any path, without a trailing slash (https://x.example/issues), or undefined
+ * for anything else, a query, a fragment or a user name included. Plain string work, as serverOrigin.
+ */
+export function serverBase(s: string): string | undefined {
+	const m = /^(https?):\/\/([^/?#\\]+)((?:\/[^?#\\]*)?)$/i.exec(s.trim());
+	if (!m || m[2]!.includes("@")) return undefined;
+	return `${m[1]!.toLowerCase()}://${m[2]!.toLowerCase()}${m[3]!.replace(/\/+$/, "")}`;
+}
+
+/** The origin of a server given with or without a path (serverBase), or undefined. */
+export function baseOrigin(s: string): string | undefined {
+	const base = serverBase(s);
+	return base === undefined ? undefined : serverOrigin(base.replace(/^(https?:\/\/[^/]+).*$/i, "$1"));
+}
+
+/**
  * This machine's servers, from ~/.abso/servers.json:
  * {"servers": {"<server>": {"issues": "<its Issues Worker>"}}}. Each server
  * named there, and each Issues Worker it names, may receive the token, and a
@@ -130,10 +146,10 @@ export function machineServers(text: string | undefined): MachineServers {
 				if (o === undefined) continue;
 				trusted.push(o);
 				const i = (about as { issues?: unknown } | null)?.issues;
-				const io = typeof i === "string" ? serverOrigin(i) : undefined;
+				const io = typeof i === "string" ? serverBase(i) : undefined;
 				if (io !== undefined) {
 					issues[o] = io;
-					trusted.push(io);
+					trusted.push(baseOrigin(io)!);
 				}
 			}
 	} catch {}
@@ -146,12 +162,22 @@ export function trustedList(fromEnv: string | undefined, machine: MachineServers
 }
 
 /**
- * The Issues Worker beside an avcs server (#54): this machine's servers.json
- * first, then abso's own. ABSO_ISSUES_SERVER overrides both (issues.ts).
+ * The Issues Worker beside an avcs server: this machine's servers.json
+ * first, then abso's own, else the server's own /issues, where the open
+ * server keeps them. ABSO_ISSUES_SERVER overrides all three (issues.ts).
  */
 export function issuesServerFor(server: string, machine?: MachineServers): string | undefined {
 	const o = serverOrigin(server);
-	return o === undefined ? undefined : (machine?.issues[o] ?? ISSUES_SERVERS[o]);
+	return o === undefined ? undefined : (machine?.issues[o] ?? ISSUES_SERVERS[o] ?? `${o}/issues`);
+}
+
+/**
+ * Whether the token may go to an Issues Worker: as to its origin (tokenGoesTo), since it may sit at a path on
+ * its server, as the open server's do at <server>/issues. A query, a fragment or a user name is refused.
+ */
+export function tokenGoesToIssues(server: string, trusted?: string): boolean {
+	const o = baseOrigin(server);
+	return o !== undefined && tokenGoesTo(o, trusted);
 }
 
 /** Whether the token may go to `server`: TOKEN_SERVERS, `trusted` (trustedList), or this machine. Plain string work: the mod has no URL. */

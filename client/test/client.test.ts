@@ -1556,7 +1556,7 @@ describe("the token goes only to abso servers (#30)", () => {
 		assert.equal(tokenGoesTo("https://sneaky.example", trusted), false);
 		assert.equal(tokenGoesTo("https://evil.example", trusted), false);
 		assert.equal(issuesServerFor("https://abso.example", machine), "https://issues.abso.example");
-		assert.equal(issuesServerFor("https://staging.abso.example", machine), undefined);
+		assert.equal(issuesServerFor("https://staging.abso.example", machine), "https://staging.abso.example/issues");
 		assert.deepEqual(machineServers("{not json"), { trusted: [], issues: {} });
 		assert.deepEqual(machineServers(undefined), { trusted: [], issues: {} });
 		assert.equal(trustedList("https://a.example", machine).split(",")[0], "https://a.example");

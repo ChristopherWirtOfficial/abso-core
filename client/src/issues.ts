@@ -23,7 +23,7 @@ import {
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { type Env, type Output, open, plural } from "./commands.ts";
 import { type Config, readMachineServers, trustedServers } from "./config.ts";
-import { issuesServerFor, tokenGoesTo } from "./core.ts";
+import { issuesServerFor, tokenGoesToIssues } from "./core.ts";
 import { fromEnv } from "./env-names.ts";
 import { ignoredHere } from "./fetch.ts";
 import { loadIgnore, relativeTo } from "./folder.ts";
@@ -41,7 +41,7 @@ function openIssues(env: Env): { root: string; config: Config; api: Api } {
 		throw new UsageError(
 			`${config.server} has no Issues Worker beside it that abso knows; ~/.abso/servers.json or ABSO_ISSUES_SERVER names one`,
 		);
-	if (config.token !== undefined && !tokenGoesTo(server, trustedServers(env.env))) {
+	if (config.token !== undefined && !tokenGoesToIssues(server, trustedServers(env.env))) {
 		throw new UsageError(
 			`the Issues Worker is ${server}, and abso sends your token only to its own servers and this machine. If ${server} is yours, name it in ~/.abso/servers.json or ABSO_TRUSTED_SERVERS.`,
 		);
