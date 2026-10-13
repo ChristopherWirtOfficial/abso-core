@@ -1,0 +1,33 @@
+// abso's open server: deploy it to your own Cloudflare account with `npx wrangler deploy` from this folder, after
+// `npx wrangler secret put ABSO_TOKEN`. Without that secret the server refuses every call. Local development:
+// `npx wrangler dev --local` (or `npm run dev`), with ABSO_TOKEN=<anything> in .dev.vars (never recorded: .absoignore
+// leaves it out). Keep --local: Artifacts is a remote binding, and without it wrangler dev connects to your account.
+// Put ABSO_ARTIFACTS=off in .dev.vars too: --local still binds Artifacts, but nothing local can reach it.
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "abso",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-10-01",
+	"compatibility_flags": ["nodejs_compat"],
+	"workers_dev": true,
+	"observability": { "enabled": true },
+	// CPU per request: 2 minutes, not the default 30 seconds, so a heavy push finishes instead of resetting the
+	// project's object. Billed only for CPU used.
+	"limits": { "cpu_ms": 120000 },
+	// GET /version answers with the deployed version's tag.
+	"version_metadata": { "binding": "CF_VERSION_METADATA" },
+	"vars": {
+		// Per-agent keys: on once KEY_HMAC_SECRET is set (npx wrangler secret put KEY_HMAC_SECRET). Until then, only
+		// the shared token signs in.
+		"AGENT_KEYS": "on"
+	},
+	// Each project's shared is pushed out to its own repo, abso-<project>, in this namespace.
+	"artifacts": [{ "binding": "ARTIFACTS", "namespace": "abso" }],
+	"durable_objects": {
+		"bindings": [
+			{ "name": "PROJECT", "class_name": "ProjectObject" },
+			{ "name": "ISSUES_DO", "class_name": "IssueProject" }
+		]
+	},
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["ProjectObject", "IssueProject"] }]
+}

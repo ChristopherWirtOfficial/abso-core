@@ -6,7 +6,9 @@
 # Each session's own Claude Code state
 .claude/
 
-# Local config and secrets
+# Local config and secrets (the open server's server/.dev.vars and server/.wrangler/ are named too)
+server/.dev.vars
+server/.wrangler/
 .env
 .env.*
 .dev.vars*

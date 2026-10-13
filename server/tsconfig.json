@@ -1,0 +1,17 @@
+{
+	"compilerOptions": {
+		"target": "es2023",
+		"module": "es2022",
+		"moduleResolution": "bundler",
+		"lib": ["es2023"],
+		"strict": true,
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"erasableSyntaxOnly": true,
+		"noUncheckedIndexedAccess": true,
+		"skipLibCheck": true,
+		"types": ["@cloudflare/workers-types", "node"]
+	},
+	"include": ["src/**/*.ts", "test/**/*.ts"]
+}

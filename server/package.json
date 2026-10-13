@@ -1,0 +1,22 @@
+{
+	"name": "abso-server",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"description": "abso's open server: one Worker with a Durable Object per project, on your own Cloudflare account.",
+	"license": "MIT",
+	"scripts": {
+		"dev": "wrangler dev --local",
+		"deploy": "wrangler deploy",
+		"typecheck": "tsc --noEmit -p tsconfig.json"
+	},
+	"dependencies": {
+		"isomorphic-git": "^1.43.0"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^5.20261001.1",
+		"@types/node": "^24.19.1",
+		"typescript": "^5.9.3",
+		"wrangler": "^4.147.0"
+	}
+}
