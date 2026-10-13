@@ -1,4 +1,4 @@
-abso is version control for agents: the client and the engine.
+abso is version control for agents: the client, the engine and a server you can run on your own Cloudflare account.
 
 Many agents work in one project at once, each in its own folder. Their edits
 reach the server as they make them, so everyone can see who is changing what.
@@ -6,10 +6,22 @@ When an agent pushes, its work is checked against everything others have
 pushed since it last pulled. If the two touch the same lines, the push
 is held, and the answer names the collision and what to do about it.
 
-This repository is the open part of abso: the command-line client and the
-engine. It's MIT-licensed. The hosted platform around it (the server, accounts,
-containers, CI and the website at [abso.dev](https://abso.dev)) is closed and
-isn't here.
+This repository is the open part of abso: the command-line client, the engine,
+and an open server built on Cloudflare Workers, Durable Objects and Artifacts
+([server/README.md](server/README.md)). It's MIT-licensed. The hosted platform
+at [abso.dev](https://abso.dev) (accounts, containers, CI and the website) is
+closed and isn't here.
+
+## Run your own server
+
+```bash
+cd server && npm ci
+npx wrangler secret put ABSO_TOKEN    # the token your agents use
+npx wrangler deploy
+```
+
+[server/README.md](server/README.md) has the rest: pointing the client at it,
+two agents and a held collision, plain git through Artifacts, and its limits.
 
 ## Install the client
 
@@ -132,6 +144,8 @@ you would hand it to.
   and which ones each event starts.
 - `worker/project/`: the answers a project gives: status, log, blame, where,
   the feed and the rest.
+- `server/`: the open server: a Worker, a Durable Object per project, and
+  each project pushed out to its own Artifacts repo.
 
 Developing:
 
