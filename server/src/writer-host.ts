@@ -351,7 +351,7 @@ export class SqliteWriterHost {
 					readViewProvider: projection?.readViewProvider,
 					entryAt: (index) => this.#log.since(index, 1)[0]!,
 				});
-				const result = input.operation(new EngineProject(project));
+				const result = input.operation(new EngineProject(project, (from, limit) => this.#log.since(from, limit)));
 				SqliteWriterHost.#sync(result);
 				SqliteWriterHost.#sync(input.validateAuthority());
 				if (!SqliteWriterHost.#same(source, this.source())) throw new Error("reader source changed");

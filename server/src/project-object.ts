@@ -7,6 +7,7 @@ import { DurableObject } from "cloudflare:workers";
 import { type Answer, answer, type Readers } from "../../worker/project/http.ts";
 import type { ProjectCalls, ProjectHistory } from "../../worker/project/project-api.ts";
 import { BLOB_MAX, BlobStore } from "./blobs.ts";
+import { DiskFirstRuntime } from "./disk-first-runtime.ts";
 import { EngineProject, SqliteLog } from "./engine-project.ts";
 import { artifactsOf, type Env } from "./env.ts";
 import { pushedSince, remoteHead } from "./ingest.ts";
@@ -23,6 +24,33 @@ import {
 	revokeKey,
 } from "./keys.ts";
 import { type PushResult, pushShared, repoName } from "./push.ts";
+import { SqliteWriterState } from "./writer-host.ts";
+
+const READ_OPS = new Set([
+	"status",
+	"blame",
+	"why",
+	"tree",
+	"path",
+	"follow",
+	"collisions",
+	"draft-state",
+	"refusals",
+	"labels",
+	"log",
+	"show",
+	"file",
+	"files",
+	"compare",
+	"where",
+	"feed",
+	"drafts",
+	"diff",
+	"ribbon",
+	"position",
+	"changes",
+	"notes",
+]);
 
 /** At most one push out a minute: each one clones the repo, so publishes in a burst share one. */
 export const PUSH_EVERY_MS = 60_000;
@@ -78,6 +106,7 @@ export class ProjectObject extends DurableObject<Env> {
 	/** Why the log didn't load, if it didn't. */
 	private loadError: unknown;
 	private tried = false;
+	private authorityRevision = 0;
 	/** Feed long-polls waiting for the log to grow; woken after every call that wrote. */
 	private waiting: (() => void)[] = [];
 	/** When this object last asked the repo for pushes made with plain git. */
@@ -94,8 +123,109 @@ export class ProjectObject extends DurableObject<Env> {
 		return { keep: (text: string) => this.blobs.putText(text), read: (sha: string) => this.blobs.textOf(sha) };
 	}
 
+	private diskRuntime(): DiskFirstRuntime | undefined {
+		return this.env.ABSO_DISK_FIRST === "on"
+			? new DiskFirstRuntime(this.ctx.storage, this.ctx.id.toString(), "server-disk-v1", {
+					hasBlob: (sha) => this.blobs.has(sha),
+					whole: this.wholeFiles(),
+				})
+			: undefined;
+	}
+	private async prepareDisk(validate: () => void = () => {}) {
+		const runtime = this.diskRuntime();
+		if (!runtime) return undefined;
+		const progress = runtime.preparePage(validate);
+		if (!progress.ready && progress.phase !== "empty") await this.soon(Date.now() + 100);
+		return progress;
+	}
+	/** Once indexing starts, legacy writes would invalidate the persistent root. */
+	private legacyWritesHeld(): boolean {
+		if (this.env.ABSO_DISK_FIRST === "on") return false;
+		const tables = this.ctx.storage.sql
+			.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'writer_state'")
+			.toArray();
+		return (
+			tables.length > 0 &&
+			new SqliteWriterState(this.ctx.storage, "server-disk-v1").read("runtime", "format") !== undefined
+		);
+	}
+	private useProject<T>(operation: (calls: EngineProject) => T, write = false): T {
+		const runtime = this.diskRuntime();
+		if (runtime) return write ? runtime.write(operation, () => {}) : runtime.read(operation, () => {});
+		if (write && this.legacyWritesHeld())
+			throw Error("disk-first indexes exist; enable ABSO_DISK_FIRST before writing");
+		return operation(this.project as EngineProject);
+	}
+	private async diskCall(
+		name: string,
+		op: string,
+		agent: string | undefined,
+		body: unknown,
+		how: string | undefined,
+		revision: number,
+	): Promise<Answer> {
+		const runtime = this.diskRuntime()!;
+		const validate = () => {
+			if (revision !== this.authorityRevision)
+				throw Object.assign(Error("project authorization changed during call setup"), { code: "authority-changed" });
+		};
+		const progress = await this.prepareDisk(validate);
+		const known = new Set((await this.ctx.storage.get<string[]>("readers")) ?? []);
+		validate();
+		let readersChanged = false;
+		const readers: Readers = {
+			has: (a) => known.has(a),
+			list: () => [...known].sort(),
+			set: (a, on) => {
+				if (on === known.has(a)) return;
+				if (on) known.add(a);
+				else known.delete(a);
+				readersChanged = true;
+			},
+		};
+		if (progress?.phase === "empty" && op !== "init")
+			return { status: 404, body: { error: "no such project; run init first" } };
+		if (!progress?.ready && !(progress?.phase === "empty" && op === "init"))
+			return { status: 503, body: { error: "project indexes are being prepared", retryAfter: 1, progress } };
+		const before = new SqliteLog(this.ctx.storage).seq();
+		const action = (calls: EngineProject) => {
+			const result = answer(calls, op, agent, body, readers, how);
+			if (result.status >= 500) throw Error(`project operation failed: ${JSON.stringify(result.body)}`);
+			return result;
+		};
+
+		const result =
+			progress.phase === "empty"
+				? runtime.initialize(action, validate)
+				: READ_OPS.has(op) || op.startsWith("change/")
+					? runtime.read(action, validate)
+					: runtime.write(action, validate);
+		if (readersChanged) {
+			this.authorityRevision++;
+			await this.ctx.storage.put("readers", readers.list());
+		}
+		const log = new SqliteLog(this.ctx.storage);
+		if (log.seq() !== before) {
+			this.wake();
+			await this.ctx.storage.put("name", name);
+			await this.soon(Date.now() + 100);
+		}
+		if (
+			result.status === 200 &&
+			artifactsOf(this.env) &&
+			Date.now() - this.gitCheckedAt > GIT_CHECK_MS &&
+			(await this.ctx.storage.get("name")) !== undefined &&
+			(await this.ctx.storage.getAlarm()) === null
+		)
+			await this.ctx.storage.setAlarm(Date.now());
+		if (result.status === 200 && op === "starting") result.body = await this.startingHooks(name, result.body);
+		if (result.status === 200) result.body = this.withBlobSizes(op, result.body);
+		return result;
+	}
+
 	/** The project, loaded from its log on first use. A log too big for memory is refused, not loaded. */
 	private ensure(): ProjectCalls | undefined {
+		if (this.diskRuntime()) throw Error("legacy project load forbidden in disk-first mode");
 		if (this.loaded || this.tried) return this.loaded;
 		this.tried = true;
 		try {
@@ -216,6 +346,7 @@ export class ProjectObject extends DurableObject<Env> {
 		how?: string,
 		key?: KeyForCall,
 	): Promise<Answer> {
+		const revision = this.authorityRevision;
 		if (key) {
 			const decided = await this.checkAgentKey(key.presented, agent, key.address);
 			if (!decided.ok) return { status: decided.status, body: { error: decided.error } };
@@ -224,6 +355,17 @@ export class ProjectObject extends DurableObject<Env> {
 			how = decided.as;
 		}
 		if (op === "feed" && !inFeed) return this.feed(name, body);
+		if (this.diskRuntime()) {
+			try {
+				return await this.diskCall(name, op, agent, body, how, revision);
+			} catch (error) {
+				if ((error as { code?: string })?.code === "authority-changed")
+					return { status: 409, body: { error: "project authorization changed; retry the request", retryable: true } };
+				throw error;
+			}
+		}
+		if (this.legacyWritesHeld() && !READ_OPS.has(op) && !op.startsWith("change/"))
+			return { status: 409, body: { error: "disk-first indexes exist; enable ABSO_DISK_FIRST before writing" } };
 		if (SOFT_HELD_OPS.has(op)) {
 			const held = this.softHeld();
 			if (held) return { status: 507, body: { error: held } };
@@ -332,16 +474,20 @@ export class ProjectObject extends DurableObject<Env> {
 	}
 
 	private async gitSyncOnce(): Promise<{ head: string; commits: number; answer: unknown } | null> {
+		if (this.legacyWritesHeld()) return null;
 		const artifacts = artifactsOf(this.env);
 		if (!artifacts) return null;
 		this.gitCheckedAt = Date.now();
 		const name = await this.ctx.storage.get<string>("name");
-		if (!name || !this.project.exists()) return null;
+		if (!name) return null;
+		const progress = await this.prepareDisk();
+		if (progress && !progress.ready) return null;
+		if (!this.useProject((p) => p.exists())) return null;
 		const seen = await this.ctx.storage.get<string>("git:head");
 		const pushed = await this.ctx.storage.get<PushResult>("pushed");
 		const head = await remoteHead(artifacts, name);
 		if (!head || head === seen || head === pushed?.commit) return null;
-		const sharedBlobs = this.project.shared().blobs ?? {};
+		const sharedBlobs = this.useProject((p) => p.shared().blobs ?? {});
 		const found = await pushedSince(
 			artifacts,
 			name,
@@ -355,7 +501,10 @@ export class ProjectObject extends DurableObject<Env> {
 		}
 		let result: unknown;
 		try {
-			result = this.project.ingest({ author: found.author, base: found.base, commits: found.commits }, Date.now());
+			result = this.useProject(
+				(p) => p.ingest({ author: found.author, base: found.base, commits: found.commits }, Date.now()),
+				true,
+			);
 		} catch (e) {
 			result = { error: e instanceof Error ? e.message : String(e) };
 		}
@@ -383,10 +532,14 @@ export class ProjectObject extends DurableObject<Env> {
 	 * most once a minute, backing off on failure. Without an ARTIFACTS binding (local dev) it does nothing.
 	 */
 	async alarm(): Promise<void> {
+		if (!this.diskRuntime() && !artifactsOf(this.env)) return;
+		if (!this.diskRuntime() && !this.ensure()) return;
+		const progress = await this.prepareDisk();
+		if (progress && !progress.ready) return;
 		const artifacts = artifactsOf(this.env);
 		if (!artifacts) return;
 		const name = await this.ctx.storage.get<string>("name");
-		if (!name || !this.ensure()?.exists()) return;
+		if (!name || !this.useProject((p) => p.exists())) return;
 		await this.gitSync().then(
 			() => this.ctx.storage.delete("git:error"),
 			(e) =>
@@ -395,7 +548,7 @@ export class ProjectObject extends DurableObject<Env> {
 					error: e instanceof Error ? e.message : String(e),
 				}),
 		);
-		const shared = this.project.shared();
+		const shared = this.useProject((p) => p.shared());
 		const done = await this.ctx.storage.get<PushResult>("pushed");
 		if (done && done.version >= shared.version) return;
 		const pushedAt = (await this.ctx.storage.get<number>("pushedAt")) ?? 0;
@@ -422,17 +575,16 @@ export class ProjectObject extends DurableObject<Env> {
 		await this.ctx.storage.put({ pushed: result, "git:head": result.commit, pushedAt: Date.now() });
 		await this.ctx.storage.delete("pushError");
 		// Another publish may have landed while this push ran.
-		if (this.project.shared().version > result.version) await this.soon(Date.now() + PUSH_EVERY_MS);
+		if (this.useProject((p) => p.shared().version) > result.version) await this.soon(Date.now() + PUSH_EVERY_MS);
 	}
 
 	/** The push out: the repo, the last version pushed, and plain-git intake. */
 	async out() {
 		const name = await this.ctx.storage.get<string>("name");
-		const p = this.ensure();
 		return {
 			repo: name ? repoName(name) : null,
 			artifacts: artifactsOf(this.env) ? "bound" : "unbound",
-			version: p?.exists() ? p.shared().version : null,
+			version: this.logChars().entries ? new SqliteLog(this.ctx.storage).sharedVersion() : null,
 			pushed: (await this.ctx.storage.get<PushResult>("pushed")) ?? null,
 			error: (await this.ctx.storage.get("pushError")) ?? null,
 			git: {
@@ -471,6 +623,7 @@ export class ProjectObject extends DurableObject<Env> {
 		if (typeof when !== "number") return { error: when.error };
 		const state = await this.keyState();
 		const issued = await issueKey(state, secret, agent, "admin", Date.now(), address, when, role);
+		this.authorityRevision++;
 		await this.ctx.storage.put("agent-keys", state);
 		return issued;
 	}
@@ -480,6 +633,7 @@ export class ProjectObject extends DurableObject<Env> {
 		if (!secret) return { revoked: false };
 		const state = await this.keyState();
 		const revoked = revokeKey(state, id, Date.now(), await hmac(secret, address));
+		this.authorityRevision++;
 		await this.ctx.storage.put("agent-keys", state);
 		return { revoked };
 	}
@@ -492,9 +646,11 @@ export class ProjectObject extends DurableObject<Env> {
 
 	/** The project's agent names, for the ask seat check. None when there's no project. */
 	async agents(_project: string): Promise<string[]> {
-		const p = this.ensure();
-		if (!p?.exists()) return [];
-		return p.status().agents.map((a) => a.agent);
+		if (!this.diskRuntime() && !this.ensure()) return [];
+		const progress = await this.prepareDisk();
+		if (progress?.phase === "empty") return [];
+		if (progress && !progress.ready) throw Error("project indexes are being prepared");
+		return this.useProject((p) => (p.exists() ? p.status().agents.map((a) => a.agent) : []));
 	}
 
 	/**
@@ -502,33 +658,41 @@ export class ProjectObject extends DurableObject<Env> {
 	 * its issue and to the known agents in `to`, never back to its writer.
 	 */
 	async news(_project: string, items: IssueNews[]): Promise<{ to: string[] }[]> {
-		const p = this.ensure();
-		if (!p?.exists()) return items.map(() => ({ to: [] }));
-		const engine = p as ProjectCalls & ProjectHistory;
-		const out: { to: string[] }[] = [];
-		for (const item of items) {
-			const status = p.status() as { agents: { agent: string; starting?: { issue?: number } }[] };
-			const known = new Set(status.agents.map((a) => a.agent));
-			const to = new Set([
-				...(item.issue !== null
-					? status.agents.filter((a) => a.starting?.issue === item.issue).map((a) => a.agent)
-					: []),
-				...(item.to ?? []).filter((t) => known.has(t)),
-			]);
-			to.delete(item.from);
-			if (to.size === 0) {
-				out.push({ to: [] });
-				continue;
+		if (!this.diskRuntime() && !this.ensure()) return items.map(() => ({ to: [] }));
+		const progress = await this.prepareDisk();
+		if (progress?.phase === "empty") return items.map(() => ({ to: [] }));
+		if (progress && !progress.ready) throw Error("project indexes are being prepared");
+		return this.useProject((p) => {
+			if (!p.exists()) return items.map(() => ({ to: [] }));
+			const engine = p as ProjectCalls & ProjectHistory;
+			const out: { to: string[] }[] = [];
+			for (const item of items) {
+				const status = p.status() as { agents: { agent: string; starting?: { issue?: number } }[] };
+				const known = new Set(status.agents.map((a) => a.agent));
+				const to = new Set([
+					...(item.issue !== null
+						? status.agents.filter((a) => a.starting?.issue === item.issue).map((a) => a.agent)
+						: []),
+					...(item.to ?? []).filter((t) => known.has(t)),
+				]);
+				to.delete(item.from);
+				if (to.size === 0) {
+					out.push({ to: [] });
+					continue;
+				}
+				try {
+					engine.announce(item.from, item.text, [...to]);
+					out.push({ to: [...to] });
+				} catch (e) {
+					// Persistent writer state may already have changed. Let the outer
+					// transaction undo the whole batch before reporting a failure.
+					if (this.env.ABSO_DISK_FIRST === "on") throw e;
+					console.log(JSON.stringify({ event: "issues-news", error: String(e).slice(0, 200) }));
+					out.push({ to: [] });
+				}
 			}
-			try {
-				engine.announce(item.from, item.text, [...to]);
-				out.push({ to: [...to] });
-			} catch (e) {
-				console.log(JSON.stringify({ event: "issues-news", error: String(e).slice(0, 200) }));
-				out.push({ to: [] });
-			}
-		}
-		this.wake();
-		return out;
+			this.wake();
+			return out;
+		}, true);
 	}
 }

@@ -4,6 +4,8 @@ import type { IssueProject } from "./issues-entry.ts";
 import type { ProjectObject } from "./project-object.ts";
 
 export interface Env {
+	/** Explicit development opt-in while disk-first server acceptance is in progress. */
+	ABSO_DISK_FIRST?: string;
 	/** One Durable Object per project, named by the project's name. */
 	PROJECT: DurableObjectNamespace<ProjectObject>;
 	/** Issues, asks and news: one Durable Object per project, named by the project's name. */

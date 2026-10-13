@@ -536,14 +536,23 @@ export class EngineProject implements ProjectCalls, ProjectHistory {
 		if (!this.read) throw Object.assign(new Error("the feed needs the log"), { code: "not-implemented" });
 		const end = this.project.logLength;
 		const start = Math.max(0, Math.min(from, end));
-		const entries = start < end ? this.read(start, Math.min(limit, end - start)) : [];
+		// Discard each canonical payload after extracting its event. A feed page must
+		// not retain every historical file payload in the requested range.
+		const events = [];
+		let next = start;
+		while (next < end && next - start < limit) {
+			const entries = this.read(next, 1);
+			if (entries.length === 0) break;
+			events.push(...feedEvents(entries, next));
+			next += entries.length;
+		}
 		// A drop event names the files it took out (#41), so a timeline needs no read per drop.
-		const events = feedEvents(entries, start).map((e) => {
+		const enriched = events.map((e) => {
 			if (e.type !== "drop" || e.version === undefined) return e;
 			const v = this.project.log({ limit: 1, before: e.version + 1 }).versions[0];
 			return v && v.version === e.version ? { ...e, dropped: v.files } : e;
 		});
-		return { next: start + entries.length, end, events };
+		return { next, end, events: enriched };
 	}
 
 	/** The log position for a time (ms since 1970) or a version of shared (#41). */

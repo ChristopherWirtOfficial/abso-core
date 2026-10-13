@@ -5,6 +5,26 @@ import { EngineProject, SqliteLog } from "../src/engine-project.ts";
 import { memoryStorage } from "./helpers.ts";
 
 describe("the engine over the object's SQLite log", () => {
+	it("extracts feed events without retaining a page of canonical payloads", (t) => {
+		const storage = memoryStorage();
+		t.after(() => storage.db.close());
+		const project = EngineProject.open(storage);
+		answer(project, "init", undefined, { files: { "a.txt": "one\n" } });
+		answer(project, "sync", "alice", {});
+		answer(project, "record", "alice", { files: { "a.txt": "two\n" } });
+		answer(project, "publish", "alice", { message: "Changed" });
+		const expected = project.feed(0, 500);
+		const original = SqliteLog.prototype.since;
+		let reads = 0;
+		t.mock.method(SqliteLog.prototype, "since", function (this: SqliteLog, from: number, limit: number) {
+			assert.equal(limit, 1, "feed must release each canonical payload before reading another");
+			reads++;
+			return original.call(this, from, limit);
+		});
+		assert.deepEqual(project.feed(0, 500), expected);
+		assert.equal(reads, expected.next);
+		assert.deepEqual(project.feed(1, 2).events, expected.events.slice(1, 3));
+	});
 	it("serves init, records and pushes through answer(), and holds a collision", () => {
 		const storage = memoryStorage();
 		const p = EngineProject.open(storage);

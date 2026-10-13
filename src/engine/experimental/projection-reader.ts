@@ -23,18 +23,31 @@ export class ProjectionReader implements ReadView {
 	get set(): ReadonlySet<string> {
 		this.#assertLive();
 		const has = (id: string) =>
-			this.graph.has(id) &&
-			(this.#adapter.members.get(this.#state.membership, this.graph.atom(id).seq)?.present ?? false);
+			this.graph.has(id) && (this.#adapter.members.get(this.#state.membership, Number(id.slice(1)))?.present ?? false);
 		const assertLive = this.#assertLive;
+		const members = this.#adapter.members;
+		const root = this.#state.membership;
+		const graph = this.graph;
 		return new (class extends StableSet<string> {
 			readonly retainedBytes = 64;
 			has(id: string): boolean {
 				assertLive();
 				return has(id);
 			}
-			values(): SetIterator<string> {
+			*values(): SetIterator<string> {
 				assertLive();
-				throw Error("unsupported projected membership enumeration");
+				const iterator = members.entries(root);
+				try {
+					for (;;) {
+						assertLive();
+						const item = iterator.next();
+						if (item.done) return;
+						const [seq, member] = item.value;
+						if (member.present) yield graph.idOfSeq(seq);
+					}
+				} finally {
+					iterator.return?.();
+				}
 			}
 		})();
 	}

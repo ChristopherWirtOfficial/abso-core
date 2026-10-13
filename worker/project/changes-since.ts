@@ -26,11 +26,10 @@ export function changesSince(host: ChangesSinceHost, agent: AgentState, before: 
 		[before.set, after.set],
 		[after.set, before.set],
 	] as const) {
-		for (const file of host.touchedFiles(
-			[...a].filter((id) => !b.has(id)),
-			[before, after],
-		))
-			touched.add(file);
+		const changed = function* () {
+			for (const id of a) if (!b.has(id)) yield id;
+		};
+		for (const file of host.touchedFiles(changed(), [before, after])) touched.add(file);
 	}
 	const files: Files = {};
 	const modes: Modes = {};

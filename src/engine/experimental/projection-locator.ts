@@ -120,6 +120,24 @@ export class ProjectionLocator<T> {
 		}
 		return undefined;
 	}
+	/** Stream immutable leaves in numeric key order, retaining at most eight branch levels. */
+	*entries(root: Page): IterableIterator<readonly [number, T]> {
+		page(root);
+		const index = this;
+		function* visit(current: Page, parent?: string, digit?: string, depth = 0): IterableIterator<readonly [number, T]> {
+			if (depth > 8) throw Error("invalid locator depth");
+			if (current === null) return;
+			const node = index.#read(current, parent, digit);
+			if (node.kind === "leaf") {
+				yield [Number.parseInt(node.prefix, 16), index.#decode(structuredClone(node.value))];
+				return;
+			}
+			for (const digit of Object.keys(node.children).sort())
+				yield* visit(node.children[digit]!, node.prefix, digit, depth + 1);
+		}
+		yield* visit(root);
+	}
+
 	set(root: Page, id: number, value: T): number {
 		page(root);
 		const key = keyOf(id),
