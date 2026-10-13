@@ -38,8 +38,8 @@ import {
 	takeNews,
 } from "./commands.ts";
 import { configPath, findRoot, installKey, isVisitor, readConfig, readToken } from "./config.ts";
-import { newsBlockLines, newsShown, TOKEN_SERVERS } from "./core.ts";
-import { checkServer, doctor, doctorText, plainError, realProbe, whoami } from "./doctor.ts";
+import { newsBlockLines, newsShown } from "./core.ts";
+import { doctor, doctorText, plainError, realProbe, whoami } from "./doctor.ts";
 import { runDraftSync, runLand, runSwitch } from "./drafts.ts";
 import { runExport } from "./export.ts";
 import { runBlame, runWhere, runWho, runWhy } from "./history.ts";
@@ -49,7 +49,15 @@ import { browserSkip, openInBrowser } from "./open-browser.ts";
 import { initInOrg, runOrg, runOrgs } from "./orgs.ts";
 import { runUnqueue } from "./queue.ts";
 import { runNote, runNotes, runReview } from "./review.ts";
-import { checkFolderServer, localRefusal, serverFlag, serverHelp, serverUse } from "./server-choice.ts";
+import {
+	checkFolderServer,
+	chooseServer,
+	localRefusal,
+	SERVER_ORDER,
+	serverFlag,
+	serverHelp,
+	serverUse,
+} from "./server-choice.ts";
 import { installSkill, SKILL, skillPath } from "./skill.ts";
 import { colorsPass, terminalText } from "./terminal-text.ts";
 import { runAmend, runDrop, runFollow, runLabel, runLabels, runPluck } from "./versions.ts";
@@ -65,13 +73,9 @@ interface CommandDef {
 	readonly run: (args: Parsed, env: Env) => Promise<Output>;
 }
 
-/** The server login, box and logout act on: --server, the folder's, or outside a folder abso.dev's (TOKEN_SERVERS[0]). */
-export function boxServer(args: Parsed, env: Pick<Env, "cwd">): string {
-	const flag = str(args, "server");
-	if (flag) return flag;
-	const root = findRoot(env.cwd);
-	if (!root) return TOKEN_SERVERS[0]!;
-	return (JSON.parse(readFileSync(configPath(root), "utf8")) as { server: string }).server;
+/** The server login, box, logout, orgs, org, whoami and doctor act on, in the order every command picks one (server-choice.ts). */
+export function boxServer(args: Parsed, env: Pick<Env, "cwd" | "env">): string {
+	return chooseServer(serverFlag(args), env.cwd, env.env);
 }
 
 async function runKeyInstall(args: Parsed, env: Env): Promise<Output> {
@@ -96,7 +100,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { server: "string", project: "string", agent: "string", "as-is": "boolean", org: "string" },
 		usage: "abso init [folder] --project <name> --agent <name> [--as-is] [--org <org>]",
 		about:
-			"Create a project on the server from a folder's text files (the server is chosen as abso join chooses it). The folder becomes that agent's folder. It writes a starting .absoignore, and, when the folder has no avcs.json and package.json gives a check or a build to guess, an avcs.json (setup, check, build and out): what the server's CI runs on each new version of shared. Without one, CI runs what it can guess itself, or nothing. --as-is writes neither: the folder goes up exactly as it is (an import). --org <org> makes it an organization's project: for now that is done on the website, and abso says where.",
+			"Create a project on the server from a folder's text files The folder becomes that agent's folder. It writes a starting .absoignore, and, when the folder has no avcs.json and package.json gives a check or a build to guess, an avcs.json (setup, check, build and out): what the server's CI runs on each new version of shared. Without one, CI runs what it can guess itself, or nothing. --as-is writes neither: the folder goes up exactly as it is (an import). --org <org> makes it an organization's project: for now that is done on the website, and abso says where.",
 		run: (args, env) => {
 			const org = str(args, "org");
 			return org === undefined ? runInit(args, env) : initInOrg(org, boxServer(args, env));
@@ -186,7 +190,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		usage:
 			"abso login [--no-browser] [--projects <name,name>] [--role <reader|writer|owner>] [--max-agents <1-50>] [--days <1-90>]",
 		about:
-			"Sign this box in once: it opens the approve page in your browser with the code filled in, prints the link and the code too, and waits while a person approves the code on the website, choosing the projects, the highest role and how many agents. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. Without --server, the folder's server, or https://api.abso.dev outside a folder. No browser opens with --no-browser or ABSO_NO_BROWSER, over SSH, under CI, or on Linux without a display.",
+			"Sign this box in once: it opens the approve page in your browser with the code filled in, prints the link and the code too, and waits while a person approves the code on the website, choosing the projects, the highest role and how many agents. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. No browser opens with --no-browser or ABSO_NO_BROWSER, over SSH, under CI, or on Linux without a display.",
 		run: async (args, env) => {
 			const server = boxServer(args, env);
 			const open =
@@ -219,9 +223,9 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { server: "string" },
 		usage: "abso whoami",
 		about:
-			"Who and where you're signed in: this box's sign-in, as the server sees it (so a revoked one shows), its projects, roles and expiry, and this folder's project, agent and kind of key. Never a credential. The server is --server, else ABSO_SERVER, else this folder's, else the one this box signed in to with abso login, else https://api.abso.dev.",
+			"Who and where you're signed in: this box's sign-in, as the server sees it (so a revoked one shows), its projects, roles and expiry, and this folder's project, agent and kind of key. Never a credential.",
 		run: async (args, env) => {
-			const out = await whoami(checkServer(str(args, "server"), env.cwd, env.env), env.cwd, env.env, realProbe());
+			const out = await whoami(boxServer(args, env), env.cwd, env.env, realProbe());
 			return { text: out.text, json: out.json };
 		},
 	},
@@ -229,15 +233,9 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { server: "string" },
 		usage: "abso doctor",
 		about:
-			"Checks what commands need, one line each: Node's version, that the server answers, this box's sign-in (present, unexpired, accepted), and this folder's key against its project. A failed check says what to do next, and the exit is 1. Never prints a credential. It picks the server as whoami does.",
+			"Checks what commands need, one line each: Node's version, that the server answers, this box's sign-in (present, unexpired, accepted), and this folder's key against its project. A failed check says what to do next, and the exit is 1. Never prints a credential.",
 		run: async (args, env) => {
-			const checks = await doctor(
-				checkServer(str(args, "server"), env.cwd, env.env),
-				env.cwd,
-				env.env,
-				realProbe(),
-				str(args, "server") !== undefined,
-			);
+			const checks = await doctor(boxServer(args, env), env.cwd, env.env, realProbe());
 			const failed = checks.some((c) => c.result === "fail");
 			return { text: doctorText(checks), json: { checks }, ...(failed ? { exit: EXIT.error } : {}) };
 		},
@@ -308,7 +306,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		flags: { server: "string", agent: "string", dir: "string", reader: "boolean" },
 		usage: "abso join <project> [--agent <name>] [--dir <folder>] [--reader]",
 		about:
-			"Join a project as a new agent and write its shared files into a folder: --dir, else here when this folder is empty, else ./<project> (which has to be new or empty). Without --agent the agent is named after this box (the name abso login gave it, lower-cased), or the next free <name>-2, <name>-3; that needs the box signed in with abso login. The server is --server, else ABSO_SERVER, else the one this box signed in to with abso login, else https://api.abso.dev. --reader joins as a reader: it reads everything and records nothing, and the server refuses its edits, records and pushes. With --reader and no sign-in, a public project is joined to read signed out: the folder holds only its settings, sends no sign-in, and runs status, log, show, files, blame, why, where, issues, issue and search; every other command is refused.",
+			"Join a project as a new agent and write its shared files into a folder: --dir, else here when this folder is empty, else ./<project> (which has to be new or empty). Without --agent the agent is named after this box (the name abso login gave it, lower-cased), or the next free <name>-2, <name>-3; that needs the box signed in with abso login. --reader joins as a reader: it reads everything and records nothing, and the server refuses its edits, records and pushes. With --reader and no sign-in, a public project is joined to read signed out: the folder holds only its settings, sends no sign-in, and runs status, log, show, files, blame, why, where, issues, issue and search; every other command is refused.",
 		run: runJoin,
 	},
 	record: {
@@ -811,7 +809,9 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 const HELP_INTRO = "abso: version control for agents. This is its command-line client.";
 const HELP_NOTE =
 	"Every command takes --json. Settings live in .abso/config.json (.avcs/config.json in a folder from before the rename). The token comes from ABSO_TOKEN, or else ~/.abso/token (or ~/.avcs/token from before). " +
-	"Every command that talks to a server takes --server <url>; one that works only on this machine (skill, check-ignore, pause, resume, fix-eol) doesn't. In a joined folder --server must be the folder's own server: another is refused, never swapped in. An explicit --server is used as given, and no setting redirects it.";
+	"Every command that talks to a server takes --server <url>; one that works only on this machine (skill, check-ignore, pause, resume, fix-eol) doesn't. In a joined folder --server must be the folder's own server: another is refused, never swapped in. An explicit --server is used as given, and no setting redirects it. The server is " +
+	SERVER_ORDER +
+	": which servers this box is signed in to plays no part.";
 
 /** A command's flags: its own, and --server for every command that talks to a server (server-choice.ts). */
 function flagsOf(name: string, def: CommandDef): FlagSpec {

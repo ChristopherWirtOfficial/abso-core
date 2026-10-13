@@ -2846,9 +2846,12 @@ describe("abso mcp (#44): the commands as MCP tools", () => {
 	it("abso login, box and logout outside a folder act on https://api.abso.dev", () => {
 		const outside = mkdtempSync(join(tmpdir(), "abso-login-"));
 		try {
-			assert.equal(boxServer(parseArgs("login", [], { server: "string" }), { cwd: outside }), "https://api.abso.dev");
+			assert.equal(
+				boxServer(parseArgs("login", [], { server: "string" }), { cwd: outside, env: {} }),
+				"https://api.abso.dev",
+			);
 			const given = parseArgs("login", ["--server", "https://example.test"], { server: "string" });
-			assert.equal(boxServer(given, { cwd: outside }), "https://example.test");
+			assert.equal(boxServer(given, { cwd: outside, env: {} }), "https://example.test");
 		} finally {
 			rmSync(outside, { recursive: true, force: true });
 		}

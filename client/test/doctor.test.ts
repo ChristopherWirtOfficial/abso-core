@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { ApiError } from "../src/api-error.ts";
 import { writeBox } from "../src/box.ts";
-import { checkServer, doctor, doctorText, nodeNeeded, type Probe, plainError, whoami } from "../src/doctor.ts";
+import { doctor, doctorText, nodeNeeded, type Probe, plainError, whoami } from "../src/doctor.ts";
 
 const SERVER = "https://staging.abso.example";
 const CREDENTIAL = "abso_bx_the-secret-credential";
@@ -228,25 +228,18 @@ test("plainError words a refusal by whether a credential went, and a server that
 	assert.equal(plainError(new Error("anything else"), true), undefined);
 });
 
-test("whoami and doctor pick the server as join does: --server, ABSO_SERVER, the folder's, the box's sign-in, then abso.dev", () => {
+test("whoami with nothing named shows prod, and names the other servers this box is signed in to", async () => {
 	const outside = temp("outside");
-	const empty = temp("home");
-	assert.equal(checkServer(undefined, outside, {}, empty, NOW), "https://api.abso.dev");
 	const home = temp("home");
 	writeBox(box(), home);
-	assert.equal(checkServer(undefined, outside, {}, home, NOW), SERVER);
-	assert.equal(checkServer(undefined, folder(), {}, empty, NOW), SERVER);
-	assert.equal(checkServer(undefined, outside, { ABSO_SERVER: "http://env.example" }, home, NOW), "http://env.example");
-	assert.equal(
-		checkServer("http://flag.example", folder(), { ABSO_SERVER: "http://env.example" }, home, NOW),
-		"http://flag.example",
+	const fetcher = server({ "/box": [200, { revoked_at: null }] });
+	const prod = await whoami("https://api.abso.dev", outside, {}, probe(fetcher, home));
+	assert.match(
+		prod.text,
+		/This box isn't signed in to https:\/\/api\.abso\.dev\. Run abso login\. This box is signed in to https:\/\/staging\.abso\.example: abso whoami --server <url> uses it\./,
 	);
-	const expired = temp("home");
-	writeBox(box(NOW - 1), expired);
-	assert.equal(checkServer(undefined, outside, {}, expired, NOW), "https://api.abso.dev");
 	writeBox({ ...box(), server: "https://api.abso.dev" }, home);
-	assert.throws(
-		() => checkServer(undefined, outside, {}, home, NOW),
-		/signed in to .* and .*: say which with --server/,
-	);
+	const both = await whoami("https://api.abso.dev", outside, {}, probe(fetcher, home));
+	assert.match(both.text, /Signed in to https:\/\/api\.abso\.dev as box b_0123abcd/);
+	assert.equal(both.json.server, "https://api.abso.dev");
 });

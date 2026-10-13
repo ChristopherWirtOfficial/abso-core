@@ -383,27 +383,22 @@ test("a box's sign-in is kept per server, and logout forgets it even when the se
 	assert.equal(forgetBox(SERVER, h), false);
 });
 
-test("join and init pick the server: --server, ABSO_SERVER, the box's sign-in, then api.abso.dev", () => {
+test("join and init pick the server in the one order: --server, the folder's, ABSO_SERVER, then prod", () => {
 	const h = home();
+	const outside = home();
 	const args = (server?: string) => ({ positionals: [], flags: new Map(server ? [["server", server]] : []) });
-	const none = { env: {} };
-	assert.equal(serverFrom(args(), none, h), "https://api.abso.dev", "nothing signed in: the abso API");
+	const none = { env: {}, cwd: outside };
+	assert.equal(serverFrom(args(), none), "https://api.abso.dev", "nothing named: prod");
 	writeBox({ ...record, expiresAt: Date.now() + 1e6 }, h);
 	assert.deepEqual(signedInServers(h), [SERVER]);
-	assert.equal(serverFrom(args(), none, h), SERVER, "the server abso login signed this box in to");
+	assert.equal(serverFrom(args(), none), "https://api.abso.dev", "a sign-in elsewhere doesn't pick the server");
 	assert.deepEqual(signedInServers(h, Date.now() + 2e6), [], "an expired sign-in doesn't count");
-	assert.equal(serverFrom(args(), { env: { ABSO_SERVER: "https://env.example" } }, h), "https://env.example");
+	assert.equal(serverFrom(args(), { ...none, env: { ABSO_SERVER: "https://env.example" } }), "https://env.example");
 	assert.equal(
-		serverFrom(args("https://flag.example"), { env: { ABSO_SERVER: "https://env.example" } }, h),
+		serverFrom(args("https://flag.example"), { ...none, env: { ABSO_SERVER: "https://env.example" } }),
 		"https://flag.example",
 	);
-	writeBox({ ...record, server: "https://other.abso.example", expiresAt: Date.now() + 1e6 }, h);
-	writeBox({ ...record, expiresAt: Date.now() + 1e6 }, h);
-	assert.throws(
-		() => serverFrom(args(), none, h),
-		/signed in to https:\/\/other\.abso\.example and https:\/\/staging\.abso\.example: say which with --server/,
-	);
-	assert.equal(serverFrom(args(SERVER), none, h), SERVER, "--server settles it");
+	assert.equal(serverFrom(args(SERVER), none), SERVER, "--server is used as given");
 });
 
 test("join with no --agent takes the box's name, skips names this box holds, and moves past a taken one", async () => {

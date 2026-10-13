@@ -5,13 +5,13 @@ import { join, relative, resolve } from "node:path";
 import { Api, ApiError } from "./api.ts";
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { writeKnownBlobs } from "./blobs.ts";
-import { defaultAgentName, mintFreeName, mintKey, readBox, signedInServers } from "./box.ts";
+import { defaultAgentName, mintFreeName, mintKey, readBox } from "./box.ts";
 import { STARTING_ABSOIGNORE } from "./check-ignore.ts";
 import { CLIENT_DIR } from "./client-version.ts";
 import { type Env, type Output, plural } from "./command-env.ts";
 import { leftOutText, syncFolder, uploadBlobs } from "./commands.ts";
 import { findRoot, installKey, readConfig, type Settings, tokenFor, writeConfig } from "./config.ts";
-import { TOKEN_SERVERS } from "./core.ts";
+import { elsewhereText } from "./doctor.ts";
 import { fromEnv } from "./env-names.ts";
 import { clearKnown, loadIgnore, readFolder, writeKnown } from "./folder.ts";
 import { modInstalled } from "./install.ts";
@@ -19,19 +19,12 @@ import { type FullMode, foldModes, writeKnownModes } from "./modes.ts";
 import { siteOf } from "./orgs.ts";
 import { projectFileName, readProjectFile, startingProjectFileText, writeStartingProjectFile } from "./project-file.ts";
 import { refusedText } from "./safety.ts";
+import { chooseServer, serverFlag } from "./server-choice.ts";
 import { OLD_STATE_DIR, STATE_DIR, stateDir } from "./state-dir.ts";
 
-/**
- * The server to join or start on: --server, then ABSO_SERVER, then the server this box is signed in
- * to (abso login wrote it), then https://api.abso.dev. A box signed in to more than one server has to say which.
- */
-export function serverFrom(args: Parsed, env: Pick<Env, "env">, home?: string): string {
-	const named = str(args, "server") ?? fromEnv(env.env, "SERVER");
-	if (named) return named;
-	const signedIn = signedInServers(home);
-	if (signedIn.length > 1)
-		throw new UsageError(`this box is signed in to ${signedIn.join(" and ")}: say which with --server <url>`);
-	return signedIn[0] ?? TOKEN_SERVERS[0]!;
+/** The server to join or start on, in the order every command picks one (server-choice.ts chooseServer). */
+export function serverFrom(args: Parsed, env: Pick<Env, "env" | "cwd">): string {
+	return chooseServer(serverFlag(args), env.cwd, env.env);
 }
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -150,7 +143,7 @@ export async function isPublic(server: string, project: string): Promise<boolean
 async function signedOut(server: string, project: string): Promise<string> {
 	return (await isPublic(server, project))
 		? `${project} is public: read it at ${siteOf(server)}/${SITE_OWNER}/${project} (every page is also JSON), or here with abso join ${project} --reader. To work on it: abso login.`
-		: `This box isn't signed in to ${server}. abso login signs it in.`;
+		: `This box isn't signed in to ${server}. abso login signs it in.${elsewhereText(server, `abso join ${project}`)}`;
 }
 
 /** A folder that reads a public project signed out: no agent, no key, no copy of the files. */

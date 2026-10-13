@@ -3,12 +3,10 @@
 // when one fails. Neither prints a credential. plainError words the commonest failures the same way.
 
 import { ApiError } from "./api-error.ts";
-import { UsageError } from "./args.ts";
 import { type Answer, type BoxRecord, boxGet, boxText, originOf, readBox, signedInServers } from "./box.ts";
 import { builtCopy } from "./client-version.ts";
 import { type Config, credentialLabel, findRoot, readConfig } from "./config.ts";
-import { TOKEN_SERVERS } from "./core.ts";
-import { fromEnv } from "./env-names.ts";
+import { sameServer } from "./server-choice.ts";
 
 /** The lowest Node major each kind of copy runs on: the npm package is built for 20, a checkout runs its .ts as is. */
 export function nodeNeeded(built: boolean): number {
@@ -43,25 +41,13 @@ function folderOf(
 }
 
 /**
- * The server whoami and doctor look at, in the order join picks one: --server, then ABSO_SERVER, then this
- * folder's server, then the one this box signed in to with abso login, then https://api.abso.dev. A box signed
- * in to more than one server has to say which.
+ * The servers other than `server` this box is signed in to, as one sentence for a refusal or a report to end
+ * with, naming how to use one: a box signed in elsewhere is never used for `server` by itself.
  */
-export function checkServer(
-	flag: string | undefined,
-	cwd: string,
-	env: Readonly<Record<string, string | undefined>>,
-	home?: string,
-	now = Date.now(),
-): string {
-	const named = flag ?? fromEnv(env, "SERVER");
-	if (named) return named;
-	const folder = folderOf(cwd, env)?.config?.server;
-	if (folder) return folder;
-	const signedIn = signedInServers(home, now);
-	if (signedIn.length > 1)
-		throw new UsageError(`this box is signed in to ${signedIn.join(" and ")}: say which with --server <url>`);
-	return signedIn[0] ?? TOKEN_SERVERS[0]!;
+export function elsewhereText(server: string, command: string, home?: string, now = Date.now()): string {
+	const others = signedInServers(home, now).filter((s) => !sameServer(s, originOf(server)));
+	if (others.length === 0) return "";
+	return ` This box is signed in to ${others.join(" and ")}: ${command} --server <url> uses ${others.length === 1 ? "it" : "one"}.`;
 }
 
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace("T", " ");
@@ -102,7 +88,9 @@ export async function whoami(
 	const record = readBox(server, probe.home);
 	let box: Record<string, unknown> | null = null;
 	if (!record) {
-		lines.push(`This box isn't signed in to ${originOf(server)}. Run abso login.`);
+		lines.push(
+			`This box isn't signed in to ${originOf(server)}. Run abso login.${elsewhereText(server, "abso whoami", probe.home, probe.now)}`,
+		);
 	} else {
 		const answer = await serverBox(record, probe);
 		const [first, ...rest] = boxText(record, server, probe.now).split("\n");
@@ -155,7 +143,6 @@ export async function doctor(
 	cwd: string,
 	env: Readonly<Record<string, string | undefined>>,
 	probe: Probe,
-	explicit = false,
 ): Promise<Check[]> {
 	const checks: Check[] = [];
 	const need = nodeNeeded(probe.built);
@@ -171,8 +158,8 @@ export async function doctor(
 	);
 
 	const folder = folderOf(cwd, env);
-	// The folder's own server when there is one (it's the one its commands talk to), unless --server named one.
-	const target = explicit ? server : (folder?.config?.server ?? server);
+	// Chosen as every command chooses (server-choice.ts): --server, else the folder's own, else ABSO_SERVER, else prod.
+	const target = server;
 	const origin = originOf(target);
 	let reachable = false;
 	const started = Date.now();

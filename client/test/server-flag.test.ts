@@ -5,7 +5,9 @@
 // - in a joined folder, --server naming the folder's own server reaches it; another server is refused, never
 //   swapped in, and nothing is sent; outside a joined folder a folder command with --server is refused too;
 // - an explicit --server goes to that server's own Issues Worker, which ABSO_ISSUES_SERVER doesn't redirect;
-// - a command that picks its server (whoami, box, logout) uses the one named, even inside a folder on another.
+// - a command that picks its server (whoami, box, logout) uses the one named, even inside a folder on another;
+// - with nothing named (abso-core issue 9) the server is the joined folder's, else ABSO_SERVER, else prod, whatever
+//   this box is signed in to (doctor.test.ts has whoami with staging alone and with staging and prod both).
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -16,7 +18,7 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { writeConfig } from "../src/config.ts";
 import { commandTable, main } from "../src/main.ts";
-import { sameServer, serverHelp, serverUse } from "../src/server-choice.ts";
+import { chooseServer, PROD_SERVER, SERVER_ORDER, sameServer, serverHelp, serverUse } from "../src/server-choice.ts";
 
 /** A made-up token: the tests never read the real ~/.abso/token. */
 const TOKEN = "abso_test-token-for-server-flag";
@@ -214,5 +216,52 @@ describe("--server on every command", () => {
 		assert.ok(!sameServer("http://127.0.0.1:8787", "http://127.0.0.1:8788"));
 		assert.ok(!sameServer("http://127.0.0.1:8787", "http://localhost:8787"));
 		assert.ok(!sameServer("https://x.example/a", "https://x.example/b"));
+	});
+});
+
+describe("the server when nothing names one", () => {
+	const STAGING = "https://staging.abso.example";
+
+	it("is --server, else the joined folder's, else ABSO_SERVER, else prod", () => {
+		const outside = temp("outside");
+		const staging = folder(STAGING);
+		assert.equal(PROD_SERVER, "https://api.abso.dev");
+		assert.equal(chooseServer(undefined, outside, {}), PROD_SERVER, "nothing named: prod");
+		assert.equal(chooseServer(undefined, outside, { ABSO_SERVER: STAGING }), STAGING, "the environment");
+		assert.equal(chooseServer(undefined, outside, { AVCS_SERVER: STAGING }), STAGING, "its older name");
+		assert.equal(chooseServer(undefined, staging, {}), STAGING, "a joined staging folder");
+		assert.equal(chooseServer(undefined, staging, { ABSO_SERVER: "https://env.example" }), STAGING, "folder first");
+		assert.equal(chooseServer(PROD_SERVER, staging, { ABSO_SERVER: STAGING }), PROD_SERVER, "explicit prod");
+		assert.equal(chooseServer(STAGING, outside, {}), STAGING, "explicit staging");
+		assert.throws(
+			() => chooseServer(undefined, outside, { ABSO_SERVER: "staging" }),
+			/ABSO_SERVER takes an http or https URL/,
+		);
+	});
+
+	it("help names the order once for every command that picks its server", async () => {
+		assert.equal(
+			SERVER_ORDER,
+			"--server <url>, else the server of the abso folder you're in, else ABSO_SERVER, else prod (https://api.abso.dev)",
+		);
+		for (const name of ["join", "init", "login", "whoami", "doctor", "box", "logout", "orgs", "org"])
+			assert.ok(serverHelp(name)?.includes(SERVER_ORDER), name);
+		assert.ok((await run(process.cwd(), ["help"])).stdout.includes(SERVER_ORDER));
+	});
+
+	it("a joined folder's commands go to its server with nothing named, and ABSO_SERVER doesn't move them", async () => {
+		const root = folder();
+		clear();
+		await run(root, ["status"], { ABSO_SERVER: other.url });
+		assert.ok(home.paths.length > 0);
+		assert.equal(other.paths.length, 0);
+	});
+
+	it("whoami in a joined folder looks at the folder's server, and another named there is used as given", async () => {
+		const root = folder();
+		const here = await run(root, ["whoami"], { ABSO_SERVER: other.url });
+		assert.ok(here.stdout.includes(`isn't signed in to ${home.url}`), here.stdout);
+		const named = await run(root, ["box", "--server", other.url]);
+		assert.ok(named.stdout.includes(`isn't signed in to ${other.url}`), named.stdout);
 	});
 });
