@@ -12,6 +12,7 @@ import {
 	parseKey,
 	type View,
 } from "../../src/engine/index.ts";
+import { differenceSet, StableOverlaySet } from "../../src/engine/state-source.ts";
 import { definedTwice } from "./definitions.ts";
 import type { AgentState, Collision, CollisionSide } from "./project-types.ts";
 import { SHARED, type Space } from "./spaces.ts";
@@ -235,7 +236,7 @@ export interface CollisionHost {
 	readonly spaces: ReadonlyMap<string, Space>;
 	version(): number;
 	spaceOf(agent: AgentState): Space;
-	agentSet(agent: AgentState): Set<AtomId>;
+	agentSet(agent: AgentState): ReadonlySet<AtomId>;
 	draft(agent: AgentState): AtomId[];
 	agentView(agent: AgentState): View;
 	at(space: Space, version: number): ReadonlySet<AtomId>;
@@ -305,11 +306,11 @@ export function duplicateCollisions(host: CollisionHost, agent: AgentState): Col
 export function openPairs(host: CollisionHost, agent: AgentState): Pair[] {
 	const space = host.spaceOf(agent);
 	const set = host.agentSet(agent);
-	const mine = new Set(agent.mine);
+	const mine = new StableOverlaySet(agent.mine);
 	const out: Pair[] = [];
 	const draft = host.draft(agent);
 	if (draft.length > 0) {
-		const seen = new Set([...host.at(space, agent.base)].filter((id) => !mine.has(id)));
+		const seen = differenceSet(host.at(space, agent.base), mine);
 		out.push(...pairsIn(host.graph, draft, seen, set));
 	}
 	if (space.name !== SHARED) {

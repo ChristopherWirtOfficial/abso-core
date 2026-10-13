@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildBase, Graph } from "../../../src/engine/index.ts";
-import { CachedStateStorage } from "../../../src/engine/state-source.ts";
+import { CachedStateStorage, StableOverlaySet, unionOverlay } from "../../../src/engine/state-source.ts";
 import { SqlState } from "../../../src/engine/test/storage-helper.ts";
-import { pairsIn } from "../collisions.ts";
+import { type CollisionHost, openPairs, pairsIn } from "../collisions.ts";
+import type { AgentState } from "../project-types.ts";
+import { newSpace } from "../spaces.ts";
 
 test("persistent conflict candidates and resolver intersections stream in exact canonical order", (t) => {
 	const source = new SqlState();
@@ -67,6 +69,40 @@ test("persistent conflict candidates and resolver intersections stream in exact 
 		);
 		const selected = new Set(["a1", "a257", "a513"]);
 		assert.deepEqual(pairsIn(reopened, [draft], selected, settled), []);
+		const base = new StableOverlaySet(against);
+		t.mock.method(base, "values", () => {
+			throw Error("enumerating the complete base membership is forbidden");
+		});
+		const actor: AgentState = {
+			name: "fixture",
+			space: "",
+			base: 0,
+			synced: true,
+			mine: ["a1", draft],
+			news: [],
+			newsAt: [],
+			told: new Set(),
+			parked: new Map(),
+			marked: [],
+		};
+		const space = newSpace("");
+		const host: CollisionHost = {
+			graph: reopened,
+			spaces: new Map([["", space]]),
+			version: () => 0,
+			spaceOf: () => space,
+			agentSet: (agent) => unionOverlay(base, agent.mine),
+			draft: () => [draft],
+			at: () => base,
+			shared: () => space,
+			agentView: () => {
+				throw Error("open pairs must not build a View");
+			},
+		};
+		assert.deepEqual(
+			openPairs(host, actor).map((pair) => pair.theirs),
+			[...against].filter((id) => id !== "a1"),
+		);
 	} finally {
 		source.db.close();
 	}

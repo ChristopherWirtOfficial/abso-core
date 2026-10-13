@@ -22,6 +22,7 @@ import {
 	StableUnionSet,
 	StoredMap,
 	storedArray,
+	unionOverlay,
 } from "../../src/engine/state-source.ts";
 import { type AddDraftHost, addDraft as hostedAddDraft } from "./add-draft.ts";
 import { type AmendHost, amend as hostedAmend } from "./amend.ts";
@@ -1773,7 +1774,7 @@ export class Project {
 			spaces: this.#spaces,
 			version: () => this.version,
 			spaceOf: (agent) => this.#spaceOf(agent),
-			agentSet: (agent) => this.#agentSet(agent),
+			agentSet: (agent) => unionOverlay(this.#at(this.#spaceOf(agent), agent.base), agent.mine),
 			draft: (agent) => this.#draft(agent),
 			agentView: (agent) => this.#agentView(agent),
 			at: (space, version) => this.#at(space, version),
