@@ -25,6 +25,11 @@ export interface Env {
 	readonly runKind?: RunKind;
 	/** What a -file flag of - reads: stdin, unless a test gives it. */
 	readonly readStdin?: () => string;
+	/**
+	 * The server --server named, checked (server-choice.ts), when the command was given one. It is used as given,
+	 * so no environment setting redirects it (ABSO_ISSUES_SERVER included).
+	 */
+	readonly server?: string;
 }
 
 export function plural(n: number, word: string): string {

@@ -36,7 +36,10 @@ const q = (s: string): string => JSON.stringify(s);
 /** The folder, with its Api pointed at the Issues Worker: the token goes only where tokenGoesTo allows, as for the avcs server. */
 function openIssues(env: Env): { root: string; config: Config; api: Api } {
 	const { root, config, api } = open(env);
-	const server = fromEnv(env.env, "ISSUES_SERVER") || issuesServerFor(config.server, readMachineServers(env.env));
+	// An explicit --server goes to that server's own Issues Worker: ABSO_ISSUES_SERVER doesn't redirect it.
+	const server =
+		(env.server === undefined ? fromEnv(env.env, "ISSUES_SERVER") : undefined) ||
+		issuesServerFor(config.server, readMachineServers(env.env));
 	if (server === undefined)
 		throw new UsageError(
 			`${config.server} has no Issues Worker beside it that abso knows; ~/.abso/servers.json or ABSO_ISSUES_SERVER names one`,

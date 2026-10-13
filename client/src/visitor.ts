@@ -23,8 +23,8 @@ export const VISITOR_READS: Readonly<Record<string, readonly string[]>> = {
 /** Commands about this box, not the folder: they work from anywhere, a visitor folder too. */
 export const VISITOR_ELSEWHERE: readonly string[] = ["login", "logout"];
 
-/** Flags every command takes. */
-const EVERY = new Set(["json", "help"]);
+/** Flags every command takes (--server is checked against the folder's own server before this, in main.ts). */
+const EVERY = new Set(["json", "help", "server"]);
 
 export function visitorRefusal(project: string): string {
 	return `This folder reads ${project} signed out. To work on it: abso login, then abso join ${project} in a new folder.`;

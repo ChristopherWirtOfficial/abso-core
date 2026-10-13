@@ -49,6 +49,7 @@ import { browserSkip, openInBrowser } from "./open-browser.ts";
 import { initInOrg, runOrg, runOrgs } from "./orgs.ts";
 import { runUnqueue } from "./queue.ts";
 import { runNote, runNotes, runReview } from "./review.ts";
+import { checkFolderServer, localRefusal, serverFlag, serverHelp, serverUse } from "./server-choice.ts";
 import { installSkill, SKILL, skillPath } from "./skill.ts";
 import { colorsPass, terminalText } from "./terminal-text.ts";
 import { runAmend, runDrop, runFollow, runLabel, runLabels, runPluck } from "./versions.ts";
@@ -93,7 +94,7 @@ async function runKeyInstall(args: Parsed, env: Env): Promise<Output> {
 const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	init: {
 		flags: { server: "string", project: "string", agent: "string", "as-is": "boolean", org: "string" },
-		usage: "abso init [folder] [--server <url>] --project <name> --agent <name> [--as-is] [--org <org>]",
+		usage: "abso init [folder] --project <name> --agent <name> [--as-is] [--org <org>]",
 		about:
 			"Create a project on the server from a folder's text files (the server is chosen as abso join chooses it). The folder becomes that agent's folder. It writes a starting .absoignore, and, when the folder has no avcs.json and package.json gives a check or a build to guess, an avcs.json (setup, check, build and out): what the server's CI runs on each new version of shared. Without one, CI runs what it can guess itself, or nothing. --as-is writes neither: the folder goes up exactly as it is (an import). --org <org> makes it an organization's project: for now that is done on the website, and abso says where.",
 		run: (args, env) => {
@@ -183,7 +184,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 			days: "string",
 		},
 		usage:
-			"abso login [--server <url>] [--no-browser] [--projects <name,name>] [--role <reader|writer|owner>] [--max-agents <1-50>] [--days <1-90>]",
+			"abso login [--no-browser] [--projects <name,name>] [--role <reader|writer|owner>] [--max-agents <1-50>] [--days <1-90>]",
 		about:
 			"Sign this box in once: it opens the approve page in your browser with the code filled in, prints the link and the code too, and waits while a person approves the code on the website, choosing the projects, the highest role and how many agents. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. Without --server, the folder's server, or https://api.abso.dev outside a folder. No browser opens with --no-browser or ABSO_NO_BROWSER, over SSH, under CI, or on Linux without a display.",
 		run: async (args, env) => {
@@ -205,7 +206,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	},
 	box: {
 		flags: { server: "string" },
-		usage: "abso box [--server <url>]",
+		usage: "abso box",
 		about:
 			"What this box's sign-in allows: its projects, the highest role its agents may have, how many agents it has made and may make, and when it expires. Never the credential.",
 		run: async (args, env) => {
@@ -216,7 +217,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	},
 	whoami: {
 		flags: { server: "string" },
-		usage: "abso whoami [--server <url>]",
+		usage: "abso whoami",
 		about:
 			"Who and where you're signed in: this box's sign-in, as the server sees it (so a revoked one shows), its projects, roles and expiry, and this folder's project, agent and kind of key. Never a credential. The server is --server, else ABSO_SERVER, else this folder's, else the one this box signed in to with abso login, else https://api.abso.dev.",
 		run: async (args, env) => {
@@ -226,18 +227,24 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	},
 	doctor: {
 		flags: { server: "string" },
-		usage: "abso doctor [--server <url>]",
+		usage: "abso doctor",
 		about:
 			"Checks what commands need, one line each: Node's version, that the server answers, this box's sign-in (present, unexpired, accepted), and this folder's key against its project. A failed check says what to do next, and the exit is 1. Never prints a credential. It picks the server as whoami does.",
 		run: async (args, env) => {
-			const checks = await doctor(checkServer(str(args, "server"), env.cwd, env.env), env.cwd, env.env, realProbe());
+			const checks = await doctor(
+				checkServer(str(args, "server"), env.cwd, env.env),
+				env.cwd,
+				env.env,
+				realProbe(),
+				str(args, "server") !== undefined,
+			);
 			const failed = checks.some((c) => c.result === "fail");
 			return { text: doctorText(checks), json: { checks }, ...(failed ? { exit: EXIT.error } : {}) };
 		},
 	},
 	logout: {
 		flags: { server: "string" },
-		usage: "abso logout [--server <url>]",
+		usage: "abso logout",
 		about:
 			"End this box's sign-in on the server and forget it here. Keys its agents already have stop working with it.",
 		run: async (args, env) => {
@@ -255,7 +262,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	},
 	orgs: {
 		flags: { server: "string" },
-		usage: "abso orgs [--server <url>]",
+		usage: "abso orgs",
 		about:
 			"Your organizations and your role in each, and invitations waiting for you. It reads as the person who approved this box's sign-in (abso login).",
 		run: (args, env) => runOrgs(boxServer(args, env)),
@@ -299,7 +306,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	},
 	join: {
 		flags: { server: "string", agent: "string", dir: "string", reader: "boolean" },
-		usage: "abso join <project> [--agent <name>] [--dir <folder>] [--server <url>] [--reader]",
+		usage: "abso join <project> [--agent <name>] [--dir <folder>] [--reader]",
 		about:
 			"Join a project as a new agent and write its shared files into a folder: --dir, else here when this folder is empty, else ./<project> (which has to be new or empty). Without --agent the agent is named after this box (the name abso login gave it, lower-cased), or the next free <name>-2, <name>-3; that needs the box signed in with abso login. The server is --server, else ABSO_SERVER, else the one this box signed in to with abso login, else https://api.abso.dev. --reader joins as a reader: it reads everything and records nothing, and the server refuses its edits, records and pushes. With --reader and no sign-in, a public project is joined to read signed out: the folder holds only its settings, sends no sign-in, and runs status, log, show, files, blame, why, where, issues, issue and search; every other command is refused.",
 		run: runJoin,
@@ -803,12 +810,21 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 
 const HELP_INTRO = "abso: version control for agents. This is its command-line client.";
 const HELP_NOTE =
-	"Every command takes --json. Settings live in .abso/config.json (.avcs/config.json in a folder from before the rename). The token comes from ABSO_TOKEN, or else ~/.abso/token (or ~/.avcs/token from before).";
+	"Every command takes --json. Settings live in .abso/config.json (.avcs/config.json in a folder from before the rename). The token comes from ABSO_TOKEN, or else ~/.abso/token (or ~/.avcs/token from before). " +
+	"Every command that talks to a server takes --server <url>; one that works only on this machine (skill, check-ignore, pause, resume, fix-eol) doesn't. In a joined folder --server must be the folder's own server: another is refused, never swapped in. An explicit --server is used as given, and no setting redirects it.";
+
+/** A command's flags: its own, and --server for every command that talks to a server (server-choice.ts). */
+function flagsOf(name: string, def: CommandDef): FlagSpec {
+	return serverUse(name) === "local" ? def.flags : { ...def.flags, server: "string" };
+}
 
 /** Every command as help shows it, in order: the table's, then the three it doesn't hold. */
-function helpEntries(): { name: string; usage: string; about: string; flags: FlagSpec }[] {
+function helpEntries(): { name: string; usage: string; about: string; flags: FlagSpec; server?: string }[] {
 	return [
-		...Object.entries(COMMANDS).map(([name, c]) => ({ name, usage: c.usage, about: c.about, flags: c.flags })),
+		...Object.entries(COMMANDS).map(([name, c]) => {
+			const server = serverHelp(name);
+			return { name, usage: c.usage, about: c.about, flags: flagsOf(name, c), ...(server ? { server } : {}) };
+		}),
 		{
 			name: "hook",
 			usage: "abso hook",
@@ -832,7 +848,11 @@ function helpEntries(): { name: string; usage: string; about: string; flags: Fla
 }
 
 function help(): string {
-	const entries = helpEntries().flatMap((c) => [`  ${c.usage}`, `      ${c.about}`]);
+	const entries = helpEntries().flatMap((c) => [
+		`  ${c.usage}`,
+		`      ${c.about}`,
+		...(c.server ? [`      ${c.server}`] : []),
+	]);
 	return [HELP_INTRO, "", ...entries, "", HELP_NOTE].join("\n");
 }
 
@@ -864,7 +884,7 @@ export interface MainResult {
 export function commandTable(): Readonly<
 	Record<string, { readonly flags: FlagSpec; readonly usage: string; readonly about: string }>
 > {
-	return COMMANDS;
+	return Object.fromEntries(Object.entries(COMMANDS).map(([name, c]) => [name, { ...c, flags: flagsOf(name, c) }]));
 }
 
 function newsBlock(news: readonly string[]): string[] {
@@ -932,21 +952,34 @@ export async function main(argv: readonly string[], env: Env): Promise<MainResul
 			);
 		const gitOnly = gitOnlyForm(command, argv.slice(1));
 		if (gitOnly) throw new UsageError(gitOnly);
-		const parsed = parseArgs(command, argv.slice(1), withBodyFiles(command, def.flags), def.rest);
+		const use = serverUse(command);
+		const words = argv.includes("--") ? argv.slice(1, argv.indexOf("--")) : argv.slice(1);
+		if (use === "local" && words.some((w) => w === "--server" || w.startsWith("--server=")))
+			throw new UsageError(localRefusal(command));
+		const parsed = parseArgs(command, argv.slice(1), withBodyFiles(command, flagsOf(command, def)), def.rest);
 		if ((command === "push" || command === "pull") && parsed.positionals.length > 0)
 			throw new UsageError(
 				`abso ${command} takes no remote or branch: it ${command === "push" ? "adds your draft to shared" : "brings shared into this folder"}. A named draft is abso switch <name>.`,
 			);
 		if (bool(parsed, "help")) {
 			const files = bodyFilesHelp(command, def.flags);
-			return { stdout: `${def.usage}\n  ${def.about}\n${files ? `  ${files}\n` : ""}`, stderr: "", exit: EXIT.ok };
+			const server = serverHelp(command);
+			return {
+				stdout: `${def.usage}\n  ${def.about}\n${server ? `  ${server}\n` : ""}${files ? `  ${files}\n` : ""}`,
+				stderr: "",
+				exit: EXIT.ok,
+			};
 		}
+		// --server is checked before anything is read or sent: a bad value, or (for a command on a joined folder)
+		// a server that isn't the folder's own, is refused here.
+		const named = use === "local" ? undefined : serverFlag(parsed);
+		if (named !== undefined && use === "folder") checkFolderServer(command, named, env.cwd);
 		// A folder that reads signed out runs its reads and nothing else, refused before any call.
 		const root = findRoot(env.cwd);
 		if (root !== undefined && isVisitor(root)) checkVisitor(command, parsed, readConfig(root, env.env).project);
 		const args = readBodyFiles(command, parsed, env.cwd, env.readStdin);
 		takeNews(); // what an earlier call in this process left (tests run many)
-		const out = await def.run(args, env);
+		const out = await def.run(args, named === undefined ? env : { ...env, server: named });
 		const exit = out.exit ?? EXIT.ok;
 		// Every command that took news while recording prints it (#37, News Report).
 		const news = takeNews();

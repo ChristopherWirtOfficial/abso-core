@@ -155,6 +155,7 @@ export async function doctor(
 	cwd: string,
 	env: Readonly<Record<string, string | undefined>>,
 	probe: Probe,
+	explicit = false,
 ): Promise<Check[]> {
 	const checks: Check[] = [];
 	const need = nodeNeeded(probe.built);
@@ -170,8 +171,8 @@ export async function doctor(
 	);
 
 	const folder = folderOf(cwd, env);
-	// The folder's own server when there is one: it's the one its commands talk to.
-	const target = folder?.config?.server ?? server;
+	// The folder's own server when there is one (it's the one its commands talk to), unless --server named one.
+	const target = explicit ? server : (folder?.config?.server ?? server);
 	const origin = originOf(target);
 	let reachable = false;
 	const started = Date.now();
