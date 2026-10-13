@@ -2,7 +2,7 @@
 // versions never change, so their views are kept by name. Immutable indexed sets use their identity;
 // ordinary in-memory sets use their exact contents.
 
-import { type AtomId, type Graph, View } from "../../src/engine/index.ts";
+import { type AtomId, type Graph, type ReadView, View } from "../../src/engine/index.ts";
 import { StableSet } from "../../src/engine/state-source.ts";
 
 /**
@@ -12,13 +12,23 @@ import { StableSet } from "../../src/engine/state-source.ts";
  */
 const VIEW_BUDGET = 24_000_000;
 
+/** Internal opt-in. The owner validates identity and lifetime on every returned reader. */
+export interface ReadViewProvider {
+	keyed(key: string): ReadView;
+}
+
 /** Views by key, most recently used last, held under VIEW_BUDGET bytes and 32 views. */
 export class ViewCache {
 	readonly #graph: Graph;
+	readonly #provider?: ReadViewProvider;
 	readonly #cache = new Map<string | StableSet<AtomId>, View>();
 
-	constructor(graph: Graph) {
+	constructor(graph: Graph, provider?: (graph: Graph) => ReadViewProvider) {
 		this.#graph = graph;
+		this.#provider = provider?.(graph);
+	}
+	assertUnkeyedAllowed(): void {
+		if (this.#provider) throw Error("unsupported unkeyed projection membership");
 	}
 
 	/**
@@ -37,7 +47,8 @@ export class ViewCache {
 	}
 
 	/** Indexed snapshots use identity; ordinary sets use their exact contents. */
-	view(set: ReadonlySet<AtomId>): View {
+	view(set: ReadonlySet<AtomId>): ReadView {
+		this.assertUnkeyedAllowed();
 		// Immutable indexed membership is already a stable identity. Building
 		// a sorted history-sized key defeats its external-storage contract.
 		if (set instanceof StableSet) return this.#get(set, () => set);
@@ -49,7 +60,8 @@ export class ViewCache {
 	}
 
 	/** A view cached under `key`, made from `set()` when it isn't there. */
-	keyed(key: string, set: () => ReadonlySet<AtomId>): View {
+	keyed(key: string, set: () => ReadonlySet<AtomId>): ReadView {
+		if (this.#provider) return this.#provider.keyed(key);
 		return this.#get(key, set);
 	}
 

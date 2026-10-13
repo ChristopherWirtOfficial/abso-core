@@ -1,7 +1,7 @@
 // Create the project from its first files. Writes go through InitHost; today
 // the host is Project.
 
-import { type AttrSet, buildBase, canonicalText, type View } from "../../src/engine/index.ts";
+import { type AttrSet, buildBase, canonicalText, type ReadView } from "../../src/engine/index.ts";
 import { checkPath } from "./path-rules.ts";
 import { ProjectError } from "./project-error.ts";
 import { configProblem, PROJECT_FILES, projectFileOf } from "./project-helpers.ts";
@@ -16,7 +16,7 @@ export interface InitHost {
 	wholeOut(
 		files: Readonly<Record<string, string | null>>,
 		blobs: Readonly<Record<string, string>>,
-		view: View | undefined,
+		view: ReadView | undefined,
 		config?: string,
 	): { files: Record<string, string | null>; blobs: Record<string, string> };
 	checkBlobs(blobs: unknown, files: object): Record<string, string>;

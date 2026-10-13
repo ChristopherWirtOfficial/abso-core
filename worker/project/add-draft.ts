@@ -11,7 +11,7 @@ import {
 	type Graph,
 	type MoveInput,
 	parseKey,
-	type View,
+	type ReadView,
 } from "../../src/engine/index.ts";
 import type { Pair } from "./collisions.ts";
 import type { AgentState, Entry, Meta } from "./project-types.ts";
@@ -20,7 +20,7 @@ import type { AgentState, Entry, Meta } from "./project-types.ts";
 export interface AddDraftHost {
 	readonly graph: Graph;
 	openPairs(agent: AgentState): Pair[];
-	markersSettled(agent: AgentState, view: View, atom: Atom): AtomId[];
+	markersSettled(agent: AgentState, view: ReadView, atom: Atom): AtomId[];
 	apply(entry: Entry): void;
 }
 
@@ -32,7 +32,7 @@ export interface AddDraftHost {
 export function addDraft(
 	host: AddDraftHost,
 	agent: AgentState,
-	view: View,
+	view: ReadView,
 	input: { edits: readonly EditInput[]; attrs?: readonly AttrSet[]; move?: MoveInput },
 	time: number,
 	meta: Meta,

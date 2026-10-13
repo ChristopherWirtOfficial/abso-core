@@ -4,7 +4,7 @@
 // views; the project hands in who published an atom, and keeps the rule's
 // cache for its life.
 
-import { type AtomId, type Graph, joinLines, type LineId, type View } from "../../src/engine/index.ts";
+import { type AtomId, type Graph, joinLines, type LineId, type ReadView } from "../../src/engine/index.ts";
 import { type Origin, touchedFiles } from "./collisions.ts";
 import { type Definition, definitionsIn, importsOf, usedNames } from "./definitions.ts";
 import { codeOfLines, declaredIn, holdsNoCode } from "./names.ts";
@@ -52,7 +52,7 @@ export class DefinitionRule {
 	 * replaced the block of lines the atom deleted just before it in `base`.
 	 * A pure insertion replaced nothing.
 	 */
-	#replacedNames(line: LineId, base: View, runsOf: Map<AtomId, readonly RunEnd[]>): ReadonlySet<string> {
+	#replacedNames(line: LineId, base: ReadView, runsOf: Map<AtomId, readonly RunEnd[]>): ReadonlySet<string> {
 		const g = this.#graph;
 		const info = g.line(line);
 		if (!info) return EMPTY_NAMES;
@@ -97,9 +97,9 @@ export class DefinitionRule {
 	 */
 	collisions(
 		draft: ReadonlySet<AtomId>,
-		view: View,
-		baseView: View,
-		nowView: View,
+		view: ReadView,
+		baseView: ReadView,
+		nowView: ReadView,
 		newer: ReadonlySet<AtomId>,
 		spaceName: string,
 	): DefinitionCollision[] {

@@ -1,7 +1,7 @@
 // Files kept whole (#46): avcs.json's `"whole"` globs, text over WHOLE_LIMIT, or a file that is
 // already a blob. The project holds the blob store; these helpers decide which texts go there.
 
-import { canonicalText, type View } from "../../src/engine/index.ts";
+import { canonicalText, type ReadView } from "../../src/engine/index.ts";
 import { matchesPattern } from "./globs.ts";
 import { projectFileIn } from "./project-helpers.ts";
 import type { ProjectOptions } from "./project-types.ts";
@@ -15,7 +15,7 @@ export const WHOLE_LIMIT = 1_000_000;
 /** What the whole-file helpers need from a project. */
 export interface WholeHost {
 	initialized(): boolean;
-	sharedView(): View;
+	sharedView(): ReadView;
 	whole: ProjectOptions["whole"];
 }
 
@@ -45,7 +45,7 @@ export function isWhole(
 	host: WholeHost,
 	path: string,
 	length: number,
-	view: View | undefined,
+	view: ReadView | undefined,
 	rules: readonly string[],
 ): boolean {
 	if (!host.whole) return false;
@@ -61,7 +61,7 @@ export function wholeOut(
 	host: WholeHost,
 	files: Readonly<Record<string, string | null>>,
 	blobs: Readonly<Record<string, string>>,
-	view: View | undefined,
+	view: ReadView | undefined,
 	config?: string,
 ): { files: Record<string, string | null>; blobs: Record<string, string> } {
 	const outFiles: Record<string, string | null> = { ...files };

@@ -1,9 +1,9 @@
-import type { View } from "../../src/engine/index.ts";
+import type { ReadView } from "../../src/engine/index.ts";
 import { ProjectError } from "./project-error.ts";
 import type { FileChange, Mode, Modes } from "./project-types.ts";
 
 /** The listed files whose text differs between two views, before and after. */
-export function changesBetween(before: View, after: View, files: Iterable<string>): FileChange[] {
+export function changesBetween(before: ReadView, after: ReadView, files: Iterable<string>): FileChange[] {
 	const out: FileChange[] = [];
 	for (const path of [...new Set(files)].toSorted()) {
 		const b = before.hasFile(path) ? before.text(path) : null;
@@ -19,7 +19,7 @@ export function changesBetween(before: View, after: View, files: Iterable<string
 }
 
 /** Whether a file differs between two views: its text, its mode, or its blob (what changesBetween lists). */
-export function differs(before: View, after: View, path: string): boolean {
+export function differs(before: ReadView, after: ReadView, path: string): boolean {
 	const had = before.hasFile(path);
 	if (had !== after.hasFile(path)) return true;
 	if (had && !before.sameText(path, after)) return true;
@@ -29,7 +29,7 @@ export function differs(before: View, after: View, path: string): boolean {
 }
 
 /** A file's executable bit and link target, before and after, when either changed. */
-export function modeChange(before: View, after: View, path: string): { before: Mode; after: Mode } | undefined {
+export function modeChange(before: ReadView, after: ReadView, path: string): { before: Mode; after: Mode } | undefined {
 	const b = before.attrs(path);
 	const a = after.attrs(path);
 	if (b.exec === a.exec && b.link === a.link) return undefined;
@@ -37,7 +37,7 @@ export function modeChange(before: View, after: View, path: string): { before: M
 }
 
 /** Every executable file and link in a view. */
-export function modesOf(view: View): Modes {
+export function modesOf(view: ReadView): Modes {
 	const out: Modes = {};
 	for (const path of view.paths()) {
 		const a = view.attrs(path);

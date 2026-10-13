@@ -2,7 +2,7 @@
 // reviews which files by avcs.json, the notes list, every agent's start note, and writing or closing
 // a note. Reads go through NoteHost, writes through NoteWriteHost; today the host is Project.
 
-import type { AtomId, Graph, LineId, View } from "../../src/engine/index.ts";
+import type { AtomId, Graph, LineId, ReadView } from "../../src/engine/index.ts";
 import { matchesPattern } from "./globs.ts";
 import { type NewsItem, noteClosedItem, noteSaid } from "./news.ts";
 import { checkReadPath } from "./path-rules.ts";
@@ -27,11 +27,11 @@ export interface NoteHost {
 	readonly notes: ReadonlyMap<number, NoteRecord>;
 	initialized(): boolean;
 	shared(): Space;
-	sharedView(): View;
-	spellingIn(view: View, path: string): string;
-	viewAt(space: Space, version: number): View;
-	agentView(agent: AgentState): View;
-	view(set: ReadonlySet<AtomId>): View;
+	sharedView(): ReadView;
+	spellingIn(view: ReadView, path: string): string;
+	viewAt(space: Space, version: number): ReadView;
+	agentView(agent: AgentState): ReadView;
+	view(set: ReadonlySet<AtomId>): ReadView;
 	at(space: Space, version: number): ReadonlySet<AtomId>;
 	liveNote(agent: AgentState): Starting | undefined;
 }
@@ -43,9 +43,9 @@ export interface NoteWriteHost {
 	readonly changes: ReadonlyMap<number, ChangeRecord>;
 	readonly graph: Graph;
 	lastNote(): number;
-	agentView(agent: AgentState): View;
-	viewAtVersion(version: number): View;
-	sharedView(): View;
+	agentView(agent: AgentState): ReadView;
+	viewAtVersion(version: number): ReadView;
+	sharedView(): ReadView;
 	changeOfLines(lines: readonly LineId[]): number | undefined;
 	apply(entry: Entry): void;
 	flush(entries: Entry[]): void;
@@ -99,7 +99,7 @@ export function reviewersOf(
 }
 
 /** A note as reads show it, from the view its lines live in (undefined when no space holds them any more). */
-export function noteAnswerIn(n: NoteRecord, view: View | undefined): NoteAnswer {
+export function noteAnswerIn(n: NoteRecord, view: ReadView | undefined): NoteAnswer {
 	// Where the lines are now, found by their ids: a move (#49) can have taken them to another file.
 	let lines: [number, number] | null = null;
 	let file = n.file;
@@ -138,7 +138,7 @@ export function noteAnswerIn(n: NoteRecord, view: View | undefined): NoteAnswer 
  * published into; else their author's draft, where it works now or where it
  * parked it. Undefined when no space holds them any more (a discarded draft).
  */
-export function noteView(host: NoteHost, n: NoteRecord): View | undefined {
+export function noteView(host: NoteHost, n: NoteRecord): ReadView | undefined {
 	const writers = new Set(n.lines.map((l) => host.graph.lineAtom(l)).filter((a): a is AtomId => a !== undefined));
 	const holds = (set: ReadonlySet<AtomId> | readonly AtomId[]) =>
 		[...writers].some((a) => (set instanceof Set ? set.has(a) : (set as readonly AtomId[]).includes(a)));
@@ -218,7 +218,7 @@ export function writeNote(
 			throw new ProjectError("bad-request", "a note needs {file, from, to}, or {reply}");
 		file = body.file;
 		checkReadPath(file);
-		let view: View;
+		let view: ReadView;
 		if (typeof body.of === "string") {
 			const of = host.agents.get(body.of);
 			if (!of) throw new ProjectError("not-found", `there is no agent ${JSON.stringify(body.of)}`);

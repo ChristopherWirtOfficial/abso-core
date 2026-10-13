@@ -7,9 +7,9 @@ import {
 	diffLines,
 	type EditInput,
 	type Hunk,
+	type ReadView,
 	type SpliceEdit,
 	splitLines,
-	type View,
 } from "../../src/engine/index.ts";
 import type { AgentState, Entry, Meta, Mode } from "./project-types.ts";
 
@@ -17,7 +17,7 @@ import type { AgentState, Entry, Meta, Mode } from "./project-types.ts";
 export interface RecordFileHost {
 	addDraft(
 		agent: AgentState,
-		view: View,
+		view: ReadView,
 		input: { edits: readonly EditInput[]; attrs?: readonly AttrSet[] },
 		time: number,
 		meta: Meta,
@@ -34,7 +34,7 @@ export interface RecordFileHost {
 export function recordFile(
 	host: RecordFileHost,
 	agent: AgentState,
-	view: View,
+	view: ReadView,
 	path: string,
 	text: string | null | undefined,
 	time: number,

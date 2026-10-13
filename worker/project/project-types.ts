@@ -1,6 +1,7 @@
-import type { Atom, AtomId, LineId } from "../../src/engine/index.ts";
+import type { Atom, AtomId, Graph, LineId } from "../../src/engine/index.ts";
 import type { GraphStateStorage } from "../../src/engine/state-source.ts";
 import type { Kept, MarkedRegion } from "./markers.ts";
+import type { ReadViewProvider } from "./views.ts";
 /** Whole files: path -> text, or null for a deleted file. */
 export type Files = Record<string, string | null>;
 
@@ -566,6 +567,8 @@ export type Blobs = Record<string, string | null>;
 
 /** What the project needs from the store of binary files' bytes. */
 export interface ProjectOptions {
+	/** Private experimental reader route; never falls back for unsupported membership. */
+	readViewProvider?: (graph: Graph) => ReadViewProvider;
 	/**
 	 * Writer indexes for a fresh project or adoption into an empty namespace.
 	 * The host must wrap each operation and canonical log append in the same

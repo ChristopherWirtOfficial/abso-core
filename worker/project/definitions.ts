@@ -19,7 +19,7 @@
 // A use means a definition only through an import of it, or in the file
 // that defines it (project.ts, #definitionCore).
 
-import type { LineId, View } from "../../src/engine/index.ts";
+import type { LineId, ReadView } from "../../src/engine/index.ts";
 import { codeOfLines, holdsNoCode, isCommonName } from "./names.ts";
 
 export interface Definition {
@@ -90,13 +90,13 @@ const KEYWORDS = new Set([
 const TOP_ASSIGN = new RegExp(`^(${NAME})\\s*(?::[^=]*)?=(?![=>])`);
 const MAX_HEADER = 30;
 
-const cache = new WeakMap<View, Map<string, readonly Definition[]>>();
+const cache = new WeakMap<ReadView, Map<string, readonly Definition[]>>();
 
 /**
  * Every definition in the view's code files (or only in `files`), by name.
  * Each file's definitions are cached per view.
  */
-export function definitionsIn(view: View, files?: Iterable<string>): Map<string, Definition[]> {
+export function definitionsIn(view: ReadView, files?: Iterable<string>): Map<string, Definition[]> {
 	let perFile = cache.get(view);
 	if (!perFile) {
 		perFile = new Map();
@@ -118,7 +118,7 @@ export function definitionsIn(view: View, files?: Iterable<string>): Map<string,
 	return out;
 }
 
-function definitionsInFile(view: View, file: string, keepCommon = false): Definition[] {
+function definitionsInFile(view: ReadView, file: string, keepCommon = false): Definition[] {
 	if (holdsNoCode(file) || !view.hasFile(file)) return [];
 	const out: Definition[] = [];
 	const visible = view.lines(file);
@@ -149,7 +149,7 @@ function definitionsInFile(view: View, file: string, keepCommon = false): Defini
  * included (two `parse` functions in a file are a mistake whatever the name).
  * Each spans its whole block, body and all, for showing to the agent.
  */
-export function definedTwice(view: View, file: string): Map<string, Definition[]> {
+export function definedTwice(view: ReadView, file: string): Map<string, Definition[]> {
 	const out = new Map<string, Definition[]>();
 	const all = definitionsInFile(view, file, true);
 	const count = new Map<string, number>();
@@ -306,7 +306,7 @@ function blockEnd(code: readonly string[], i: number, from: number): number {
 	return i + 1;
 }
 
-const importCache = new WeakMap<View, Map<string, ReadonlyMap<string, string>>>();
+const importCache = new WeakMap<ReadView, Map<string, ReadonlyMap<string, string>>>();
 
 /**
  * Names a file imports by name, and the project file each comes from, when
@@ -316,7 +316,7 @@ const importCache = new WeakMap<View, Map<string, ReadonlyMap<string, string>>>(
  * x.y import a, b`. Lets a use of a name be matched to the definition it
  * means instead of every definition with that name.
  */
-export function importsOf(view: View, file: string): ReadonlyMap<string, string> {
+export function importsOf(view: ReadView, file: string): ReadonlyMap<string, string> {
 	let perFile = importCache.get(view);
 	if (!perFile) {
 		perFile = new Map();
@@ -367,7 +367,7 @@ function joinPath(dir: string, rel: string): string {
 	return parts.join("/");
 }
 
-function resolveModule(view: View, from: string, spec: string): string | undefined {
+function resolveModule(view: ReadView, from: string, spec: string): string | undefined {
 	if (!spec.startsWith(".")) return undefined;
 	const base = joinPath(dirOf(from), spec);
 	const stem = base.replace(/\.(?:js|mjs|cjs|jsx)$/, "");
@@ -385,7 +385,7 @@ function resolveModule(view: View, from: string, spec: string): string | undefin
 	return undefined;
 }
 
-function resolvePython(view: View, from: string, spec: string): string | undefined {
+function resolvePython(view: ReadView, from: string, spec: string): string | undefined {
 	const dots = /^\.*/.exec(spec)![0].length;
 	const rest = spec.slice(dots).replace(/\./g, "/");
 	let dir = dots > 0 ? dirOf(from) : "";

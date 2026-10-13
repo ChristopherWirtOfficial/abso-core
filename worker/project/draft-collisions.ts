@@ -1,7 +1,7 @@
 // Whether agents' unpublished changes would collide (#41, F22), read through DraftCollisionHost; today the host
 // is the project in memory.
 
-import { type AtomId, type Graph, parseKey, type View } from "../../src/engine/index.ts";
+import { type AtomId, type Graph, parseKey, type ReadView } from "../../src/engine/index.ts";
 import { describeSide, fileOfKey, type Pair } from "./collisions.ts";
 import type { DefinitionRule } from "./definition-rule.ts";
 import { type Definition, definedTwice } from "./definitions.ts";
@@ -20,13 +20,13 @@ export interface DraftCollisionHost {
 	readonly agents: ReadonlyMap<string, Agent>;
 	needInit(): void;
 	shared(): Space;
-	sharedView(): View;
+	sharedView(): ReadView;
 	definitionRule(): DefinitionRule;
 	draft(agent: Agent): AtomId[];
-	agentView(agent: Agent): View;
-	view(set: ReadonlySet<AtomId>): View;
+	agentView(agent: Agent): ReadView;
+	view(set: ReadonlySet<AtomId>): ReadView;
 	pairs(draft: readonly AtomId[], against: ReadonlySet<AtomId>, settled: ReadonlySet<AtomId>): Pair[];
-	touchedFiles(ids: Iterable<AtomId>, views: readonly View[]): Set<string>;
+	touchedFiles(ids: Iterable<AtomId>, views: readonly ReadView[]): Set<string>;
 }
 
 /**

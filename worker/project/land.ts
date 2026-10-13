@@ -1,7 +1,7 @@
 // Land a named draft in shared as one unit. Writes go through LandHost; today
 // the host is Project. Ingest and pluck call landDraft, the inner step.
 
-import { type AtomId, buildAtom, type Graph, type View } from "../../src/engine/index.ts";
+import { type AtomId, buildAtom, type Graph, type ReadView } from "../../src/engine/index.ts";
 import type { Pair } from "./collisions.ts";
 import type { DefinitionRule } from "./definition-rule.ts";
 import { ProjectError } from "./project-error.ts";
@@ -22,10 +22,10 @@ export interface LandHost {
 	shared(): Space;
 	setOf(space: Space): ReadonlySet<AtomId>;
 	at(space: Space, version: number): ReadonlySet<AtomId>;
-	view(set: ReadonlySet<AtomId>): View;
-	sharedView(): View;
+	view(set: ReadonlySet<AtomId>): ReadView;
+	sharedView(): ReadView;
 	pairs(draft: readonly AtomId[], against: ReadonlySet<AtomId>, settled: ReadonlySet<AtomId>): Pair[];
-	describe(pair: Pair, yoursView: View, theirsView: View, spaceName: string): Collision;
+	describe(pair: Pair, yoursView: ReadView, theirsView: ReadView, spaceName: string): Collision;
 	definitionRule(): DefinitionRule;
 	refuse(
 		agent: AgentState,

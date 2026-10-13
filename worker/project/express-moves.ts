@@ -2,7 +2,7 @@
 // text that arrives somewhere else is the same line. Before a publish, those matches become move
 // atoms so the lines keep their ids. Writes go through ExpressMovesHost; today the host is Project.
 
-import type { AtomId, AttrSet, EditInput, Graph, LineId, MoveInput, View } from "../../src/engine/index.ts";
+import type { AtomId, AttrSet, EditInput, Graph, LineId, MoveInput, ReadView } from "../../src/engine/index.ts";
 import { differenceSet, StableOverlaySet } from "../../src/engine/state-source.ts";
 import { PLAIN_LINE } from "./collisions.ts";
 import type { AgentState, Entry, Meta, Mode } from "./project-types.ts";
@@ -18,12 +18,13 @@ export const MATCH_STARTS = 256;
 export interface ExpressMovesHost {
 	readonly graph: Graph;
 	draft(agent: AgentState): AtomId[];
-	agentView(agent: AgentState): View;
-	view(set: ReadonlySet<AtomId>): View;
+	agentView(agent: AgentState): ReadView;
+	beforeDraft?(agent: AgentState, draft: readonly AtomId[]): ReadView;
+	view(set: ReadonlySet<AtomId>): ReadView;
 	apply(entry: Entry): void;
 	addDraft(
 		agent: AgentState,
-		view: View,
+		view: ReadView,
 		input: { edits: readonly EditInput[]; attrs?: readonly AttrSet[]; move?: MoveInput },
 		time: number,
 		meta: Meta,
@@ -31,7 +32,7 @@ export interface ExpressMovesHost {
 	): void;
 	recordFile(
 		agent: AgentState,
-		view: View,
+		view: ReadView,
 		path: string,
 		text: string | null | undefined,
 		time: number,
@@ -59,7 +60,9 @@ export function expressMoves(host: ExpressMovesHost, agent: AgentState, time: nu
 	const g = host.graph;
 	const mine = new Set(draft);
 	const after = host.agentView(agent);
-	const before = host.view(differenceSet(after.set, new StableOverlaySet(draft)));
+	const before = host.beforeDraft
+		? host.beforeDraft(agent, draft)
+		: host.view(differenceSet(after.set, new StableOverlaySet(draft)));
 	const touched = new Set<string>();
 	for (const id of draft) for (const file of g.filesOf(id)) touched.add(file);
 
@@ -171,6 +174,8 @@ export function expressMoves(host: ExpressMovesHost, agent: AgentState, time: nu
 			}
 		}
 	}
+	// Keep the intended membership, but reacquire its reader after each graph mutation.
+	const finalAgent = { ...agent, mine: [...agent.mine] };
 	const discard: Entry = { type: "discard", agent: agent.name, atoms: draft.filter((id) => drop.has(id)) };
 	entries.push(discard);
 	host.apply(discard);
@@ -180,7 +185,7 @@ export function expressMoves(host: ExpressMovesHost, agent: AgentState, time: nu
 		const start = view.lineNumber(m.from, m.ids[0]!);
 		if (start < 0 || m.ids.some((id, k) => view.lineNumber(m.from, id) !== start + k)) continue;
 		// Land after the nearest line above it in the final text that is already there.
-		const finalLines = after.lines(m.to);
+		const finalLines = host.agentView(finalAgent).lines(m.to);
 		let at = 0;
 		for (let i = m.at - 1; i >= 0; i--) {
 			const n = view.lineNumber(m.to, finalLines[i]!.id);
@@ -200,12 +205,13 @@ export function expressMoves(host: ExpressMovesHost, agent: AgentState, time: nu
 		);
 	}
 	for (const path of [...involved].toSorted()) {
-		const was = after.attrs(path);
+		const finalView = host.agentView(finalAgent);
+		const was = finalView.attrs(path);
 		host.recordFile(
 			agent,
 			host.agentView(agent),
 			path,
-			after.hasFile(path) ? after.text(path) : null,
+			finalView.hasFile(path) ? finalView.text(path) : null,
 			time,
 			{},
 			entries,

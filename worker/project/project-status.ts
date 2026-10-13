@@ -1,7 +1,7 @@
 // What the project looks like now: status, the paths in a folder, and the labels. They read through
 // SnapshotHost; today the host is the project in memory.
 
-import type { AtomId, View } from "../../src/engine/index.ts";
+import type { AtomId, ReadView } from "../../src/engine/index.ts";
 import { ProjectError } from "./project-error.ts";
 import { countRefusals, type projectFileIn } from "./project-helpers.ts";
 import type {
@@ -39,8 +39,8 @@ export interface SnapshotHost {
 	setOf(space: Space): ReadonlySet<AtomId>;
 	spaceNamed(name: string | null): Space;
 	checkVersion(space: Space, version: number): void;
-	viewAt(space: Space, version: number): View;
-	agentView(agent: AgentState): View;
+	viewAt(space: Space, version: number): ReadView;
+	agentView(agent: AgentState): ReadView;
 	version(): number;
 	/** Shared's project file (224), or undefined before init or without one. */
 	projectFile(): ReturnType<typeof projectFileIn>;

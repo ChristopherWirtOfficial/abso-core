@@ -2,7 +2,7 @@
 // (pathLife), and where lines went (follow). They read through HistoryHost, the one seam the derived tables
 // (abso issues 48 and 79) plug into: today the host is the project in memory.
 
-import type { Graph, LineId, View } from "../../src/engine/index.ts";
+import type { Graph, LineId, ReadView } from "../../src/engine/index.ts";
 import { pathKey } from "./pathkey.ts";
 import { checkReadPath, differs, type LastChange, ProjectError, utf8Bytes } from "./project.ts";
 import { last, SHARED, type Space } from "./spaces.ts";
@@ -15,9 +15,9 @@ export interface HistoryHost {
 	needInit(): void;
 	spaceNamed(name: string | null): Space;
 	checkVersion(space: Space, version: number): void;
-	viewAt(space: Space, version: number): View;
-	agentView(agent: { readonly name: string; readonly space: string; readonly base: number }): View;
-	spellingIn(view: View, asked: string): string;
+	viewAt(space: Space, version: number): ReadView;
+	agentView(agent: { readonly name: string; readonly space: string; readonly base: number }): ReadView;
+	spellingIn(view: ReadView, asked: string): string;
 	pathsOf(space: Space): Map<string, PathLifeRecord>;
 	lastChange(space: Space, version: number): LastChange;
 	atOrBefore(list: readonly number[], version: number): number | undefined;

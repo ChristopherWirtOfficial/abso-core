@@ -2,7 +2,7 @@
 // would make two spellings of one name live at once, and which spelling a
 // path has in a view. Plain functions of views; the project calls them.
 
-import type { View } from "../../src/engine/index.ts";
+import type { ReadView } from "../../src/engine/index.ts";
 import { pathKey } from "./pathkey.ts";
 
 /**
@@ -14,7 +14,7 @@ import { pathKey } from "./pathkey.ts";
  * clash shared already holds isn't charged to this work. The answer is the
  * refusal's reason, or undefined.
  */
-export function clashIn(view: View, touched: Iterable<string>, now: View): string | undefined {
+export function clashIn(view: ReadView, touched: Iterable<string>, now: ReadView): string | undefined {
 	const byKey = new Map<string, string[]>();
 	for (const p of view.knownPaths()) {
 		const k = pathKey(p);
@@ -67,7 +67,7 @@ export function clashInPaths(paths: readonly string[]): string | undefined {
 }
 
 /** The spelling a path has in this view: itself, or the one existing file it matches by pathKey (case and Unicode form ignored). */
-export function spellingOf(view: View, path: string): string {
+export function spellingOf(view: ReadView, path: string): string {
 	if (view.hasFile(path)) return path;
 	const key = pathKey(path);
 	// Known paths first, by key, then only those laid out (#46).

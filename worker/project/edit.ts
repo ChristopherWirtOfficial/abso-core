@@ -7,7 +7,7 @@ import {
 	EngineError,
 	type Hunk,
 	normalizeText,
-	type View,
+	type ReadView,
 } from "../../src/engine/index.ts";
 import { checkPath } from "./path-rules.ts";
 import { isComposed } from "./pathkey.ts";
@@ -32,9 +32,9 @@ export interface EditHost {
 	readonly agents: ReadonlyMap<string, AgentState>;
 	readonly whole: ProjectOptions["whole"];
 	initialized(): boolean;
-	agentView(agent: AgentState): View;
-	sharedView(): View;
-	isWhole(path: string, length: number, view: View | undefined, rules: readonly string[]): boolean;
+	agentView(agent: AgentState): ReadView;
+	sharedView(): ReadView;
+	isWhole(path: string, length: number, view: ReadView | undefined, rules: readonly string[]): boolean;
 	wholeRules(config?: string): string[];
 	record(
 		agentName: string,
@@ -48,7 +48,7 @@ export interface EditHost {
 	draftFiles(agent: AgentState): Set<string>;
 	recordFile(
 		agent: AgentState,
-		view: View,
+		view: ReadView,
 		path: string,
 		text: string | null | undefined,
 		time: number,
@@ -60,7 +60,7 @@ export interface EditHost {
 	): boolean;
 	addDraft(
 		agent: AgentState,
-		view: View,
+		view: ReadView,
 		input: { edits: readonly EditInput[] },
 		time: number,
 		meta: Meta,

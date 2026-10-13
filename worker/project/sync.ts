@@ -1,7 +1,8 @@
+import { View } from "../../src/engine/index.ts";
 // Move the agent's base to its space's newest version. Writes go through
 // SyncHost; today the host is Project.
 
-import { type AtomId, type Graph, View } from "../../src/engine/index.ts";
+import type { AtomId, Graph, ReadView } from "../../src/engine/index.ts";
 import { ProjectError } from "./project-error.ts";
 import type { AgentState, Entry, MergedLine, SyncAnswer } from "./project-types.ts";
 import { last, SHARED, type Space } from "./spaces.ts";
@@ -12,7 +13,7 @@ export interface SyncHost {
 	readonly labels: ReadonlyMap<string, readonly number[]>;
 	agent(name: string, entries: Entry[]): AgentState;
 	spaceOf(agent: AgentState): Space;
-	agentView(agent: AgentState): View;
+	agentView(agent: AgentState): ReadView;
 	at(space: Space, version: number): ReadonlySet<AtomId>;
 	draft(agent: AgentState): AtomId[];
 	strandedFiles(draft: readonly AtomId[], set: ReadonlySet<AtomId>): string[];
@@ -20,13 +21,13 @@ export interface SyncHost {
 	flush(entries: Entry[]): void;
 	mergeIdentical(
 		agent: AgentState,
-		before: View,
+		before: ReadView,
 		oldBase: ReadonlySet<AtomId>,
 		oldVersion: number,
 		time: number,
 		entries: Entry[],
 	): MergedLine[];
-	changesSince(agent: AgentState, before: View): SyncAnswer;
+	changesSince(agent: AgentState, before: ReadView): SyncAnswer;
 }
 
 /**

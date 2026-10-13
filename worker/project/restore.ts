@@ -1,7 +1,7 @@
 // Discard unpublished changes to some files, like git restore. Writes go through RestoreHost;
 // today the host is Project.
 
-import type { AtomId, Graph, Hunk, View } from "../../src/engine/index.ts";
+import type { AtomId, Graph, Hunk, ReadView } from "../../src/engine/index.ts";
 import { checkReadPath } from "./path-rules.ts";
 import { ProjectError } from "./project-error.ts";
 import type { AgentState, Blobs, Entry, Files, Meta, Mode, Modes, RestoreAnswer } from "./project-types.ts";
@@ -11,14 +11,14 @@ export interface RestoreHost {
 	readonly graph: Graph;
 	agent(name: string, entries: Entry[]): AgentState;
 	draft(agent: AgentState): AtomId[];
-	touchedFiles(ids: Iterable<AtomId>, views: readonly View[]): Set<string>;
+	touchedFiles(ids: Iterable<AtomId>, views: readonly ReadView[]): Set<string>;
 	apply(entry: Entry): void;
-	view(set: ReadonlySet<AtomId>): View;
+	view(set: ReadonlySet<AtomId>): ReadView;
 	agentSet(agent: AgentState): Set<AtomId>;
-	agentView(agent: AgentState): View;
+	agentView(agent: AgentState): ReadView;
 	recordFile(
 		agent: AgentState,
-		view: View,
+		view: ReadView,
 		path: string,
 		text: string | null | undefined,
 		time: number,

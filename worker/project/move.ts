@@ -1,7 +1,7 @@
 // Move a file in the agent's draft. Writes go through MoveHost; today the
 // host is Project.
 
-import type { EditInput, Hunk, MoveInput, View } from "../../src/engine/index.ts";
+import type { EditInput, Hunk, MoveInput, ReadView } from "../../src/engine/index.ts";
 import { checkPath } from "./path-rules.ts";
 import { pathKey } from "./pathkey.ts";
 import { ProjectError } from "./project-error.ts";
@@ -11,12 +11,12 @@ import type { AgentState, Entry, Meta, Mode } from "./project-types.ts";
 export interface MoveHost {
 	needInit(): void;
 	readonly agents: ReadonlyMap<string, AgentState>;
-	agentView(agent: AgentState): View;
-	sharedView(): View;
+	agentView(agent: AgentState): ReadView;
+	sharedView(): ReadView;
 	agent(name: string, entries: Entry[]): AgentState;
 	addDraft(
 		agent: AgentState,
-		view: View,
+		view: ReadView,
 		input: { edits: readonly EditInput[]; move?: MoveInput },
 		time: number,
 		meta: Meta,
@@ -24,7 +24,7 @@ export interface MoveHost {
 	): void;
 	recordFile(
 		agent: AgentState,
-		view: View,
+		view: ReadView,
 		path: string,
 		text: string | null | undefined,
 		time: number,

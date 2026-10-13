@@ -1,8 +1,9 @@
+import { View } from "../../src/engine/index.ts";
 // The version list reads: log (versions newest first, or one file's history), ribbon (who published each version),
 // show (one version's changes), fileAt, compare and viewAt. They read through LogHost; today the host is the project
 // in memory.
 
-import { type AtomId, type Graph, View } from "../../src/engine/index.ts";
+import type { AtomId, Graph, ReadView } from "../../src/engine/index.ts";
 import { checkReadPath } from "./path-rules.ts";
 import type { PathIndex } from "./pathindex.ts";
 import { ProjectError } from "./project-error.ts";
@@ -19,12 +20,12 @@ export interface LogHost {
 	needInit(): void;
 	spaceFor(options: { draft?: string | null; agent?: string }): Space;
 	checkVersion(space: Space, version: number): void;
-	viewAt(space: Space, version: number): View;
-	view(set: ReadonlySet<AtomId>): View;
+	viewAt(space: Space, version: number): ReadView;
+	view(set: ReadonlySet<AtomId>): ReadView;
 	at(space: Space, version: number): ReadonlySet<AtomId>;
-	spellingIn(view: View, path: string): string;
+	spellingIn(view: ReadView, path: string): string;
 	versionChange(space: Space, version: number): number | undefined;
-	touchedFiles(ids: Iterable<AtomId>, views: readonly View[]): Set<string>;
+	touchedFiles(ids: Iterable<AtomId>, views: readonly ReadView[]): Set<string>;
 }
 
 /**
@@ -59,7 +60,7 @@ export function log(
 	// A file's history (#43): only versions whose changes name the file, or a file moves can carry lines from, can have changed it.
 	const sources = path === undefined ? undefined : new Set(names.flatMap((n) => [...moveSources(host.graph, n.path)]));
 	const g = host.graph;
-	const views = new Map<number, View>();
+	const views = new Map<number, ReadView>();
 	for (; v >= 0 && versions.length < limit; v--) {
 		if (sources && !host.paths.knowsFiles(space, v)) {
 			const p = space.versions[v]!;
@@ -179,7 +180,7 @@ export function show(
 	};
 }
 
-function logEntry(host: LogHost, space: Space, version: number, views?: Map<number, View>): LogEntry {
+function logEntry(host: LogHost, space: Space, version: number, views?: Map<number, ReadView>): LogEntry {
 	const p = space.versions[version]!;
 	let changes = 0;
 	for (const id of p.atoms) {
@@ -264,8 +265,12 @@ export function compare(
 	return { from, to, files: changesBetween(host.view(a), host.view(b), files) };
 }
 
-/** A version of shared (or of a named draft) as a View, for reading lines (blame at a version). */
-export function viewAt(host: LogHost, version: number, options: { draft?: string | null; agent?: string } = {}): View {
+/** A version of shared (or of a named draft) as a ReadView, for reading lines (blame at a version). */
+export function viewAt(
+	host: LogHost,
+	version: number,
+	options: { draft?: string | null; agent?: string } = {},
+): ReadView {
 	host.needInit();
 	const space = host.spaceFor(options);
 	host.checkVersion(space, version);

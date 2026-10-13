@@ -12,7 +12,7 @@
 // agents publish into under the same rules, and that lands in shared as one
 // unit. Every agent works in one space at a time.
 
-import { type Atom, type AtomId, EngineError, Graph, type LineId, type View } from "../../src/engine/index.ts";
+import { type Atom, type AtomId, EngineError, Graph, type LineId, type ReadView } from "../../src/engine/index.ts";
 import {
 	CachedStateStorage,
 	differenceSet,
@@ -406,7 +406,7 @@ export class Project {
 			: entryAt
 				? new Graph({ texts: (seq) => stored(seq).inserts.map((r) => r.lines), lists: (seq) => stored(seq) })
 				: new Graph();
-		this.#views = new ViewCache(this.#graph);
+		this.#views = new ViewCache(this.#graph, options.readViewProvider);
 		this.#paths = new PathIndex({
 			graph: this.#graph,
 			at: (space, version) => this.#at(space, version),
@@ -606,8 +606,8 @@ export class Project {
 		return modesOf(this.#sharedView());
 	}
 
-	/** Shared as a View, for reading lines (blame, why). Don't hold on to it across calls. */
-	sharedView(): View {
+	/** Shared as a ReadView, for reading lines (blame, why). Don't hold on to it across calls. */
+	sharedView(): ReadView {
 		return this.#sharedView();
 	}
 
@@ -621,7 +621,7 @@ export class Project {
 	 * The view is laid out on first use: where asks every agent, most have no changes, and a big project has more
 	 * agents than the view cache holds, so building every view cost each call about 0.7 s.
 	 */
-	draftOf(agentName: string): { atoms: AtomId[]; readonly view: View } | undefined {
+	draftOf(agentName: string): { atoms: AtomId[]; readonly view: ReadView } | undefined {
 		const agent = this.#agents.get(agentName);
 		if (!agent) return undefined;
 		const view = () => this.#agentView(agent);
@@ -757,7 +757,7 @@ export class Project {
 	 * last makes it one-way: a file kept whole stays whole while it exists,
 	 * even if it shrinks or the rule changes, so it never flips back and forth.
 	 */
-	#isWhole(path: string, length: number, view: View | undefined, rules: readonly string[]): boolean {
+	#isWhole(path: string, length: number, view: ReadView | undefined, rules: readonly string[]): boolean {
 		return hostedIsWhole(this.#wholeHost, path, length, view, rules);
 	}
 
@@ -765,7 +765,7 @@ export class Project {
 	#wholeOut(
 		files: Readonly<Record<string, string | null>>,
 		blobs: Readonly<Record<string, string>>,
-		view: View | undefined,
+		view: ReadView | undefined,
 		config?: string,
 	): { files: Record<string, string | null>; blobs: Record<string, string> } {
 		return hostedWholeOut(this.#wholeHost, files, blobs, view, config);
@@ -1085,7 +1085,7 @@ export class Project {
 	 */
 	#mergeIdentical(
 		agent: AgentState,
-		before: View,
+		before: ReadView,
 		oldBase: ReadonlySet<AtomId>,
 		oldVersion: number,
 		time: number,
@@ -1172,7 +1172,7 @@ export class Project {
 	}
 
 	/** The collided changes behind each block whose marker lines `atom` deletes (#11). */
-	#markersSettled(agent: AgentState, view: View, atom: Atom): AtomId[] {
+	#markersSettled(agent: AgentState, view: ReadView, atom: Atom): AtomId[] {
 		return hostedMarkersSettled(this.#markerHost, agent, view, atom);
 	}
 
@@ -1418,7 +1418,7 @@ export class Project {
 	 * the one file ever in the view it matches, for a file since taken out.
 	 * A path that matches two files is answered exactly.
 	 */
-	spellingIn(view: View, path: string): string {
+	spellingIn(view: ReadView, path: string): string {
 		if (view.hasFile(path)) return path;
 		const key = pathKey(path);
 		const live = view.knownPaths().filter((p) => pathKey(p) === key && view.hasFile(p));
@@ -1660,7 +1660,7 @@ export class Project {
 		return versionCompare(this.#logHost, ...args);
 	}
 
-	/** A version of shared (or of a named draft) as a View (version-log.ts). */
+	/** A version of shared (or of a named draft) as a ReadView (version-log.ts). */
 	viewAt(...args: Tail<Parameters<typeof versionViewAt>>): ReturnType<typeof versionViewAt> {
 		return versionViewAt(this.#logHost, ...args);
 	}
@@ -1725,6 +1725,16 @@ export class Project {
 		this.#movesHost ??= {
 			graph: this.#graph,
 			draft: (agent) => this.#unqueuedDraft(agent),
+			beforeDraft: (agent, draft) => {
+				const base = this.#at(this.#spaceOf(agent), agent.base);
+				if (draft.some((id) => base.has(id)))
+					return this.#view(differenceSet(this.#agentView(agent).set, new StableOverlaySet(draft)));
+				const removed = new Set(draft),
+					kept = agent.mine.filter((id) => !removed.has(id));
+				return kept.length === 0
+					? this.#viewAt(this.#spaceOf(agent), agent.base)
+					: this.#viewKeyed(`a ${agent.space}@${agent.base}+${kept.join(",")}`, () => unionOverlay(base, kept));
+			},
 			agentView: (agent) => this.#agentView(agent),
 			view: (set) => this.#view(set),
 			apply: (entry) => this.#apply(entry),
@@ -1923,6 +1933,10 @@ export class Project {
 				this.#enqueue(agent, message, time, draft, resolves, entries),
 			view: (set) => this.#view(set),
 			requireClosed: (tie, union) => this.#requireClosed(tie, union),
+			spaceOverlay: (space, atoms) =>
+				this.#viewKeyed(`a ${space.name}@${last(space)}+${atoms.join(",")}`, () =>
+					unionOverlay(this.#setOf(space), atoms),
+				),
 			newerFor: (agent) => this.#newerFor(agent),
 			currentChange: (agent, time) => this.#currentChange(agent, time),
 			apply: (entry) => this.#apply(entry),
@@ -2189,6 +2203,10 @@ export class Project {
 			setOf: (space) => this.#setOf(space),
 			view: (set) => this.#view(set),
 			sharedView: () => this.#sharedView(),
+			sharedOverlay: (atoms) =>
+				this.#viewKeyed(`a @${last(this.#shared)}+${atoms.join(",")}`, () =>
+					unionOverlay(this.#setOf(this.#shared), atoms),
+				),
 			touchedFiles: (ids, views) => this.#touchedFiles(ids, views),
 		};
 		return this.#checkClashes;
@@ -2475,7 +2493,7 @@ export class Project {
 		return new Set([...this.#at(this.#spaceOf(agent), agent.base), ...agent.mine]);
 	}
 
-	#agentView(agent: AgentState): View {
+	#agentView(agent: AgentState): ReadView {
 		return this.#viewKeyed(this.#agentViewKey(agent), () => {
 			const base = this.#at(this.#spaceOf(agent), agent.base);
 			return base instanceof StableSet
@@ -2493,21 +2511,22 @@ export class Project {
 	}
 
 	/** A space at a version: published versions never change, so the key is just their names (#46). */
-	#viewAt(space: Space, version: number): View {
+	#viewAt(space: Space, version: number): ReadView {
 		return this.#viewKeyed(`v ${space.name}@${version}`, () => this.#at(space, version));
 	}
 
-	#sharedView(): View {
+	#sharedView(): ReadView {
 		return this.#viewAt(this.#shared, last(this.#shared));
 	}
 
 	/** A view of a set, cached by the set's exact contents (views.ts). */
-	#view(set: ReadonlySet<AtomId>): View {
+	#view(set: ReadonlySet<AtomId>): ReadView {
+		this.#views.assertUnkeyedAllowed();
 		return this.#views.view(this.#closed(set));
 	}
 
 	/** A view cached under `key` (views.ts). */
-	#viewKeyed(key: string, set: () => ReadonlySet<AtomId>): View {
+	#viewKeyed(key: string, set: () => ReadonlySet<AtomId>): ReadView {
 		return this.#views.keyed(key, () => this.#closed(set()));
 	}
 
@@ -2672,7 +2691,7 @@ export class Project {
 		);
 	}
 
-	#describe(pair: Pair, yoursView: View, theirsView: View, spaceName: string): Collision {
+	#describe(pair: Pair, yoursView: ReadView, theirsView: ReadView, spaceName: string): Collision {
 		return describePair(
 			this.#graph,
 			(atom, space) => this.#origin(atom, space),
@@ -2683,7 +2702,7 @@ export class Project {
 		);
 	}
 
-	#touchedFiles(ids: Iterable<AtomId>, views: readonly View[]): Set<string> {
+	#touchedFiles(ids: Iterable<AtomId>, views: readonly ReadView[]): Set<string> {
 		return touchedFiles(this.#graph, ids, views);
 	}
 

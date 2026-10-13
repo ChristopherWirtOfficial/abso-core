@@ -14,7 +14,7 @@
 // Settled means the block is gone. These helpers also say what an agent kept
 // once it settled one.
 
-import { type Atom, type AtomId, diffLines, type Graph, type Hunk, type View } from "../../src/engine/index.ts";
+import { type Atom, type AtomId, diffLines, type Graph, type Hunk, type ReadView } from "../../src/engine/index.ts";
 import type { AgentState, AgentStatus, Collision } from "./project-types.ts";
 
 export const YOURS = "<<<<<<< yours (unpublished)";
@@ -263,7 +263,7 @@ export function keptOf(lines: readonly string[], region: MarkedRegion): Kept {
 /** What the marker reads need from a project. */
 export interface MarkerHost {
 	readonly graph: Graph;
-	agentView(agent: AgentState): View;
+	agentView(agent: AgentState): ReadView;
 	draft(agent: AgentState): AtomId[];
 	draftFiles(agent: AgentState): Set<string>;
 }
@@ -309,7 +309,7 @@ export function openCollisions(host: MarkerHost, agent: AgentState): { collision
 }
 
 /** The collided changes behind each block whose marker lines `atom` deletes (#11). */
-export function markersSettled(host: MarkerHost, agent: AgentState, view: View, atom: Atom): AtomId[] {
+export function markersSettled(host: MarkerHost, agent: AgentState, view: ReadView, atom: Atom): AtomId[] {
 	if (agent.marked.length === 0) return [];
 	const out = new Set<AtomId>();
 	const blocksBy = new Map<string, Block[]>();

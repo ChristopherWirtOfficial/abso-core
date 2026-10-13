@@ -8,8 +8,8 @@ import {
 	joinLines,
 	mergeLines,
 	mergeWords,
+	type ReadView,
 	splitLines,
-	type View,
 } from "../../src/engine/index.ts";
 import type { Origin, Pair } from "./collisions.ts";
 import { type MarkedRegion, markedHunks, markerBlock } from "./markers.ts";
@@ -22,14 +22,14 @@ export interface MergeHost {
 	openPairs(agent: AgentState): Pair[];
 	draft(agent: AgentState): AtomId[];
 	origin(atom: AtomId, spaceName: string): Origin;
-	view(set: ReadonlySet<AtomId>): View;
-	viewAt(space: Space, version: number): View;
+	view(set: ReadonlySet<AtomId>): ReadView;
+	viewAt(space: Space, version: number): ReadView;
 	spaceOf(agent: AgentState): Space;
 	apply(entry: Entry): void;
-	agentView(agent: AgentState): View;
+	agentView(agent: AgentState): ReadView;
 	recordFile(
 		agent: AgentState,
-		view: View,
+		view: ReadView,
 		path: string,
 		text: string | null | undefined,
 		time: number,
@@ -53,7 +53,7 @@ export interface MergeHost {
 export function mergeIdentical(
 	host: MergeHost,
 	agent: AgentState,
-	before: View,
+	before: ReadView,
 	oldBase: ReadonlySet<AtomId>,
 	oldVersion: number,
 	time: number,
@@ -91,7 +91,7 @@ export function mergeIdentical(
 	if ([...involved].some((f) => shown.has(f))) return [];
 	const baseView = host.view(oldBase);
 	const theirs = host.viewAt(host.spaceOf(agent), agent.base);
-	const textOf = (v: View, path: string): string | null => (v.hasFile(path) ? v.text(path) : null);
+	const textOf = (v: ReadView, path: string): string | null => (v.hasFile(path) ? v.text(path) : null);
 	const merged = new Map<string, { text: string | null; mode: Mode; hunks?: Hunk[] }>();
 	const notices: MergedLine[] = [];
 	const regions: MarkedRegion[] = [];

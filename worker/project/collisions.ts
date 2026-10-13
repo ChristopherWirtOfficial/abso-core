@@ -10,7 +10,7 @@ import {
 	type Graph,
 	joinLines,
 	parseKey,
-	type View,
+	type ReadView,
 } from "../../src/engine/index.ts";
 import { differenceSet, StableOverlaySet } from "../../src/engine/state-source.ts";
 import { definedTwice } from "./definitions.ts";
@@ -147,8 +147,8 @@ export function describePair(
 	g: Graph,
 	origin: (atom: AtomId, spaceName: string) => Origin,
 	pair: Pair,
-	yoursView: View,
-	theirsView: View,
+	yoursView: ReadView,
+	theirsView: ReadView,
 	spaceName: string,
 ): Collision {
 	const file = fileOfKey(pair.keys[0]!.key, yoursView);
@@ -157,7 +157,7 @@ export function describePair(
 	if (attrsOnly.length === fileKeys.length) {
 		// Both set the same attribute of the file: show each side's value.
 		const name = attrsOnly[0]!.attr!;
-		const valueIn = (view: View, atom: AtomId): string => {
+		const valueIn = (view: ReadView, atom: AtomId): string => {
 			const set = (g.atom(atom).attrs ?? []).find((a) => a.file === file && a.name === name);
 			return set?.value ?? (name === "exec" ? "" : String(view.attrs(file)[name] ?? ""));
 		};
@@ -177,7 +177,7 @@ export function describePair(
 	};
 }
 
-export function fileOfKey(key: string, view: View): string {
+export function fileOfKey(key: string, view: ReadView): string {
 	const { kind, node } = parseKey(key);
 	if (kind === "attr") return node;
 	return node.startsWith("^") ? node.slice(1) : view.fileOf(node);
@@ -187,7 +187,7 @@ export function fileOfKey(key: string, view: View): string {
  * The files some atoms change: the graph's files of each, and, in views
  * with moves (#28), wherever the lines they touch are in those views.
  */
-export function touchedFiles(g: Graph, ids: Iterable<AtomId>, views: readonly View[]): Set<string> {
+export function touchedFiles(g: Graph, ids: Iterable<AtomId>, views: readonly ReadView[]): Set<string> {
 	const out = new Set<string>();
 	const moved = views.filter((v) => v.hasMoves());
 	for (const id of ids) {
@@ -206,7 +206,7 @@ export function touchedFiles(g: Graph, ids: Iterable<AtomId>, views: readonly Vi
 }
 
 /** The atom's visible lines in a file of a view, or where it acted when none are left. */
-export function describeSide(view: View, atom: AtomId, file: string, keys: readonly string[]): CollisionSide {
+export function describeSide(view: ReadView, atom: AtomId, file: string, keys: readonly string[]): CollisionSide {
 	const visible = view.lines(file);
 	let first = -1;
 	let lastLine = -1;
@@ -238,7 +238,7 @@ export interface CollisionHost {
 	spaceOf(agent: AgentState): Space;
 	agentSet(agent: AgentState): ReadonlySet<AtomId>;
 	draft(agent: AgentState): AtomId[];
-	agentView(agent: AgentState): View;
+	agentView(agent: AgentState): ReadView;
 	at(space: Space, version: number): ReadonlySet<AtomId>;
 	shared(): Space;
 }

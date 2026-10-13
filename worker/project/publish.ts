@@ -1,7 +1,7 @@
 // Add the agent's draft to its space. Writes go through PublishHost; today
 // the host is Project. Ingest calls publishDraft, the inner step.
 
-import { type AtomId, buildAtom, type Hunk, joinLines, type View } from "../../src/engine/index.ts";
+import { type AtomId, buildAtom, type Hunk, joinLines, type ReadView } from "../../src/engine/index.ts";
 import { differenceSet, unionOverlay } from "../../src/engine/state-source.ts";
 import type { Pair } from "./collisions.ts";
 import type { DefinitionCollision } from "./definition-rule.ts";
@@ -23,10 +23,10 @@ export interface PublishHost {
 	strandedFiles(draft: readonly AtomId[], set: ReadonlySet<AtomId>): string[];
 	setOf(space: Space): ReadonlySet<AtomId>;
 	markedFiles(agent: AgentState): string[];
-	agentView(agent: AgentState): View;
+	agentView(agent: AgentState): ReadView;
 	recordFile(
 		agent: AgentState,
-		view: View,
+		view: ReadView,
 		path: string,
 		text: string | null | undefined,
 		time: number,
@@ -58,7 +58,8 @@ export interface PublishHost {
 		resolves: readonly AtomId[],
 		entries: Entry[],
 	): PublishAnswer;
-	view(set: ReadonlySet<AtomId>): View;
+	view(set: ReadonlySet<AtomId>): ReadView;
+	spaceOverlay?(space: Space, atoms: readonly AtomId[]): ReadView;
 	requireClosed(tie: { deps: readonly AtomId[] }, union: ReadonlySet<AtomId>): void;
 	newerFor(agent: AgentState): ReadonlySet<AtomId>;
 	currentChange(agent: AgentState, time: number): number | undefined;
@@ -155,7 +156,8 @@ export function publishDraft(
 	const resolves = [...new Set(seen.flatMap((p) => [p.yours, p.theirs]))];
 	if (space.name === SHARED && !direct && host.queueOn())
 		return host.enqueue(agent, message, time, draft, resolves, entries);
-	const tie = buildAtom(host.view(union), { author: agent.name, message, time, needs: draft, resolves });
+	const candidate = host.spaceOverlay ? host.spaceOverlay(space, draft) : host.view(union);
+	const tie = buildAtom(candidate, { author: agent.name, message, time, needs: draft, resolves });
 	host.requireClosed(tie, union);
 	const version = last(space) + 1;
 	const othersPublished = space.versions.slice(agent.base + 1).some((p) => p.agent !== agent.name);

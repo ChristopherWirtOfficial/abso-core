@@ -1,7 +1,7 @@
 // Whole files as the agent's folder has them. Writes go through RecordHost;
 // today the host is Project.
 
-import { canonicalText, type Hunk, type View } from "../../src/engine/index.ts";
+import { canonicalText, type Hunk, type ReadView } from "../../src/engine/index.ts";
 import { checkPath } from "./path-rules.ts";
 import { isComposed, pathKey } from "./pathkey.ts";
 import { ProjectError } from "./project-error.ts";
@@ -24,12 +24,12 @@ export interface RecordHost {
 	readonly agents: ReadonlyMap<string, AgentState>;
 	readonly whole: ProjectOptions["whole"];
 	initialized(): boolean;
-	agentView(agent: AgentState): View;
-	sharedView(): View;
+	agentView(agent: AgentState): ReadView;
+	sharedView(): ReadView;
 	wholeOut(
 		files: Readonly<Record<string, string | null>>,
 		blobs: Readonly<Record<string, string>>,
-		view: View | undefined,
+		view: ReadView | undefined,
 		config?: string,
 	): { files: Record<string, string | null>; blobs: Record<string, string> };
 	checkBlobs(blobs: unknown, files: object): Record<string, string>;
@@ -37,7 +37,7 @@ export interface RecordHost {
 	draftFiles(agent: AgentState): Set<string>;
 	recordFile(
 		agent: AgentState,
-		view: View,
+		view: ReadView,
 		path: string,
 		text: string | null | undefined,
 		time: number,

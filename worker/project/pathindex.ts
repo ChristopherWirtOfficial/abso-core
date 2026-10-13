@@ -1,8 +1,9 @@
+import { View } from "../../src/engine/index.ts";
 // Each version's files and shape, and each path's history in a space (#41; #46, disk-first 1). Built the first
 // time it's asked for and kept up as versions land; a version's files are also kept in the shapes table, so a
 // load needn't lay them out again.
 
-import { type AtomId, type Graph, type LineId, View } from "../../src/engine/index.ts";
+import type { AtomId, Graph, LineId, ReadView } from "../../src/engine/index.ts";
 import {
 	differs,
 	type LastChange,
@@ -17,8 +18,8 @@ import { last, SHARED, type Space } from "./spaces.ts";
 export interface PathIndexDeps {
 	readonly graph: Graph;
 	at(space: Space, version: number): ReadonlySet<AtomId>;
-	viewAt(space: Space, version: number): View;
-	touchedFiles(ids: Iterable<AtomId>, views: readonly View[]): Set<string>;
+	viewAt(space: Space, version: number): ReadView;
+	touchedFiles(ids: Iterable<AtomId>, views: readonly ReadView[]): Set<string>;
 	readonly shapes: ProjectOptions["shapes"];
 }
 
@@ -44,7 +45,7 @@ export class PathIndex {
 	readonly #pathIndex = new WeakMap<Space, { upTo: number; paths: Map<string, PathLife> }>();
 
 	/** The files a version changed. `views` holds views by version, so a run of versions builds each once. */
-	versionFiles(space: Space, version: number, views = new Map<number, View>()): string[] {
+	versionFiles(space: Space, version: number, views = new Map<number, ReadView>()): string[] {
 		let cache = this.#filesCache.get(space);
 		if (!cache) this.#filesCache.set(space, (cache = new Map()));
 		const known = cache.get(version);
@@ -53,7 +54,7 @@ export class PathIndex {
 		if (kept) return kept;
 		const shapes = this.#shapeCache.get(space)!;
 		const p = space.versions[version]!;
-		const viewAt = (v: number): View => {
+		const viewAt = (v: number): ReadView => {
 			let view = views.get(v);
 			if (!view) views.set(v, (view = v < 0 ? new View(this.#deps.graph, []) : this.#deps.viewAt(space, v)));
 			return view;
@@ -107,7 +108,7 @@ export class PathIndex {
 	}
 
 	/** A version's files made and taken out, and moves (#41). */
-	versionShape(space: Space, version: number, views?: Map<number, View>): VersionShape {
+	versionShape(space: Space, version: number, views?: Map<number, ReadView>): VersionShape {
 		const known = this.#shapeCache.get(space)?.get(version);
 		if (known) return known;
 		this.#filesCache.get(space)?.delete(version);
@@ -124,7 +125,7 @@ export class PathIndex {
 	pathsOf(space: Space): Map<string, PathLife> {
 		let index = this.#pathIndex.get(space);
 		if (!index) this.#pathIndex.set(space, (index = { upTo: -1, paths: new Map() }));
-		const views = new Map<number, View>();
+		const views = new Map<number, ReadView>();
 		// Shared's sets grow version by version, so walk them forward rather than build each from the
 		// start; the views stay out of the cache, which they would only push other views from. A version
 		// whose files are kept (#41) needs no views at all.

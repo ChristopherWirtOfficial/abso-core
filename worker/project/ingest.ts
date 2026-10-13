@@ -1,6 +1,6 @@
 // Take in commits a person pushed with plain git. Writes go through IngestHost; today the host is Project.
 
-import { type AtomId, canonicalText, type Hunk, type View } from "../../src/engine/index.ts";
+import { type AtomId, canonicalText, type Hunk, type ReadView } from "../../src/engine/index.ts";
 import { checkPath } from "./path-rules.ts";
 import { ProjectError } from "./project-error.ts";
 import { configProblem, PROJECT_FILES } from "./project-helpers.ts";
@@ -20,13 +20,13 @@ export interface IngestHost {
 	wholeOut(
 		files: Readonly<Record<string, string | null>>,
 		blobs: Readonly<Record<string, string>>,
-		view: View | undefined,
+		view: ReadView | undefined,
 		config?: string,
 	): { files: Record<string, string | null>; blobs: Record<string, string> };
-	agentView(agent: AgentState): View;
+	agentView(agent: AgentState): ReadView;
 	recordFile(
 		agent: AgentState,
-		view: View,
+		view: ReadView,
 		path: string,
 		text: string | null | undefined,
 		time: number,

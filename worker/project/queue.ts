@@ -1,7 +1,7 @@
 // The merge queue: publishes to shared waiting for their batch's check.
 // Writes go through QueueHost; today the host is Project.
 
-import { type AtomId, buildAtom, type Graph, type View } from "../../src/engine/index.ts";
+import { type AtomId, buildAtom, type Graph, type ReadView } from "../../src/engine/index.ts";
 import type { Pair } from "./collisions.ts";
 import { definedTwice } from "./definitions.ts";
 import { keptOf, lostLines } from "./markers.ts";
@@ -27,7 +27,7 @@ import { modesOf } from "./view-changes.ts";
 export interface QueueHost {
 	readonly graph: Graph;
 	checkerReady(): boolean;
-	sharedView(): View;
+	sharedView(): ReadView;
 	queued(): readonly QueuedPublish[];
 	queuedId(): number;
 	checkingHas(id: number): boolean;
@@ -36,12 +36,12 @@ export interface QueueHost {
 	needInit(): void;
 	shared(): Space;
 	setOf(space: Space): ReadonlySet<AtomId>;
-	view(set: ReadonlySet<AtomId>): View;
+	view(set: ReadonlySet<AtomId>): ReadView;
 	agentSet(agent: AgentState): Set<AtomId>;
-	agentView(agent: AgentState): View;
+	agentView(agent: AgentState): ReadView;
 	pairs(draft: readonly AtomId[], against: ReadonlySet<AtomId>, settled: ReadonlySet<AtomId>): Pair[];
-	describe(pair: Pair, yoursView: View, theirsView: View, spaceName: string): Collision;
-	touchedFiles(ids: Iterable<AtomId>, views: readonly View[]): Set<string>;
+	describe(pair: Pair, yoursView: ReadView, theirsView: ReadView, spaceName: string): Collision;
+	touchedFiles(ids: Iterable<AtomId>, views: readonly ReadView[]): Set<string>;
 	refuse(
 		agent: AgentState,
 		space: Space,

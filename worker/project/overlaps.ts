@@ -2,7 +2,7 @@
 // the news when a draft first touches one. Reads and news writes go through
 // OverlapHost; today the host is Project. overlapsOf is the pure match.
 
-import { type AtomId, type Graph, isStartNode, type View } from "../../src/engine/index.ts";
+import { type AtomId, type Graph, isStartNode, type ReadView } from "../../src/engine/index.ts";
 import { matchesPattern, pathsInText, patternsMeet } from "./globs.ts";
 import { type NewsItem, overlapItems } from "./news.ts";
 import type { AgentState, Entry, Overlap, Starting } from "./project-types.ts";
@@ -22,7 +22,7 @@ export interface OverlapPeer {
 export interface OverlapHost {
 	readonly graph: Graph;
 	readonly agents: ReadonlyMap<string, AgentState>;
-	agentView(agent: AgentState): View;
+	agentView(agent: AgentState): ReadView;
 	draft(agent: AgentState): readonly AtomId[];
 	/** draftFiles below, kept per agent by the host. */
 	draftFiles(agent: AgentState): Set<string>;

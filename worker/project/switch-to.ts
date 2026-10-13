@@ -1,7 +1,8 @@
+import { View } from "../../src/engine/index.ts";
 // Move an agent to a named draft, or back to shared. Writes go through
 // SwitchHost; today the host is Project.
 
-import { type AtomId, type Graph, View } from "../../src/engine/index.ts";
+import type { AtomId, Graph, ReadView } from "../../src/engine/index.ts";
 import { ProjectError } from "./project-error.ts";
 import { checkDraftName } from "./project-helpers.ts";
 import type { AgentState, Entry, SwitchAnswer, SyncAnswer } from "./project-types.ts";
@@ -12,13 +13,13 @@ export interface SwitchHost {
 	agent(name: string, entries: Entry[]): AgentState;
 	flush(entries: Entry[]): void;
 	readonly spaces: ReadonlyMap<string, Space>;
-	agentView(agent: AgentState): View;
+	agentView(agent: AgentState): ReadView;
 	readonly graph: Graph;
 	version(): number;
 	apply(entry: Entry): void;
 	draft(agent: AgentState): readonly AtomId[];
 	setOf(space: Space): ReadonlySet<AtomId>;
-	changesSince(agent: AgentState, before: View): SyncAnswer;
+	changesSince(agent: AgentState, before: ReadView): SyncAnswer;
 }
 
 /**

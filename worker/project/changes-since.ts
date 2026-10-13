@@ -1,7 +1,7 @@
 // The files whose text in the agent's view differs from before, and its open
 // collisions. Reads go through ChangesSinceHost; today the host is Project.
 
-import type { AtomId, View } from "../../src/engine/index.ts";
+import type { AtomId, ReadView } from "../../src/engine/index.ts";
 import type { Pair } from "./collisions.ts";
 import { sortKeys } from "./project-helpers.ts";
 import type { AgentState, Blobs, Collision, Files, Modes, SyncAnswer } from "./project-types.ts";
@@ -9,8 +9,8 @@ import { modeChange } from "./view-changes.ts";
 
 /** What a changes-since read needs from a project. */
 export interface ChangesSinceHost {
-	agentView(agent: AgentState): View;
-	touchedFiles(ids: Iterable<AtomId>, views: readonly View[]): Set<string>;
+	agentView(agent: AgentState): ReadView;
+	touchedFiles(ids: Iterable<AtomId>, views: readonly ReadView[]): Set<string>;
 	openPairs(agent: AgentState): Pair[];
 	collision(agent: AgentState, pair: Pair): Collision;
 	duplicates(agent: AgentState): Collision[];
@@ -18,7 +18,7 @@ export interface ChangesSinceHost {
 }
 
 /** The files whose text in the agent's view differs from `before`, and its open collisions. */
-export function changesSince(host: ChangesSinceHost, agent: AgentState, before: View): SyncAnswer {
+export function changesSince(host: ChangesSinceHost, agent: AgentState, before: ReadView): SyncAnswer {
 	const after = host.agentView(agent);
 	// Only files that an atom in one view but not the other touches can differ.
 	const touched = new Set<string>();

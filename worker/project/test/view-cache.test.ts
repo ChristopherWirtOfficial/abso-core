@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { ReadView } from "../../../src/engine/index.ts";
 import { buildBase, Graph, View } from "../../../src/engine/index.ts";
 import { StableOverlaySet } from "../../../src/engine/state-source.ts";
 import type { AtomId } from "../../../src/engine/types.ts";
@@ -31,16 +32,16 @@ test("indexed view cache keys never enumerate membership and remain bounded by e
 
 type WeightControls = {
 	setIncomingWeights(values: number[]): void;
-	setWeight(view: View, weight: number): void;
+	setWeight(view: ReadView, weight: number): void;
 };
 
 function withControlledWeights(run: (controls: WeightControls) => void): void {
 	const original = Object.getOwnPropertyDescriptor(View.prototype, "weight")!;
-	const weights = new WeakMap<View, number>();
+	const weights = new WeakMap<ReadView, number>();
 	let newWeights: number[] = [];
 	Object.defineProperty(View.prototype, "weight", {
 		configurable: true,
-		value(this: View) {
+		value(this: ReadView) {
 			if (!weights.has(this)) weights.set(this, newWeights.shift() ?? 0);
 			return weights.get(this)!;
 		},
@@ -60,7 +61,7 @@ function withControlledWeights(run: (controls: WeightControls) => void): void {
 	}
 }
 
-function get(cache: ViewCache, key: string): View {
+function get(cache: ViewCache, key: string): ReadView {
 	return cache.keyed(key, () => new Set());
 }
 

@@ -45,6 +45,11 @@ export interface FileAttrs {
 	readonly blob: string | null;
 }
 
+/** Structural read boundary shared by historical and transaction-bound projections. */
+export type ReadView = Omit<Pick<View, keyof View>, "sameText"> & {
+	sameText(path: string, other: ReadView): boolean;
+};
+
 const NO_ATTRS: FileAttrs = { exists: false, exec: false, link: null, blob: null };
 const NONE: readonly never[] = Object.freeze([]);
 
@@ -523,7 +528,12 @@ export class View {
 	}
 
 	/** Whether a file reads the same here and in `other` (of the same graph), compared line by line without joining either (#46). */
-	sameText(path: string, other: View): boolean {
+	sameText(path: string, other: ReadView): boolean {
+		if (!(other instanceof View)) {
+			const a = this.lines(path),
+				b = other.lines(path);
+			return a.length === b.length && a.every((line, i) => line.text === b[i]!.text);
+		}
 		const a = this.#file(path).vis;
 		const b = other.#file(path).vis;
 		if (a.length !== b.length) return false;
@@ -698,7 +708,7 @@ export function project(graph: Graph, set: Iterable<AtomId>): Record<string, str
 }
 
 /** Where a node sits in a file's sequence: the index just after it (0 for a start node). */
-export function indexAfter(view: View, path: string, node: NodeId): number {
+export function indexAfter(view: Pick<ReadView, "sequenceIndex">, path: string, node: NodeId): number {
 	if (isStartNode(node)) return 0;
 	const i = view.sequenceIndex(path, node);
 	if (i < 0) throw new EngineError("not-in-view", `line ${node} is not in ${path} in this view`);

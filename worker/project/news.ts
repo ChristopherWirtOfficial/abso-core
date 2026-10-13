@@ -1,7 +1,7 @@
 // How news reads: one sentence for each thing an agent should hear, with the key that makes it heard
 // once, and who hears it after an edit, publish or land. Writes (the news entry) stay on Project.
 
-import { type AtomId, type Graph, isStartNode, parseKey, type View } from "../../src/engine/index.ts";
+import { type AtomId, type Graph, isStartNode, parseKey, type ReadView } from "../../src/engine/index.ts";
 import { unionOverlay } from "../../src/engine/state-source.ts";
 import { type Origin, type Pair, pairsIn, touchedFiles } from "./collisions.ts";
 import { type DefinitionCollision, signature } from "./definition-rule.ts";
@@ -196,7 +196,7 @@ export interface NewsHost {
 	newerFor(agent: AgentState): ReadonlySet<AtomId>;
 	spaceOf(agent: AgentState): Space;
 	setOf(space: Space): ReadonlySet<AtomId>;
-	viewAt(space: Space, version: number): View;
+	viewAt(space: Space, version: number): ReadView;
 	origin(atom: AtomId, spaceName: string): Origin;
 	collision(agent: AgentState, pair: Pair): Collision;
 	definitionCollisions(agent: AgentState, newer: ReadonlySet<AtomId>): DefinitionCollision[];

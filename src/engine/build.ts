@@ -23,6 +23,11 @@ import {
 } from "./types.ts";
 import { View } from "./view.ts";
 
+/** Exact read surface used to build atoms; membership requires point lookup only. */
+export type AtomBuildView = Pick<View, "graph" | "lines" | "sequence" | "sequenceIndex" | "parentOf"> & {
+	readonly set: Pick<ReadonlySet<AtomId>, "has">;
+};
+
 /** Replace the one exact occurrence of `old` in `file` with `new`. */
 export interface TextEdit {
 	readonly file: string;
@@ -108,7 +113,7 @@ interface Region {
  * the graph's next id; accept it with `graph.add(atom)` and put it in a set.
  * Its dependencies are derived from what it touched in the view (see deriveDeps).
  */
-export function buildAtom(view: View, input: AtomInput): Atom {
+export function buildAtom(view: AtomBuildView, input: AtomInput): Atom {
 	return build(view, input, false);
 }
 
@@ -126,7 +131,7 @@ export function buildBase(
 	return build(view, { ...meta, edits, attrs }, true);
 }
 
-function build(view: View, input: AtomInput, allowEmpty: boolean): Atom {
+function build(view: AtomBuildView, input: AtomInput, allowEmpty: boolean): Atom {
 	const graph = view.graph;
 	const id = graph.nextId();
 	if (typeof input.author !== "string" || typeof input.message !== "string") {
@@ -275,7 +280,7 @@ function build(view: View, input: AtomInput, allowEmpty: boolean): Atom {
  * lines into each other collide in all but the rarest cases (the view breaks
  * any loop that is left).
  */
-function planMove(view: View, move: MoveInput, writes: Set<Key>, reads: Set<Key>): Relocation[] {
+function planMove(view: AtomBuildView, move: MoveInput, writes: Set<Key>, reads: Set<Key>): Relocation[] {
 	for (const path of [move.file, move.to]) {
 		if (typeof path !== "string" || path === "" || /[\n\r]/.test(path))
 			throw new EngineError("bad-edit", `bad file path ${JSON.stringify(path)}`);
@@ -341,7 +346,7 @@ function planMove(view: View, move: MoveInput, writes: Set<Key>, reads: Set<Key>
  * the semantic contract. A missing tip still implies its required ancestors.
  */
 function deriveDeps(
-	view: View,
+	view: AtomBuildView,
 	parts: {
 		writes: readonly Key[];
 		reads: readonly Key[];
@@ -390,7 +395,7 @@ function holdSpan(lines: readonly LineId[], holds: Set<Key>): void {
 	});
 }
 
-function rangeLines(view: View, range: LineRange): LineId[] {
+function rangeLines(view: AtomBuildView, range: LineRange): LineId[] {
 	const visible = view.lines(range.file);
 	if (
 		!Number.isInteger(range.start) ||
@@ -407,7 +412,7 @@ function rangeLines(view: View, range: LineRange): LineId[] {
 	return visible.slice(range.start, range.end).map((l) => l.id);
 }
 
-function uniqueAtoms(view: View, ids: readonly AtomId[], what: string): AtomId[] {
+function uniqueAtoms(view: AtomBuildView, ids: readonly AtomId[], what: string): AtomId[] {
 	const out: AtomId[] = [];
 	for (const id of ids) {
 		if (!view.graph.has(id)) throw new EngineError("unknown-atom", `${what} names unknown atom ${id}`);
@@ -419,7 +424,7 @@ function uniqueAtoms(view: View, ids: readonly AtomId[], what: string): AtomId[]
 
 // Matching edits ---------------------------------------------------------------
 
-function resolveRegions(view: View, edits: readonly EditInput[]): Region[] {
+function resolveRegions(view: AtomBuildView, edits: readonly EditInput[]): Region[] {
 	const regions = edits.map((edit, order) => {
 		const mode = edit.mode ?? "both";
 		if (!MODES.includes(mode)) throw new EngineError("bad-edit", `mode must be one of ${MODES.join(", ")}`);
@@ -455,7 +460,7 @@ function resolveRegions(view: View, edits: readonly EditInput[]): Region[] {
  * whole lines. If the replacement would leave a line without its newline, the
  * next line joins the region (that is what the plain-text edit does).
  */
-function matchText(view: View, edit: TextEdit, mode: Mode, order: number): Region {
+function matchText(view: AtomBuildView, edit: TextEdit, mode: Mode, order: number): Region {
 	if (typeof edit.old !== "string" || typeof edit.new !== "string") {
 		throw new EngineError("bad-edit", "a text edit needs old and new strings");
 	}
@@ -514,7 +519,7 @@ function matchText(view: View, edit: TextEdit, mode: Mode, order: number): Regio
 	return { file, start: startLine, end: endLine + 1, lines: splitLines(replacement), mode, order };
 }
 
-function matchSplice(view: View, edit: SpliceEdit, mode: Mode, order: number): Region {
+function matchSplice(view: AtomBuildView, edit: SpliceEdit, mode: Mode, order: number): Region {
 	const count = view.lines(edit.file).length;
 	if (
 		!Number.isInteger(edit.start) ||
