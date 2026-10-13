@@ -119,50 +119,10 @@ export class ExperimentalMarkerProjection {
 		return this.storage.transaction(() => {
 			const state = { ...previous };
 			const sequence = this.sequence;
-			const insert = (rank: number, text: string, hidden = false): number => {
-				const id = state.sequence.next;
-				state.sequence = sequence.update(state.sequence, { kind: "insert", rank, text });
-				if (hidden) state.sequence = sequence.update(state.sequence, { kind: "visibility", id, delta: 1 });
-				return id;
-			};
 			this.ensureFile(state, this.path);
 			for (const run of atom.inserts) this.ensureFile(state, run.file);
 			let k = 0;
-			for (const run of atom.inserts)
-				for (const text of run.lines) {
-					const line = `${atom.id}.${k++}`,
-						n = this.graph.lineN(line),
-						parent = this.graph.parentCodeOf(n);
-					if (n + 1 >= 0x80000000) throw Error("prototype line identity limit");
-					const existing = this.markers.get(state.locator, n + 1);
-					if (existing) {
-						state.sequence = sequence.update(state.sequence, { kind: "visibility", id: existing.enter, delta: -1 });
-						continue;
-					}
-					const parentMarker = this.markers.get(state.locator, this.parentKey(parent));
-					if (!parentMarker) throw Error("missing parent marker");
-					const parentKey = this.parentKey(parent);
-					const index = this.priorities;
-					const root = this.childRoots.get(state.children, parentKey)?.root ?? null;
-					const seq = this.graph.writerSeqOf(n);
-					const key = orderedChildKey({
-						n,
-						replaces: this.graph.replacesN(n) ? 1 : 0,
-						lamport: this.graph.lamportOfSeq(seq),
-						seq,
-						k: this.graph.kOf(n),
-					});
-					const preceding = index.before(root, key);
-					const anchor =
-						preceding === undefined
-							? parentMarker.enter
-							: required(this.markers.get(state.locator, preceding + 1)).exit;
-					state.children = this.childRoots.set(state.children, parentKey, { root: index.insert(root, key, n) });
-					const at = sequence.rank(state.sequence, anchor) + 1;
-					const enter = insert(at, line),
-						exit = insert(at + 1, `${line}:end`, true);
-					state.locator = this.markers.set(state.locator, n + 1, { kind: "line", enter, exit, parentKey, key });
-				}
+			for (const run of atom.inserts) for (const _ of run.lines) this.insertLine(state, `${atom.id}.${k++}`);
 			for (const line of atom.deletes) {
 				const marker = this.markers.get(state.locator, this.graph.lineN(line) + 1);
 				if (!marker) throw Error("missing deleted marker");
@@ -178,6 +138,46 @@ export class ExperimentalMarkerProjection {
 			state.membership = this.members.set(state.membership, atom.seq, { present: true, dependents: 0 });
 			return atom.moves?.length ? this.reconcileMoves(state) : state;
 		});
+	}
+	/** One canonical line insertion; used by atomic apply and resumable inactive adoption. */
+	insertLine(state: MarkerState, line: string): void {
+		this.assertContext(state);
+		const sequence = this.sequence;
+		const insert = (rank: number, text: string, hidden = false): number => {
+			const id = state.sequence.next;
+			state.sequence = sequence.update(state.sequence, { kind: "insert", rank, text });
+			if (hidden) state.sequence = sequence.update(state.sequence, { kind: "visibility", id, delta: 1 });
+			return id;
+		};
+		const n = this.graph.lineN(line),
+			parent = this.graph.parentCodeOf(n);
+		if (n + 1 >= 0x80000000) throw Error("prototype line identity limit");
+		const existing = this.markers.get(state.locator, n + 1);
+		if (existing) {
+			state.sequence = sequence.update(state.sequence, { kind: "visibility", id: existing.enter, delta: -1 });
+			return;
+		}
+		const parentMarker = this.markers.get(state.locator, this.parentKey(parent));
+		if (!parentMarker) throw Error("missing parent marker");
+		const parentKey = this.parentKey(parent);
+		const index = this.priorities;
+		const root = this.childRoots.get(state.children, parentKey)?.root ?? null;
+		const seq = this.graph.writerSeqOf(n);
+		const key = orderedChildKey({
+			n,
+			replaces: this.graph.replacesN(n) ? 1 : 0,
+			lamport: this.graph.lamportOfSeq(seq),
+			seq,
+			k: this.graph.kOf(n),
+		});
+		const preceding = index.before(root, key);
+		const anchor =
+			preceding === undefined ? parentMarker.enter : required(this.markers.get(state.locator, preceding + 1)).exit;
+		state.children = this.childRoots.set(state.children, parentKey, { root: index.insert(root, key, n) });
+		const at = sequence.rank(state.sequence, anchor) + 1;
+		const enter = insert(at, line),
+			exit = insert(at + 1, `${line}:end`, true);
+		state.locator = this.markers.set(state.locator, n + 1, { kind: "line", enter, exit, parentKey, key });
 	}
 	removeDeleter(previous: MarkerState, atom: Atom): MarkerState {
 		return this.removeAtom(previous, atom);
