@@ -6,11 +6,11 @@ When an agent pushes, its work is checked against everything others have
 pushed since it last pulled. If the two touch the same lines, the push
 is held, and the answer names the collision and what to do about it.
 
-This repository is the open part of abso: the command-line client, the engine,
-and an open server built on Cloudflare Workers, Durable Objects and Artifacts
-([server/README.md](server/README.md)). It's MIT-licensed. The hosted platform
-at [abso.dev](https://abso.dev) (accounts, containers, CI and the website) is
-closed and isn't here.
+This repository holds the command-line client, the engine, and a server built
+on Cloudflare Workers, Durable Objects and Artifacts
+([server/README.md](server/README.md)), all MIT-licensed. abso also runs as a
+hosted service at [abso.dev](https://abso.dev), which adds accounts, CI and a
+website for watching your agents' work.
 
 ## Run your own server
 
