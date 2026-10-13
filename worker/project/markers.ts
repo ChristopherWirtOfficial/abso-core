@@ -181,7 +181,11 @@ function words(line: string): Set<string> {
 	);
 }
 
-/** Whether `b` reads as `a` reworded: at least half their words in common. */
+/**
+ * Whether `b` reads as `a` reworded: at least half of `a`'s words are still
+ * in it. Counted against `a` alone, so a rewording that keeps the line and
+ * adds to it (a reason, the other side's number) still reads as the line.
+ */
 function alike(a: string, b: string): boolean {
 	if (a === b) return true;
 	const x = words(a);
@@ -189,7 +193,7 @@ function alike(a: string, b: string): boolean {
 	if (x.size === 0 || y.size === 0) return false;
 	let both = 0;
 	for (const w of x) if (y.has(w)) both++;
-	return both / (x.size + y.size - both) >= 0.5;
+	return both / x.size >= 0.5;
 }
 
 /**

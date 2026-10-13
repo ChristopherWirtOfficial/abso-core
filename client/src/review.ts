@@ -83,6 +83,13 @@ function changeLine(c: ChangeAnswer): string {
 	return `  ${c.id}  ${c.agent}, ${titleLine(c.title)}${c.open ? " (still going)" : ""}: ${versionsText(c)}${files}${open > 0 ? `; ${plural(open, "open objection")}` : ""}`;
 }
 
+/** What a settle kept, read from outside: whose lines, not "yours" or "theirs". */
+function keptText(s: ChangeAnswer["settled"][number], settler: string): string {
+	if (s.kept === "yours") return `kept ${settler}'s`;
+	if (s.kept === "theirs") return `kept ${s.theirs.agent}'s`;
+	return s.kept === "both" ? "kept both" : "rewrote both sides";
+}
+
 /** The change page, as text. */
 export function changePage(c: ChangeAnswer): string[] {
 	const out = [
@@ -99,7 +106,7 @@ export function changePage(c: ChangeAnswer): string[] {
 		),
 		...(c.settled.length > 0
 			? [
-					`Settled: ${c.settled.map((s) => `${s.file} (kept ${s.kept}, against ${s.theirs.agent}'s version ${s.theirs.version})`).join("; ")}.`,
+					`Settled: ${c.settled.map((s) => `${s.file} (${keptText(s, c.agent)}, against ${s.theirs.agent}'s version ${s.theirs.version})`).join("; ")}.`,
 				]
 			: []),
 		...(c.refusals.length > 0

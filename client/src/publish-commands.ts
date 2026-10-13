@@ -476,7 +476,7 @@ async function publishSteps(
 					]
 				: []),
 			newer.length > 0
-				? `Run abso pull: each of those files comes back holding both sides' lines, with no markers. Edit it to what it should be${twice.length > 0 ? ", keep one definition of each name defined twice" : ""}, then push again.`
+				? `Run abso pull: each of those files comes back holding both sides' lines, in a marker block where you both changed the same lines. Settle each as the pull says${twice.length > 0 ? ", keep one definition of each name defined twice" : ""}, then push again.`
 				: twice.length > 0
 					? "Keep one definition of each name defined twice (delete yours, or theirs), then push again."
 					: "Run abso pull, then push again.",

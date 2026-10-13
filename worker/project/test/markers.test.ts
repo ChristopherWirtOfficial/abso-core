@@ -244,6 +244,25 @@ test("lostLines: a rewording is not a loss; a line gone in every version is", ()
 	assert.deepEqual(lostLines(["  rate. *B5: worth +N coin*"], region), ["- [x] **Gauge shows coin**"]);
 });
 
+test("lostLines: a line rewritten longer, keeping its words and adding a reason, is not a loss", () => {
+	const region = {
+		file: "store-policy.md",
+		yours: ["Free shipping on orders over $35."],
+		base: ["Free shipping on orders over $50."],
+		theirs: ["Free shipping on orders over $75."],
+		agent: "alice",
+		version: 1,
+		message: "m",
+	};
+	const settled = (line: string) => ["# Store policy", "", line, "Returns accepted within 30 days."];
+	assert.deepEqual(
+		lostLines(settled("Free shipping on orders over $50 (alice wants $75, bob wants $35: decided by Friday)."), region),
+		[],
+	);
+	assert.deepEqual(lostLines(settled("Free shipping on orders over $60."), region), []);
+	assert.deepEqual(lostLines(settled("Shipping is free."), region), ["Free shipping on orders over $35."]);
+});
+
 test("markers.ts: blocks round-trip, settle, and say what was kept", () => {
 	const who = { agent: "a", version: 3, message: 'Line one\nline two "quoted"' };
 	const block = markerBlock(["y1", "y2"], ["b"], 2, ["t1"], who);
