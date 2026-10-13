@@ -495,7 +495,7 @@ export class Graph {
 
 	/** lamport(a) = 1 + max lamport of its deps; 0 for an atom with no deps (such as a0). */
 	lamport(id: AtomId): number {
-		this.atom(id);
+		if (!this.has(id)) throw new EngineError("unknown-atom", `no atom ${id}`);
 		return this.#lamport[this.#seq(id)]!;
 	}
 
@@ -510,7 +510,7 @@ export class Graph {
 		const seq = this.#lineAtom.at(n);
 		return {
 			id,
-			atom: this.#atoms[seq]!.id,
+			atom: this.idOfSeq(seq),
 			k: n - this.#lineBase[seq]!,
 			file: this.#paths[this.#lineFile.at(n)]!,
 			parent: this.#nodeName(this.#lineParent.at(n)),
@@ -527,7 +527,7 @@ export class Graph {
 	/** The atom that wrote a line, or undefined: line(id).atom without making the record. */
 	lineAtom(id: LineId): AtomId | undefined {
 		const n = this.#lineN(id);
-		return n < 0 ? undefined : this.#atoms[this.#lineAtom.at(n)]!.id;
+		return n < 0 ? undefined : this.idOfSeq(this.#lineAtom.at(n));
 	}
 
 	/** The file a line was written in, or undefined: line(id).file without making the record. */
@@ -586,7 +586,9 @@ export class Graph {
 
 	/** The atom id with this seq, as the graph keeps it. */
 	idOfSeq(seq: number): AtomId {
-		return this.#atoms[seq]!.id;
+		if (!Number.isSafeInteger(seq) || seq < 0 || seq >= this.#atoms.length)
+			throw new EngineError("unknown-atom", `no atom at sequence ${seq}`);
+		return atomId(seq);
 	}
 
 	lamportOfSeq(seq: number): number {
@@ -741,7 +743,7 @@ export class Graph {
 	/** A line's id from its n. */
 	#lineName(n: number): LineId {
 		const seq = this.#lineAtom.at(n);
-		return `${this.#atoms[seq]!.id}.${n - this.#lineBase[seq]!}`;
+		return `${this.idOfSeq(seq)}.${n - this.#lineBase[seq]!}`;
 	}
 
 	/** A node's code: a line's n, or -1 - a path's index for a start node; undefined when unknown. */
@@ -781,7 +783,7 @@ export class Graph {
 	deletersOf(line: LineId): readonly AtomId[] {
 		const n = this.#lineN(line);
 		if (n < 0) return EMPTY;
-		return [...this.eachDeleterSeqOf(n)].map((seq) => this.#atoms[seq]!.id);
+		return [...this.eachDeleterSeqOf(n)].map((seq) => this.idOfSeq(seq));
 	}
 
 	writersOf(key: Key): readonly AtomId[] {
@@ -837,7 +839,7 @@ export class Graph {
 	 * start node, that file): a set's moves can have taken them elsewhere.
 	 */
 	filesOf(id: AtomId): readonly string[] {
-		this.atom(id);
+		if (!this.has(id)) throw new EngineError("unknown-atom", `no atom ${id}`);
 		return this.#atomFiles[this.#seq(id)]!;
 	}
 
