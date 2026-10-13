@@ -1,0 +1,129 @@
+{
+	"stage": "100x10",
+	"server": "https://abso-open.chrisazy.workers.dev",
+	"at": "2026-10-13T16:23:39.895Z",
+	"projects": 100,
+	"projectsMade": 100,
+	"agentsPerProject": 10,
+	"agents": 1000,
+	"rounds": 3,
+	"overlap": 0.2,
+	"initSeconds": 4.7,
+	"seconds": 10.5,
+	"cutShort": false,
+	"pushes": 2921,
+	"pushesPerSecond": 278.77,
+	"pushesPerSecondPerProject": {
+		"p50": 2.863,
+		"min": 2.195,
+		"max": 2.863
+	},
+	"held": 258,
+	"settledOnRetry": 179,
+	"heldAfterRetry": 79,
+	"requests": 12376,
+	"requestsPerSecond": 1181.1,
+	"errors": 0,
+	"errorRate": 0,
+	"errorsByStatus": {},
+	"statuses": {
+		"200": 12376
+	},
+	"latencyMs": {
+		"blob": {
+			"count": 100,
+			"p50": 900.2,
+			"p95": 1195,
+			"p99": 1309.2,
+			"max": 1586.3
+		},
+		"init": {
+			"count": 100,
+			"p50": 291.1,
+			"p95": 693.6,
+			"p99": 792.3,
+			"max": 3641.1
+		},
+		"news": {
+			"count": 3000,
+			"p50": 233,
+			"p95": 379.7,
+			"p99": 649,
+			"max": 1401.7
+		},
+		"out": {
+			"count": 91,
+			"p50": 117.9,
+			"p95": 222.5,
+			"p99": 534.7,
+			"max": 534.7
+		},
+		"publish": {
+			"count": 3258,
+			"p50": 374.8,
+			"p95": 547.5,
+			"p99": 790.8,
+			"max": 1453
+		},
+		"record": {
+			"count": 3000,
+			"p50": 399.4,
+			"p95": 570.1,
+			"p99": 802,
+			"max": 1159.3
+		},
+		"starting": {
+			"count": 1000,
+			"p50": 459.4,
+			"p95": 1101.4,
+			"p99": 1133,
+			"max": 1353.7
+		},
+		"sync": {
+			"count": 1827,
+			"p50": 1333.2,
+			"p95": 4069.4,
+			"p99": 4486.2,
+			"max": 5817.1
+		}
+	},
+	"artifacts": {
+		"sampled": 5,
+		"pushedOut": 5,
+		"p50Seconds": 54.5,
+		"maxSeconds": 62.4,
+		"projects": [
+			{
+				"project": "scale-mv6vzxzj-100x10-p1",
+				"version": 29,
+				"seconds": 50.3,
+				"error": null
+			},
+			{
+				"project": "scale-mv6vzxzj-100x10-p2",
+				"version": 29,
+				"seconds": 54.5,
+				"error": null
+			},
+			{
+				"project": "scale-mv6vzxzj-100x10-p3",
+				"version": 30,
+				"seconds": 57.1,
+				"error": null
+			},
+			{
+				"project": "scale-mv6vzxzj-100x10-p4",
+				"version": 30,
+				"seconds": 62.4,
+				"error": null
+			},
+			{
+				"project": "scale-mv6vzxzj-100x10-p5",
+				"version": 29,
+				"seconds": 51.5,
+				"error": null
+			}
+		]
+	},
+	"failedProjects": []
+}

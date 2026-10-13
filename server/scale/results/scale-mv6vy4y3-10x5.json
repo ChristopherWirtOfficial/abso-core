@@ -1,0 +1,129 @@
+{
+	"stage": "10x5",
+	"server": "https://abso-open.chrisazy.workers.dev",
+	"at": "2026-10-13T16:18:42.011Z",
+	"projects": 10,
+	"projectsMade": 10,
+	"agentsPerProject": 5,
+	"agents": 50,
+	"rounds": 3,
+	"overlap": 0.2,
+	"initSeconds": 1.6,
+	"seconds": 4.3,
+	"cutShort": false,
+	"pushes": 148,
+	"pushesPerSecond": 34.73,
+	"pushesPerSecondPerProject": {
+		"p50": 3.52,
+		"min": 3.286,
+		"max": 3.52
+	},
+	"held": 8,
+	"settledOnRetry": 6,
+	"heldAfterRetry": 2,
+	"requests": 726,
+	"requestsPerSecond": 170.4,
+	"errors": 0,
+	"errorRate": 0,
+	"errorsByStatus": {},
+	"statuses": {
+		"200": 726
+	},
+	"latencyMs": {
+		"blob": {
+			"count": 10,
+			"p50": 670.8,
+			"p95": 997.3,
+			"p99": 997.3,
+			"max": 997.3
+		},
+		"init": {
+			"count": 10,
+			"p50": 182,
+			"p95": 666.3,
+			"p99": 666.3,
+			"max": 666.3
+		},
+		"news": {
+			"count": 150,
+			"p50": 168.6,
+			"p95": 280.4,
+			"p99": 500.9,
+			"max": 560.3
+		},
+		"out": {
+			"count": 106,
+			"p50": 147.9,
+			"p95": 243.4,
+			"p99": 440.6,
+			"max": 506.5
+		},
+		"publish": {
+			"count": 158,
+			"p50": 190.4,
+			"p95": 326.6,
+			"p99": 510.1,
+			"max": 551.5
+		},
+		"record": {
+			"count": 150,
+			"p50": 188.3,
+			"p95": 479,
+			"p99": 658,
+			"max": 699.1
+		},
+		"starting": {
+			"count": 50,
+			"p50": 216.7,
+			"p95": 468,
+			"p99": 555.5,
+			"max": 555.5
+		},
+		"sync": {
+			"count": 92,
+			"p50": 284.3,
+			"p95": 911.2,
+			"p99": 1036.9,
+			"max": 1036.9
+		}
+	},
+	"artifacts": {
+		"sampled": 5,
+		"pushedOut": 5,
+		"p50Seconds": 65,
+		"maxSeconds": 68.2,
+		"projects": [
+			{
+				"project": "scale-mv6vy4y3-10x5-p1",
+				"version": 15,
+				"seconds": 68.2,
+				"error": null
+			},
+			{
+				"project": "scale-mv6vy4y3-10x5-p2",
+				"version": 15,
+				"seconds": 67.9,
+				"error": null
+			},
+			{
+				"project": "scale-mv6vy4y3-10x5-p3",
+				"version": 14,
+				"seconds": 63.9,
+				"error": null
+			},
+			{
+				"project": "scale-mv6vy4y3-10x5-p4",
+				"version": 14,
+				"seconds": 61.3,
+				"error": null
+			},
+			{
+				"project": "scale-mv6vy4y3-10x5-p5",
+				"version": 15,
+				"seconds": 65,
+				"error": null
+			}
+		]
+	},
+	"failedProjects": []
+}

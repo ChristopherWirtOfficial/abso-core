@@ -1,0 +1,105 @@
+{
+	"stage": "1x1",
+	"server": "https://abso-open.chrisazy.workers.dev",
+	"at": "2026-10-13T16:20:05.418Z",
+	"projects": 1,
+	"projectsMade": 1,
+	"agentsPerProject": 1,
+	"agents": 1,
+	"rounds": 3,
+	"overlap": 0.2,
+	"initSeconds": 0.7,
+	"seconds": 2.9,
+	"cutShort": false,
+	"pushes": 3,
+	"pushesPerSecond": 1.05,
+	"pushesPerSecondPerProject": {
+		"p50": 1.05,
+		"min": 1.05,
+		"max": 1.05
+	},
+	"held": 0,
+	"settledOnRetry": 0,
+	"heldAfterRetry": 0,
+	"requests": 36,
+	"requestsPerSecond": 12.6,
+	"errors": 0,
+	"errorRate": 0,
+	"errorsByStatus": {},
+	"statuses": {
+		"200": 36
+	},
+	"latencyMs": {
+		"blob": {
+			"count": 1,
+			"p50": 583.8,
+			"p95": 583.8,
+			"p99": 583.8,
+			"max": 583.8
+		},
+		"init": {
+			"count": 1,
+			"p50": 143.4,
+			"p95": 143.4,
+			"p99": 143.4,
+			"max": 143.4
+		},
+		"news": {
+			"count": 3,
+			"p50": 263.2,
+			"p95": 273.2,
+			"p99": 273.2,
+			"max": 273.2
+		},
+		"out": {
+			"count": 22,
+			"p50": 63.1,
+			"p95": 140.1,
+			"p99": 148.6,
+			"max": 148.6
+		},
+		"publish": {
+			"count": 3,
+			"p50": 136.5,
+			"p95": 176.7,
+			"p99": 176.7,
+			"max": 176.7
+		},
+		"record": {
+			"count": 3,
+			"p50": 147.1,
+			"p95": 342.7,
+			"p99": 342.7,
+			"max": 342.7
+		},
+		"starting": {
+			"count": 1,
+			"p50": 186.9,
+			"p95": 186.9,
+			"p99": 186.9,
+			"max": 186.9
+		},
+		"sync": {
+			"count": 2,
+			"p50": 88.4,
+			"p95": 807.2,
+			"p99": 807.2,
+			"max": 807.2
+		}
+	},
+	"artifacts": {
+		"sampled": 1,
+		"pushedOut": 1,
+		"p50Seconds": 65.4,
+		"maxSeconds": 65.4,
+		"projects": [
+			{
+				"project": "scale-mv6vzxzj-1x1-p1",
+				"version": 3,
+				"seconds": 65.4,
+				"error": null
+			}
+		]
+	},
+	"failedProjects": []
+}
