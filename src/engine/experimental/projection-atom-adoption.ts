@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Atom } from "../types.ts";
+import { ProjectionAtomDescriptor } from "./projection-atom-index.ts";
 import type { ExperimentalMarkerProjection, MarkerState } from "./projection-marker.ts";
 import { adoptMovesStep } from "./projection-move-adoption.ts";
 
@@ -81,7 +82,7 @@ export class ProjectionAtomAdoption {
 	}
 	page(input: {
 		previous: MarkerState;
-		atom: Atom;
+		atom: Atom | ProjectionAtomDescriptor;
 		remove: boolean;
 		source: string;
 		maxSteps: number;
@@ -101,8 +102,36 @@ export class ProjectionAtomAdoption {
 		)
 			throw Error("invalid atom adoption page bounds");
 		const atom = input.atom;
-		const identity = digest([input.source, input.previous, atom, input.remove]);
-		if (digest(p.graph.atom(atom.id)) !== digest(atom)) throw Error("canonical adoption atom mismatch");
+		const indexed = atom instanceof ProjectionAtomDescriptor ? atom : undefined;
+		const full = indexed ? undefined : (atom as Atom);
+		const identity = digest([
+			input.source,
+			input.previous,
+			indexed ? [indexed.id, indexed.seq, indexed.digest] : atom,
+			input.remove,
+		]);
+		if (indexed) {
+			if (p.graph.idOfSeq(indexed.seq) !== indexed.id) throw Error("canonical adoption atom mismatch");
+		} else if (digest(p.graph.atom(atom.id)) !== digest(full)) throw Error("canonical adoption atom mismatch");
+		const inserts = indexed?.count("inserts") ?? full!.inserts.length;
+		const run = (i: number) =>
+			indexed
+				? indexed.item("inserts", i)
+				: { file: full!.inserts[i]!.file, parent: full!.inserts[i]!.parent, lines: full!.inserts[i]!.lines.length };
+		const deps = indexed?.count("deps") ?? full!.deps.length;
+		const dependency = (i: number) => (indexed ? indexed.item("deps", i) : full!.deps[i]!);
+		const deletes = indexed?.count("deletes") ?? full!.deletes.length;
+		const deletion = (i: number) => (indexed ? indexed.item("deletes", i) : full!.deletes[i]!);
+		const attrs = indexed?.count("attrs") ?? full!.attrs?.length ?? 0;
+		const attribute = (i: number) => (indexed ? indexed.item("attrs", i) : full!.attrs![i]!);
+		const moves = indexed?.count("moves") ?? full!.moves?.length ?? 0;
+		const fullFiles = indexed ? undefined : p.graph.filesOf(atom.id);
+		const files = indexed?.count("files") ?? fullFiles!.length;
+		const file = (i: number) => (indexed ? indexed.item("files", i) : fullFiles![i]!);
+		const seqOf = (id: string) => {
+			if (!p.graph.has(id)) throw Error("missing dependency");
+			return Number(id.slice(1));
+		};
 		const collection = `atom-adoption:${this.task}`;
 		const validate = () => {
 			const result: unknown = input.validateSource();
@@ -121,19 +150,19 @@ export class ProjectionAtomAdoption {
 				)
 					throw Error("invalid or changed atom adoption cursor");
 				p.assertContext(cursor.state);
-				if (cursor.run > atom.inserts.length || cursor.line > (atom.inserts[cursor.run]?.lines.length ?? 0))
+				if (cursor.run > inserts || cursor.line > (cursor.run < inserts ? run(cursor.run).lines : 0))
 					throw Error("invalid atom adoption line position");
 				const limits: Record<Phase, number> = {
-					dependencies: atom.deps.length,
-					files: atom.inserts.length + 1,
+					dependencies: deps,
+					files: inserts + 1,
 					lines: 0,
-					deletes: atom.deletes.length,
-					counts: atom.deps.length,
-					attributes: atom.attrs?.length ?? 0,
-					contributions: p.graph.filesOf(atom.id).length,
+					deletes: deletes,
+					counts: deps,
+					attributes: attrs,
+					contributions: files,
 					membership: 0,
 					moves: 0,
-					cleanup: atom.attrs?.length ?? 0,
+					cleanup: attrs,
 					done: 0,
 				};
 				if (cursor.index > limits[cursor.phase]) throw Error("invalid atom adoption phase position");
@@ -158,35 +187,35 @@ export class ProjectionAtomAdoption {
 				cursor!.index = 0;
 			};
 			const state = cursor.state;
-			const contributionFiles = p.graph.filesOf(atom.id);
+
 			while (cursor.phase !== "done" && steps < input.maxSteps) {
 				steps++;
 				switch (cursor.phase) {
 					case "dependencies": {
-						if (input.remove || cursor.index === atom.deps.length) {
+						if (input.remove || cursor.index === deps) {
 							next();
 							break;
 						}
-						const id = atom.deps[cursor.index++]!;
-						if (!p.members.get(state.membership, p.graph.atom(id).seq)?.present) throw Error("missing dependency");
+						const id = dependency(cursor.index++);
+						if (!p.members.get(state.membership, seqOf(id))?.present) throw Error("missing dependency");
 						break;
 					}
 					case "files": {
-						if (input.remove || cursor.index > atom.inserts.length) {
+						if (input.remove || cursor.index > inserts) {
 							next();
 							break;
 						}
-						p.ensureFile(state, cursor.index === 0 ? p.path : atom.inserts[cursor.index - 1]!.file);
+						p.ensureFile(state, cursor.index === 0 ? p.path : run(cursor.index - 1).file);
 						cursor.index++;
 						break;
 					}
 					case "lines": {
-						if (cursor.run === atom.inserts.length) {
+						if (cursor.run === inserts) {
 							next();
 							break;
 						}
-						const run = atom.inserts[cursor.run]!;
-						if (cursor.line === run.lines.length) {
+						const currentRun = run(cursor.run);
+						if (cursor.line === currentRun.lines) {
 							cursor.run++;
 							cursor.line = 0;
 							break;
@@ -202,11 +231,11 @@ export class ProjectionAtomAdoption {
 						break;
 					}
 					case "deletes": {
-						if (cursor.index === atom.deletes.length) {
+						if (cursor.index === deletes) {
 							next();
 							break;
 						}
-						const marker = p.markers.get(state.locator, p.graph.lineN(atom.deletes[cursor.index++]!) + 1);
+						const marker = p.markers.get(state.locator, p.graph.lineN(deletion(cursor.index++)) + 1);
 						if (!marker) throw Error("missing deleted marker");
 						state.sequence = p.sequence.update(state.sequence, {
 							kind: "visibility",
@@ -216,11 +245,11 @@ export class ProjectionAtomAdoption {
 						break;
 					}
 					case "counts": {
-						if (cursor.index === atom.deps.length) {
+						if (cursor.index === deps) {
 							next();
 							break;
 						}
-						const seq = p.graph.atom(atom.deps[cursor.index++]!).seq;
+						const seq = seqOf(dependency(cursor.index++));
 						const member = p.members.get(state.membership, seq);
 						if (!member?.present || (input.remove && member.dependents < 1)) throw Error("invalid dependency count");
 						state.membership = p.members.set(state.membership, seq, {
@@ -230,25 +259,24 @@ export class ProjectionAtomAdoption {
 						break;
 					}
 					case "attributes": {
-						const attrs = atom.attrs ?? [];
-						if (cursor.index === attrs.length) {
+						if (cursor.index === attrs) {
 							next();
 							break;
 						}
-						const attr = attrs[cursor.index++]!;
+						const attr = attribute(cursor.index++);
 						const key = JSON.stringify([attr.file, attr.name]);
 						if (!p.storage.read(`${collection}:attributes`, key)) {
-							p.updateAttributes(state, { ...atom, attrs: [attr] }, !input.remove);
+							p.updateAttributes(state, { seq: atom.seq, attrs: [attr] }, !input.remove);
 							p.storage.write(`${collection}:attributes`, key, true);
 						}
 						break;
 					}
 					case "contributions": {
-						if (cursor.index === contributionFiles.length) {
+						if (cursor.index === files) {
 							next();
 							break;
 						}
-						const path = contributionFiles[cursor.index++]!;
+						const path = file(cursor.index++);
 						p.ensureFile(state, path);
 						const key = p.fileKey(path)!;
 						const marker = p.markers.get(state.locator, key);
@@ -266,20 +294,33 @@ export class ProjectionAtomAdoption {
 						next();
 						break;
 					case "moves":
-						if (atom.moves?.length) {
-							const result = adoptMovesStep(p, state, this.task, identity);
+						if (moves) {
+							const result = adoptMovesStep(
+								p,
+								state,
+								this.task,
+								identity,
+								indexed
+									? {
+											count: (id) => indexed.related(id).count("moves"),
+											at: (id, k) => {
+												const atom = indexed.related(id);
+												return k < atom.count("moves") ? atom.item("moves", k) : undefined;
+											},
+										}
+									: undefined,
+							);
 							Object.assign(state, result.state);
 							if (!result.done) break;
 						}
 						next();
 						break;
 					case "cleanup": {
-						const attrs = atom.attrs ?? [];
-						if (cursor.index === attrs.length) {
+						if (cursor.index === attrs) {
 							next();
 							break;
 						}
-						const attr = attrs[cursor.index++]!;
+						const attr = attribute(cursor.index++);
 						p.storage.remove(`${collection}:attributes`, JSON.stringify([attr.file, attr.name]));
 						break;
 					}

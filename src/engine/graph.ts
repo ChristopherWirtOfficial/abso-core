@@ -277,6 +277,8 @@ export class Graph {
 	#textCache = new Map<number, readonly string[]>();
 	#textCached = 0;
 
+	readonly #indexAcceptedAtom?: (atom: Atom, files: readonly string[], storage: GraphStateStorage) => void;
+
 	/**
 	 * `texts`, when given, says where each atom's lines' text can be read back
 	 * (#46): the graph then keeps no text, only each line's place, and reads an
@@ -287,8 +289,13 @@ export class Graph {
 			texts?: (seq: number) => readonly (readonly string[])[];
 			lists?: (seq: number) => AtomLists;
 			storage?: GraphStateStorage;
+			/** Optional derived indexing inside persistent atom acceptance; must be synchronous. */
+			indexAcceptedAtom?: (atom: Atom, files: readonly string[], storage: GraphStateStorage) => void;
 		} = {},
 	) {
+		if (options.indexAcceptedAtom && !options.storage)
+			throw Error("accepted atom indexing requires persistent storage");
+		this.#indexAcceptedAtom = options.indexAcceptedAtom;
 		if (options.texts) {
 			this.#texts = options.texts;
 			this.#lineText = undefined;
@@ -994,7 +1001,13 @@ export class Graph {
 	 * The atom is frozen. Adding to the graph does not add it to any set.
 	 */
 	add(atom: Atom): void {
-		if (this.#storage) this.#storage.transaction(() => this.#add(atom));
+		if (this.#storage)
+			this.#storage.transaction(() => {
+				this.#add(atom);
+				const result: unknown = this.#indexAcceptedAtom?.(atom, this.filesOf(atom.id), this.#storage!);
+				if (result && typeof result === "object" && "then" in result)
+					throw Error("accepted atom indexing must be synchronous");
+			});
 		else this.#add(atom);
 	}
 

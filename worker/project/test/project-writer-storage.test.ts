@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
+import {
+	indexAcceptedProjectionAtom,
+	ProjectionAtomIndex,
+} from "../../../src/engine/experimental/projection-atom-index.ts";
 import { Graph } from "../../../src/engine/graph.ts";
 import { StableSet, storedArray } from "../../../src/engine/state-source.ts";
 import { SqlState } from "../../../src/engine/test/storage-helper.ts";
@@ -205,4 +210,34 @@ test("outer transaction rolls back canonical append and every Project writer ind
 	storage.transaction(() => reopened.publish("writer", "Retry", 2));
 	assert.deepEqual(Project.openWriter(store, storage, entries.length).files(), { "a.txt": "ONE\n" });
 	storage.db.close();
+});
+
+test("opted-in descriptor indexing survives writer reopen and rolls back canonical append failure", () => {
+	const fixture = setup();
+	const { storage, entries, store } = fixture;
+	const options = { indexAcceptedAtom: indexAcceptedProjectionAtom };
+	try {
+		let project = new Project(store, { writerStorage: storage, ...options });
+		storage.transaction(() => project.init({ "a.txt": "one\n" }, 0));
+		project = Project.openWriter(store, storage, entries.length, options);
+		const rows = storage.db.prepare("SELECT * FROM state ORDER BY collection,key").all();
+		fixture.fail();
+		assert.throws(
+			() => storage.transaction(() => project.record("writer", { "a.txt": "two\n" }, 1)),
+			/canonical append failure/,
+		);
+		assert.deepEqual(storage.db.prepare("SELECT * FROM state ORDER BY collection,key").all(), rows);
+		fixture.recover();
+		project = Project.openWriter(store, storage, entries.length, options);
+		storage.transaction(() => project.record("writer", { "a.txt": "two\n" }, 1));
+		storage.transaction(() => project.publish("writer", "Indexed", 2));
+		const graph = new Graph({ storage });
+		for (const atom of graph.atoms()) {
+			const digest = createHash("sha256").update(JSON.stringify(atom)).digest("hex");
+			assert.equal(new ProjectionAtomIndex(storage).open(atom.id, digest).seq, atom.seq);
+		}
+		assert.deepEqual(Project.openWriter(store, storage, entries.length, options).files(), { "a.txt": "two\n" });
+	} finally {
+		storage.db.close();
+	}
 });

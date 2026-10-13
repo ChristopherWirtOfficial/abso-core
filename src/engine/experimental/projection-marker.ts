@@ -380,7 +380,7 @@ export class ExperimentalMarkerProjection {
 		}
 		return paths.sort();
 	}
-	updateAttributes(state: MarkerState, atom: Atom, adding: boolean): void {
+	updateAttributes(state: MarkerState, atom: Pick<Atom, "seq" | "attrs">, adding: boolean): void {
 		this.assertContext(state);
 		const index = this.attributePriorities,
 			hex = (n: number) => n.toString(16).padStart(14, "0");

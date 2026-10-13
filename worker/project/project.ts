@@ -348,6 +348,8 @@ export class Project {
 	readonly #hasBlob: (sha256: string) => boolean;
 
 	constructor(store: ProjectStore, options: ProjectOptions = {}, checkpoint?: typeof WRITER_REOPEN) {
+		if (options.indexAcceptedAtom && !options.writerStorage)
+			throw Error("accepted atom indexing requires writer storage");
 		this.#store = store;
 		this.#writerStorage = options.writerStorage ? new CachedStateStorage(options.writerStorage) : undefined;
 		if (this.#writerStorage) {
@@ -402,7 +404,7 @@ export class Project {
 		};
 		// Line text and each atom's deletes and claim keys stay in the log (#46), read back when asked for.
 		this.#graph = this.#writerStorage
-			? new Graph({ storage: this.#writerStorage })
+			? new Graph({ storage: this.#writerStorage, indexAcceptedAtom: options.indexAcceptedAtom })
 			: entryAt
 				? new Graph({ texts: (seq) => stored(seq).inserts.map((r) => r.lines), lists: (seq) => stored(seq) })
 				: new Graph();

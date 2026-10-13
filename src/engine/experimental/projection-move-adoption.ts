@@ -3,7 +3,7 @@ import type { RelocationInfo } from "../graph.ts";
 import { orderedChildKey } from "../ordered-index.ts";
 import type { GraphStateStorage } from "../state-source.ts";
 import type { ExperimentalMarkerProjection, MarkerState } from "./projection-marker.ts";
-import { resolveMovesPage } from "./projection-move-resolution.ts";
+import { graphMoveSource, type ProjectionMoveSource, resolveMovesPage } from "./projection-move-resolution.ts";
 
 type Phase = "files" | "resolve" | "plans" | "park" | "place" | "cleanup" | "done";
 interface Cursor {
@@ -41,6 +41,7 @@ export function adoptMovesStep(
 	previous: MarkerState,
 	task: string,
 	identity: string,
+	source: ProjectionMoveSource = graphMoveSource(p.graph),
 ): { done: boolean; state: MarkerState } {
 	p.assertContext(previous);
 	if (!task || task.length > 128 || !/^[a-f0-9]{64}$/.test(identity)) throw Error("invalid move adoption identity");
@@ -83,10 +84,9 @@ export function adoptMovesStep(
 		)
 			throw Error("invalid move adoption cursor");
 		const mover = p.graph.movers()[cursor.mover];
-		if (cursor.move > (mover === undefined ? 0 : (p.graph.atom(mover).moves?.length ?? 0)))
-			throw Error("invalid move adoption offset");
+		if (cursor.move > (mover === undefined ? 0 : source.count(mover))) throw Error("invalid move adoption offset");
 		let state = { ...previous };
-		const has = (id: string) => p.members.get(state.membership, p.graph.atom(id).seq)?.present ?? false;
+		const has = (id: string) => p.members.get(state.membership, Number(id.slice(1)))?.present ?? false;
 		switch (cursor.phase) {
 			case "files":
 			case "plans": {
@@ -96,14 +96,16 @@ export function adoptMovesStep(
 					cursor.move = 0;
 					break;
 				}
-				const moves = p.graph.atom(p.graph.movers()[cursor.mover]!).moves ?? [];
-				if (cursor.move > moves.length) throw Error("invalid move adoption offset");
-				if (cursor.move === moves.length) {
+				const moverId = p.graph.movers()[cursor.mover]!;
+				const count = source.count(moverId);
+				if (cursor.move > count) throw Error("invalid move adoption offset");
+				if (cursor.move === count) {
 					cursor.mover++;
 					cursor.move = 0;
 					break;
 				}
-				const move = moves[cursor.move++]!;
+				const move = source.at(moverId, cursor.move++);
+				if (!move) throw Error("missing indexed move");
 				if (cursor.phase === "files") {
 					if (move.parent.startsWith("^")) p.ensureFile(state, move.parent.slice(1));
 					break;
@@ -119,7 +121,7 @@ export function adoptMovesStep(
 				if (parent === undefined) throw Error("missing relocation ancestry");
 				const parentKey = parent.startsWith("^") ? p.fileKey(parent.slice(1)) : p.graph.lineN(parent) + 1;
 				if (parentKey === undefined) throw Error("missing relocation file");
-				const seq = selected ? p.graph.atom(selected.atom).seq : p.graph.writerSeqOf(n);
+				const seq = selected ? Number(selected.atom.slice(1)) : p.graph.writerSeqOf(n);
 				const key = orderedChildKey({
 					n,
 					replaces: selected ? 0 : Number(p.graph.replacesN(n)),
@@ -132,7 +134,7 @@ export function adoptMovesStep(
 				break;
 			}
 			case "resolve":
-				if (resolveMovesPage(p.graph, has, scratch, identity, 1).done) cursor.phase = "plans";
+				if (resolveMovesPage(p.graph, has, scratch, identity, 1, source).done) cursor.phase = "plans";
 				break;
 			case "park":
 			case "place": {

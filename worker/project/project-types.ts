@@ -567,6 +567,8 @@ export type Blobs = Record<string, string | null>;
 
 /** What the project needs from the store of binary files' bytes. */
 export interface ProjectOptions {
+	/** Optional derived atom indexing within persistent graph acceptance. */
+	indexAcceptedAtom?: (atom: Atom, files: readonly string[], storage: GraphStateStorage) => void;
 	/** Private experimental reader route; never falls back for unsupported membership. */
 	readViewProvider?: (graph: Graph) => ReadViewProvider;
 	/**

@@ -2,7 +2,15 @@ import { createHash } from "node:crypto";
 import type { Graph, RelocationInfo } from "../graph.ts";
 import { isStartNode } from "../keys.ts";
 import type { GraphStateStorage } from "../state-source.ts";
-import type { NodeId } from "../types.ts";
+import type { NodeId, Relocation } from "../types.ts";
+
+export interface ProjectionMoveSource {
+	count(id: string): number;
+	at(id: string, k: number): Relocation | undefined;
+}
+export function graphMoveSource(graph: Graph): ProjectionMoveSource {
+	return { count: (id) => graph.atom(id).moves?.length ?? 0, at: (id, k) => graph.atom(id).moves?.[k] };
+}
 
 interface Progress {
 	identity: string;
@@ -33,7 +41,7 @@ function shape(value: unknown, fields: string): asserts value is Record<string, 
 	)
 		throw Error("invalid move resolution record");
 }
-function readProgress(value: unknown, graph: Graph): Progress | undefined {
+function readProgress(value: unknown, graph: Graph, source: ProjectionMoveSource): Progress | undefined {
 	if (value === undefined) return undefined;
 	shape(value, "format checksum state");
 	if (value.format !== 1 || value.checksum !== digest(value.state)) throw Error("damaged move resolution cursor");
@@ -51,8 +59,7 @@ function readProgress(value: unknown, graph: Graph): Progress | undefined {
 	)
 		throw Error("invalid move resolution position");
 	const mover = graph.movers()[Number(state.mover)];
-	if (Number(state.move) > (mover === undefined ? 0 : (graph.atom(mover).moves?.length ?? 0)))
-		throw Error("invalid move offset");
+	if (Number(state.move) > (mover === undefined ? 0 : source.count(mover))) throw Error("invalid move offset");
 	for (const key of ["line", "slow", "fast", "meeting", "entry", "current"])
 		if (state[key] !== null && (typeof state[key] !== "string" || !state[key] || String(state[key]).length > 4096))
 			throw Error("invalid move ancestry cursor");
@@ -61,7 +68,7 @@ function readProgress(value: unknown, graph: Graph): Progress | undefined {
 		if (move === null) continue;
 		shape(move, "atom line parent k");
 		if (typeof move.atom !== "string" || !integer(move.k)) throw Error("invalid saved move");
-		const canonical = graph.atom(move.atom).moves?.[move.k];
+		const canonical = source.at(move.atom, move.k);
 		if (!canonical || canonical.line !== move.line || canonical.parent !== move.parent)
 			throw Error("saved move identity mismatch");
 	}
@@ -83,11 +90,12 @@ export function resolveMovesPage(
 	storage: GraphStateStorage,
 	identity: string,
 	maxSteps: number,
+	source: ProjectionMoveSource = graphMoveSource(graph),
 ): { done: boolean; steps: number } {
 	if (!identity || identity.length > 4096 || !Number.isSafeInteger(maxSteps) || maxSteps < 1 || maxSteps > 256)
 		throw Error("invalid move resolution page");
 	return storage.transaction(() => {
-		let state = readProgress(storage.read("progress", "cursor"), graph);
+		let state = readProgress(storage.read("progress", "cursor"), graph, source);
 		if (state && state.identity !== identity) throw Error("move resolution identity changed");
 		state ??= {
 			identity,
@@ -144,14 +152,16 @@ export function resolveMovesPage(
 						state.move = 0;
 						break;
 					}
-					const moves = graph.atom(id).moves ?? [];
-					if (state.move === moves.length) {
+					const count = source.count(id);
+					if (state.move === count) {
 						state.mover++;
 						state.move = 0;
 						break;
 					}
 					const k = state.move++;
-					const candidate: RelocationInfo = { atom: id, ...moves[k]!, k };
+					const move = source.at(id, k);
+					if (!move) throw Error("missing indexed move");
+					const candidate: RelocationInfo = { atom: id, ...move, k };
 					if (state.phase === "scan") {
 						if (!storage.read("seen", candidate.line)) {
 							storage.write("seen", candidate.line, true);

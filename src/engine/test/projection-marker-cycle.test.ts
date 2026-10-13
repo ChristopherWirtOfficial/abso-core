@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ProjectionAtomAdoption } from "../experimental/projection-atom-adoption.ts";
+import { indexAcceptedProjectionAtom, ProjectionAtomIndex } from "../experimental/projection-atom-index.ts";
 import { ExperimentalMarkerProjection as MarkerProjection } from "../experimental/projection-marker.ts";
 import { Graph } from "../graph.ts";
 import { CachedStateStorage } from "../state-source.ts";
@@ -8,12 +9,15 @@ import type { Atom } from "../types.ts";
 import { Repo, Rng } from "./helpers.ts";
 import { SqlState } from "./storage-helper.ts";
 
-for (const paged of [false, true])
+for (const paged of [false, true, "indexed"] as const)
 	test(`typed marker projection matches competing cyclic moves and removals (paged=${paged})`, () => {
 		const db = new SqlState();
 		try {
 			const repo = Repo.init({ "f.txt": Array.from({ length: 12 }, (_, n) => `${n}\n`).join("") }),
-				graph = new Graph({ storage: new CachedStateStorage(db) }),
+				graph = new Graph({
+					storage: new CachedStateStorage(db),
+					indexAcceptedAtom: paged === "indexed" ? indexAcceptedProjectionAtom : undefined,
+				}),
 				rng = new Rng(45131);
 			graph.add(repo.graph.atom("a0"));
 			const p = new MarkerProjection(db, graph, "f.txt", "typed-" + "cycle");
@@ -26,14 +30,25 @@ for (const paged of [false, true])
 				const job = new ProjectionAtomAdoption(p, String(task++));
 				const previous = state;
 				for (let pages = 0; pages < 10000; pages++) {
-					const result = job.page({
-						previous,
-						atom,
-						remove,
-						source: "c".repeat(64),
-						maxSteps: 3,
-						validateSource: () => {},
-					});
+					const read = db.read.bind(db);
+					if (paged === "indexed")
+						db.read = (collection, key) => {
+							if (collection === "atoms") throw Error("full atom read forbidden");
+							return read(collection, key);
+						};
+					let result;
+					try {
+						result = job.page({
+							previous,
+							atom: paged === "indexed" ? new ProjectionAtomIndex(db).openAccepted(atom.id) : atom,
+							remove,
+							source: "c".repeat(64),
+							maxSteps: 3,
+							validateSource: () => {},
+						});
+					} finally {
+						db.read = read;
+					}
 					assert.ok(result.steps <= 3);
 					assert.equal(result.atomicMoveWork, false);
 					if (result.done) return result.state;
