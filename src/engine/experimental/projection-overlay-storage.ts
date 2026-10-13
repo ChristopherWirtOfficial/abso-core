@@ -6,11 +6,13 @@ type OverlayRow = { collection: string; key: string; present: boolean; value?: u
 export class ProjectionOverlayStorage implements GraphStateStorage {
 	readonly #base: GraphStateStorage;
 	readonly #collection: string;
+	readonly #clearCollection?: (collection: string) => void;
 	#open = true;
-	constructor(base: GraphStateStorage, namespace: string) {
+	constructor(base: GraphStateStorage, namespace: string, clearCollection?: (collection: string) => void) {
 		if (!namespace) throw Error("missing projection overlay namespace");
 		this.#base = base;
 		this.#collection = `projection:temporary:${namespace}`;
+		this.#clearCollection = clearCollection;
 		for (const _ of base.entries(this.#collection)) throw Error("projection overlay namespace is occupied");
 	}
 	#check(): void {
@@ -64,7 +66,13 @@ export class ProjectionOverlayStorage implements GraphStateStorage {
 	close(): void {
 		if (!this.#open) return;
 		this.#base.transaction(() => {
-			for (const [key] of this.#base.entries(this.#collection)) this.#base.remove(this.#collection, key);
+			if (this.#clearCollection) {
+				const result: unknown = this.#clearCollection(this.#collection);
+				if (result && typeof result === "object" && "then" in result)
+					throw Error("overlay cleanup must be synchronous");
+			} else {
+				for (const [key] of this.#base.entries(this.#collection)) this.#base.remove(this.#collection, key);
+			}
 		});
 		this.#open = false;
 	}

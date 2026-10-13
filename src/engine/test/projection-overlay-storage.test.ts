@@ -3,6 +3,39 @@ import { test } from "node:test";
 import { ProjectionOverlayStorage } from "../experimental/projection-overlay-storage.ts";
 import { SqlState } from "./storage-helper.ts";
 
+test("host cleanup deletes only its overlay and a failed deletion rolls back without scanning", (t) => {
+	const storage = new SqlState();
+	try {
+		let fail = true;
+		const overlay = new ProjectionOverlayStorage(storage, "bulk", (collection) => {
+			assert.equal(collection, "projection:temporary:bulk");
+			storage.db.prepare("DELETE FROM state WHERE collection = ?").run(collection);
+			if (fail) throw Error("cleanup failed after deletion");
+		});
+		storage.write("pages", "durable", 1);
+		storage.write("projection:temporary:other", "other", 2);
+		for (let i = 0; i < 100; i++) overlay.write("pages", String(i), i);
+		const before = storage.db.prepare("SELECT * FROM state ORDER BY collection,key").all();
+		t.mock.method(storage, "entries", () => {
+			throw Error("cleanup must not enumerate rows");
+		});
+		assert.throws(() => overlay.close(), /cleanup failed/);
+		assert.deepEqual(storage.db.prepare("SELECT * FROM state ORDER BY collection,key").all(), before);
+		assert.equal(overlay.read("pages", "99"), 99);
+		fail = false;
+		overlay.close();
+		assert.equal(storage.read("pages", "durable"), 1);
+		assert.equal(storage.read("projection:temporary:other", "other"), 2);
+		assert.equal(
+			storage.db.prepare("SELECT COUNT(*) AS n FROM state WHERE collection = ?").get("projection:temporary:bulk")!.n,
+			0,
+		);
+		assert.throws(() => overlay.read("pages", "99"), /closed/);
+	} finally {
+		storage.db.close();
+	}
+});
+
 test("temporary projection pages shadow committed pages and cleanup preserves durable writes", () => {
 	const storage = new SqlState();
 	try {
