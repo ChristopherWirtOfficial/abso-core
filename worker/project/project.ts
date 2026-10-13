@@ -173,7 +173,7 @@ import { record as hostedRecord, type RecordHost } from "./record.ts";
 import { recordFile as hostedRecordFile, type RecordFileHost } from "./record-file.ts";
 import { refusals as hostedRefusals, refuse as hostedRefuse, type RefuseHost } from "./refuse.ts";
 import { restore as hostedRestore, type RestoreHost } from "./restore.ts";
-import { last, Membership, SHARED, type Space, sharedBaseOf } from "./spaces.ts";
+import { last, Membership, SHARED, SharedAdditions, type Space, sharedBaseOf } from "./spaces.ts";
 import { starting as hostedStarting, type StartingHost } from "./start.ts";
 import { switchTo as hostedSwitchTo, type SwitchHost } from "./switch-to.ts";
 import { sync as hostedSync, type SyncHost } from "./sync.ts";
@@ -2550,7 +2550,12 @@ export class Project {
 	#newerFor(agent: AgentState): ReadonlySet<AtomId> {
 		const space = this.#spaceOf(agent);
 		const base = this.#at(space, agent.base);
-		return differenceSet(differenceSet(this.#setOf(space), base), new StableOverlaySet(agent.mine));
+		const current = this.#setOf(space);
+		const newer =
+			space.name === SHARED && space.membershipVersion
+				? new SharedAdditions(space, agent.base, base, current)
+				: differenceSet(current, base);
+		return differenceSet(newer, new StableOverlaySet(agent.mine));
 	}
 
 	/** The files whose text in the agent's view differs from `before`, and its open collisions. */
@@ -2688,7 +2693,10 @@ export class Project {
 		const draft = new Set(this.#draft(agent));
 		if (draft.size === 0 || newer.size === 0) return [];
 		const space = this.#spaceOf(agent);
-		const base = this.#view(differenceSet(this.#at(space, agent.base), new StableOverlaySet(agent.mine)));
+		const at = this.#at(space, agent.base);
+		const base = agent.mine.some((id) => at.has(id))
+			? this.#view(differenceSet(at, new StableOverlaySet(agent.mine)))
+			: this.#viewAt(space, agent.base);
 		return this.#definitionRule.collisions(
 			draft,
 			this.#agentView(agent),

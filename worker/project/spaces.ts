@@ -37,6 +37,8 @@ export /** Shared ('') or a named draft. */
 interface Space {
 	/** Storage-backed spaces append the historical membership index here. */
 	indexVersion?: (version: Published) => void;
+	/** Version of the selected membership event, independent of later publishes. */
+	membershipVersion?: (atom: AtomId, version: number) => number | undefined;
 	readonly name: string;
 	readonly versions: Published[];
 	/** Every atom published into this space (for shared, everything in it). */
@@ -55,6 +57,7 @@ export function newSpace(name: string, storage?: GraphStateStorage): Space {
 		return {
 			name,
 			indexVersion: (version) => indexMembership(storage, prefix, version),
+			membershipVersion: (atom, version) => membershipEvent(storage, prefix, atom, version)?.version,
 			versions: storedArray(storage, `${prefix}:versions`),
 			own: new StoredSet(storage, `${prefix}:own`),
 			publishedIn: new StoredMap(storage, `${prefix}:published`),
@@ -166,6 +169,35 @@ class StoredVersionSet extends StableSet<AtomId> {
 
 export function last(space: Space): number {
 	return space.versions.length - 1;
+}
+
+/** Shared-version difference enumerates only versions newer than the base. */
+export class SharedAdditions extends StableSet<AtomId> {
+	readonly retainedBytes = 96;
+	readonly endVersion: number;
+	readonly space: Space;
+	readonly baseVersion: number;
+	readonly base: ReadonlySet<AtomId>;
+	readonly current: ReadonlySet<AtomId>;
+	constructor(space: Space, baseVersion: number, base: ReadonlySet<AtomId>, current: ReadonlySet<AtomId>) {
+		super();
+		if (space.name !== SHARED || !space.membershipVersion) throw Error("shared additions require indexed shared space");
+		this.endVersion = last(space);
+		this.space = space;
+		this.baseVersion = baseVersion;
+		this.base = base;
+		this.current = current;
+	}
+	has(id: AtomId): boolean {
+		return this.current.has(id) && !this.base.has(id);
+	}
+	*values(): SetIterator<AtomId> {
+		for (let version = this.baseVersion + 1; version <= this.endVersion; version++) {
+			for (const id of this.space.versions[version]!.atoms) {
+				if (this.space.membershipVersion!(id, this.endVersion) === version && this.has(id)) yield id;
+			}
+		}
+	}
 }
 
 export function sharedBaseOf(space: Space): number {
