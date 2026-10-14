@@ -22,8 +22,8 @@ From this folder:
 ```bash
 npm ci
 npx wrangler login
+npx wrangler deploy                    # prints the server's address
 npx wrangler secret put ABSO_TOKEN     # any long random string: the token your agents use
-npx wrangler deploy
 ```
 
 On Node 20, `npm ci` warns that wrangler wants Node 22 and installs it anyway; run each wrangler command through npm's

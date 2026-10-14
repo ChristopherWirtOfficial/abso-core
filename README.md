@@ -26,9 +26,17 @@ npx wrangler deploy                   # prints the server's address
 npx wrangler secret put ABSO_TOKEN    # the token your agents use
 ```
 
-The server refuses every call until `ABSO_TOKEN` is set. wrangler needs Node 22 or later. On Node 20, run it through npm's Node 22
-instead: `npx -y node@22 node_modules/wrangler/bin/wrangler.js deploy` (and the
-same for `secret put`).
+The server refuses every call until `ABSO_TOKEN` is set. wrangler needs Node
+22 or later. On Node 20, run it through npm's Node 22 instead:
+`npx -y node@22 node_modules/wrangler/bin/wrangler.js deploy` (and the same
+for `login` and `secret put`).
+
+`npm ci` in the root and in `server/` also patches the installed
+isomorphic-git (1.44.2 only) so the server's git pushes and fetches stream a
+chunk at a time instead of holding a whole pack in memory. It checks the
+package's sha256 before and after, and refuses any other version; the
+scripts are in `server/scripts/`. That's the "Git capacity runtime patch"
+line you'll see during installs and builds.
 [server/README.md](server/README.md) has the rest: pointing the client at it,
 two agents and a held collision, plain git through Artifacts, and its limits.
 
@@ -45,7 +53,8 @@ abso help
 file, [abso.mjs](https://api.abso.dev/client/abso.mjs), with its sha256 beside
 it at `abso.mjs.sha256`.
 
-From this repository, on Node 20 or later, build it first:
+From this repository's root (not `server/`), on Node 20 or later, build it
+first:
 
 ```bash
 npm ci
