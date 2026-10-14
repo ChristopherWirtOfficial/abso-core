@@ -9,7 +9,7 @@ import { blocksIn, isMarkerLine } from "./markers.ts";
 import { pathKey } from "./pathkey.ts";
 import type { Project } from "./project.ts";
 import { projectFileIn } from "./project-helpers.ts";
-import { trail } from "./trail.ts";
+import { type TrailStep, trail } from "./trail.ts";
 
 export interface BlameLine {
 	n: number;
@@ -257,41 +257,64 @@ export function why(project: Project, asked: string, n: number, where: BlameWher
 
 /**
  * The line's changes, newest first (abso-core issue 20), its own change
- * first: each change that rewrote it, with the line's text after it, and
- * whether it only changed formatting. Several changes in one push count as
+ * first: each change that rewrote it, with the line's text after it,
+ * whether it only changed formatting, and the file it moved from, if it did. Several changes in one push count as
  * one, formatting only if all of them were.
  */
 function lineTrail(project: Project, view: ReadView, file: string, line: LineId) {
 	const graph = project.graph;
-	const { steps, more } = trail(graph, view, file, line);
-	const out: {
-		atom: AtomId;
-		author: string;
-		message: string;
-		time: number;
-		text: string;
-		formatting: boolean;
-		publish: Publish | null;
-	}[] = [];
+	// Changes pushed together: the same version of the same space, or both still in one agent's draft.
+	const samePush = (a: Atom, b: Atom) => samePublish(publishOf(project, a.id), publishOf(project, b.id));
+	const { steps, more } = trail(graph, view, file, line, undefined, samePush);
+	const groups: { steps: TrailStep[]; publish: Publish | null }[] = [];
 	for (const s of steps) {
-		const a = graph.atom(s.atom);
-		const publish = publishOf(project, a.id);
-		const prev = out[out.length - 1];
-		if (prev && samePublish(prev.publish, publish) && (publish !== null || prev.author === a.author)) {
-			prev.formatting &&= s.formatting;
-			continue;
-		}
-		out.push({
+		const publish = publishOf(project, s.atom);
+		const prev = groups[groups.length - 1];
+		if (
+			prev &&
+			samePublish(prev.publish, publish) &&
+			(publish !== null || graph.atom(prev.steps[0]!.atom).author === graph.atom(s.atom).author)
+		)
+			prev.steps.push(s);
+		else groups.push({ steps: [s], publish });
+	}
+	const out = groups.map(({ steps: [newest, ...rest], publish }) => {
+		const a = graph.atom(newest!.atom);
+		const oldest = rest[rest.length - 1] ?? newest!;
+		const moved = [newest!, ...rest].some((s) => s.maybeMoved)
+			? movedFrom(project, newest!.line, oldest.replaced, publish)
+			: undefined;
+		return {
 			atom: a.id,
 			author: a.author,
 			message: a.message,
 			time: a.time,
-			text: s.text,
-			formatting: s.formatting,
+			text: newest!.text,
+			formatting: [newest!, ...rest].every((s) => s.formatting),
+			...(moved !== undefined ? { movedFrom: moved } : {}),
 			publish,
-		});
-	}
+		};
+	});
 	return { trail: out, ...(more ? { trailMore: true as const } : {}) };
+}
+
+/**
+ * The file a push moved a line from: where the line it replaced was just
+ * before the push, when that's not where the push left the line.
+ */
+function movedFrom(project: Project, line: LineId, replaced: LineId | undefined, publish: Publish | null) {
+	if (replaced === undefined || publish === null || publish.version < 1) return undefined;
+	const where = publish.draft === null ? {} : { draft: publish.draft };
+	const fileIn = (version: number, id: LineId) => {
+		try {
+			return project.viewAt(version, where).fileOf(id);
+		} catch {
+			return undefined;
+		}
+	};
+	const before = fileIn(publish.version - 1, replaced);
+	const after = fileIn(publish.version, line);
+	return before !== undefined && after !== undefined && before !== after ? before : undefined;
 }
 
 /** Where "#N" in history imported from git points (abso.json's "gitIssues"), when shared's project file says. */

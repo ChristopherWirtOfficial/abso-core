@@ -9,7 +9,7 @@ import type { Env, Output } from "./commands.ts";
 import { findRoot, readConfig } from "./config.ts";
 import { relativeTo } from "./folder.ts";
 import { type GitOrigin, gitOrigin, issueLinks } from "./git-origin.ts";
-import { byWhom, type TrailStep } from "./history-answers.ts";
+import { byWhom, type TrailStep, type WhyAnswer } from "./history-answers.ts";
 
 function open(env: Env): { root: string; api: Api; agent: string } {
 	const root = findRoot(env.cwd);
@@ -61,9 +61,20 @@ function gitLines(o: GitOrigin): string[] {
 	return [`  From git: commit ${o.commit}${o.author ? ` by ${o.author}` : ""}${o.time ? `, ${o.time}` : ""}.`];
 }
 
+/** "1 formatting change and 2 moves": what why skipped. */
+function skippedKinds(steps: readonly TrailStep[]): string {
+	const moves = steps.filter((s) => s.movedFrom !== undefined).length;
+	const formatting = steps.length - moves;
+	return [
+		...(formatting > 0 ? [`${formatting} formatting change${formatting === 1 ? "" : "s"}`] : []),
+		...(moves > 0 ? [`${moves} move${moves === 1 ? "" : "s"}`] : []),
+	].join(" and ");
+}
+
 /** A trail step in a few words: its version (or that it isn't pushed), who, and the first line of why. */
 function stepName(s: TrailStep, long = false): string {
-	const subject = (s.publish ? (gitOrigin(s.publish)?.message ?? s.publish.message) : s.message).split("\n")[0]!;
+	const first = (s.publish ? (gitOrigin(s.publish)?.message ?? s.publish.message) : s.message).split("\n")[0]!;
+	const subject = first.length > 100 ? `${first.slice(0, 97).trimEnd()}...` : first;
 	const where = s.publish === null ? "not pushed" : `version ${s.publish.version}`;
 	const who = s.publish ? byWhom(s.publish) : s.author;
 	return long
@@ -147,8 +158,15 @@ export async function runWhy(args: Parsed, env: Env): Promise<Output> {
 	const w = await api.why(file, lineNumber(raw, "the line")!, view, at);
 	if (at !== undefined && w.version !== at)
 		throw new UsageError(`this server doesn't read why at a version yet; abso blame ${w.file} --version ${at} does`);
-	// The line's changes (abso-core issue 20): the newest one that changed what it does leads, past formatting-only ones.
-	const all = bool(args, "all");
+	return { text: whyText(w, { at, all: bool(args, "all") }), json: { ...w } };
+}
+
+/**
+ * What abso why prints for an answer. The line's changes (abso-core issue
+ * 20): the newest one that changed what it does leads, past formatting-only
+ * ones, unless `all`.
+ */
+export function whyText(w: WhyAnswer, { at, all = false }: { at?: number; all?: boolean } = {}): string {
 	const trail = w.trail ?? [];
 	const lead = (all ? trail[0] : trail.find((s) => !s.formatting)) ?? trail[0];
 	const leadAt = lead === undefined ? 0 : trail.indexOf(lead);
@@ -161,13 +179,13 @@ export async function runWhy(args: Parsed, env: Env): Promise<Output> {
 			? [`Written by ${w.change.author} (${when(w.change.time)}), pushed in ${pushed(w.publish, w.gitIssues)}.`]
 			: [
 					`Written by ${lead.author} (${when(lead.time)}), pushed in ${pushed(lead.publish, w.gitIssues)}.`,
-					`  It read: ${lead.text.trim()}`,
+					...(lead.text.trim() !== w.text.trim() ? [`  It read: ${lead.text.trim()}`] : []),
 				]),
 		...(origin ? gitLines(origin) : []),
 		...issueLinks(`${w.text}\n${origin?.message ?? ""}`, origin?.issues).map((l) => `  ${l}`),
 		...(skipped.length > 0
 			? [
-					`Skipped ${skipped.length} formatting change${skipped.length === 1 ? "" : "s"} since: ${skipped.map((s) => stepName(s)).join("; ")}. abso why --all shows ${skipped.length === 1 ? "it" : "them"}.`,
+					`Skipped ${skippedKinds(skipped)} since: ${skipped.map((s) => `${stepName(s)}${s.movedFrom ? `, moved from ${s.movedFrom}` : ""}`).join("; ")}. abso why --all shows ${skipped.length === 1 ? "it" : "them"}.`,
 				]
 			: []),
 		...(earlier.length > 0
@@ -177,8 +195,8 @@ export async function runWhy(args: Parsed, env: Env): Promise<Output> {
 						const newer = i === 0 ? lead! : earlier[i - 1]!;
 						const o = s.publish ? gitOrigin(s.publish, w.gitIssues) : undefined;
 						return [
-							`  ${stepName(s, true)}${s.formatting ? " (formatting only)" : ""}${o ? `, from git commit ${o.commit.slice(0, 12)}${o.author ? ` by ${o.author}` : ""}` : ""}`,
-							...(s.text !== newer.text ? [`    It read: ${s.text.trim()}`] : []),
+							`  ${stepName(s, true)}${s.movedFrom ? ` (moved from ${s.movedFrom})` : s.formatting ? " (formatting only)" : ""}${o ? `, from git commit ${o.commit.slice(0, 12)}${o.author ? ` by ${o.author}` : ""}` : ""}`,
+							...(s.text.trim() !== newer.text.trim() ? [`    It read: ${s.text.trim()}`] : []),
 						];
 					}),
 				]
@@ -209,7 +227,7 @@ export async function runWhy(args: Parsed, env: Env): Promise<Output> {
 				]
 			: []),
 	];
-	return { text: lines.join("\n"), json: { ...w } };
+	return lines.join("\n");
 }
 
 function ranges(rs: readonly [number, number][]): string {

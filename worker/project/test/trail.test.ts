@@ -96,3 +96,41 @@ test("the trail stops after the most steps it may take, and says so", () => {
 	assert.equal(t.more, true);
 	assert.equal(trail(p.graph, view, "a.ts", line).steps.length, 5);
 });
+
+test("code moved to another file in one push is followed back into the file it came from", () => {
+	const p = setup({
+		"big.ts": "export const keep = 1;\nexport function tide(level: number) {\n\treturn level * 2;\n}\n",
+		"small.ts": "export const other = 1;\n",
+	});
+	push(p, "ann", "big.ts", "level * 2", "level * 3", "Tides run higher", 10); // v1
+	// Moved as it is: the engine keeps the lines themselves, so their history comes along.
+	p.sync("bob");
+	const tide = "export function tide(level: number) {\n\treturn level * 3;\n}\n";
+	p.edit("bob", { file: "big.ts", old: tide, new: "" }, 20);
+	p.edit("bob", { file: "small.ts", old: "export const other = 1;\n", new: `export const other = 1;\n${tide}` }, 21);
+	p.publish("bob", "Move tide to small.ts", 22); // v2
+	assert.deepEqual(
+		why(p, "small.ts", 3).trail.map((s) => [s.publish?.version, s.text]),
+		[
+			[1, "\treturn level * 3;"],
+			[0, "\treturn level * 2;"],
+		],
+	);
+	// Moved and reindented in one push: new lines, followed back by their code.
+	p.sync("ann");
+	const moved = tide.replaceAll("\t", "  ");
+	p.edit("ann", { file: "small.ts", old: tide, new: "" }, 30);
+	p.edit("ann", { file: "big.ts", old: "export const keep = 1;\n", new: `export const keep = 1;\n${moved}` }, 31);
+	p.publish("ann", "Move tide back, two-space indent", 32); // v3
+	const w = why(p, "big.ts", 3);
+	assert.deepEqual(
+		w.trail.map((s) => [s.publish?.version, s.formatting, s.movedFrom, s.text]),
+		[
+			[3, true, "small.ts", "  return level * 3;"],
+			[1, false, undefined, "\treturn level * 3;"],
+			[0, false, undefined, "\treturn level * 2;"],
+		],
+	);
+	// A short line (a brace) is too common to follow.
+	assert.equal(why(p, "big.ts", 4).trail.length, 1);
+});

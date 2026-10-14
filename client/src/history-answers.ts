@@ -166,7 +166,10 @@ export interface TrailStep {
 	readonly message: string;
 	readonly time: number;
 	readonly text: string;
+	/** It only changed formatting, or only moved the line. */
 	readonly formatting: boolean;
+	/** The file it moved the line from, when another. */
+	readonly movedFrom?: string;
 	readonly publish: Publish | null;
 }
 export interface WhyAnswer {

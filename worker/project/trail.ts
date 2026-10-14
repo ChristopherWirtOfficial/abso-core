@@ -8,7 +8,9 @@
 // change that only touched formatting (whitespace, line wrapping, quotes,
 // trailing commas and semicolons, parentheses around one arrow parameter)
 // is marked, so why can skip past it to the change that said what the line
-// does.
+// does. So is a move: code a push took out of one place and wrote, the same,
+// in another (a file split in two), which the trail follows into the file it
+// came from.
 
 import type { Atom, AtomId, Graph, LineId, ReadView, SeqLine } from "../../src/engine/index.ts";
 
@@ -23,6 +25,12 @@ export interface TrailStep {
 	readonly formatting: boolean;
 	/** The line it replaced, when it replaced one. */
 	readonly replaced?: LineId;
+	/**
+	 * The change may have moved the line: the line it replaced was found
+	 * elsewhere, or was written in another file. Which file it was in then
+	 * takes the versions before and after (blame.ts).
+	 */
+	readonly maybeMoved?: true;
 }
 
 /** At most this many steps back. */
@@ -174,7 +182,10 @@ export function pairIn(
 /**
  * The line's changes, newest first: the change that wrote it, then the one
  * that wrote the line it replaced, and so on back to a change that wrote it
- * new. At most `max` steps; `more` says the trail went on.
+ * new. A line written new where the same push deleted the same code
+ * elsewhere (code moved to another file, or within one) follows that line
+ * on; `samePush` says which changes were pushed together. At most `max`
+ * steps; `more` says the trail went on.
  */
 export function trail(
 	graph: Graph,
@@ -182,33 +193,109 @@ export function trail(
 	file: string,
 	line: LineId,
 	max = TRAIL_MAX,
+	samePush: (a: Atom, b: Atom) => boolean = (a, b) => a.id === b.id,
 ): { steps: TrailStep[]; more: boolean } {
-	const seq = view.sequence(file);
-	const index = new Map<LineId, number>();
-	for (const [i, s] of seq.entries()) index.set(s.id, i);
+	const files = new Map<string, { seq: readonly SeqLine[]; index: Map<LineId, number> }>();
+	const sequenceOf = (path: string) => {
+		let f = files.get(path);
+		if (!f) {
+			const seq = view.sequence(path);
+			f = { seq, index: new Map(seq.map((s, i) => [s.id, i])) };
+			files.set(path, f);
+		}
+		return f;
+	};
 	const steps: TrailStep[] = [];
 	let current: LineId | undefined = line;
+	let hint = file;
 	while (current !== undefined && steps.length < max) {
-		const at = index.get(current);
-		if (at === undefined) break;
+		// The file to read its hunk in: where the view has it, or where it was written, whichever pairs it.
+		const id: LineId = current;
+		let found: { seq: readonly SeqLine[]; at: number; hunk: { before: number[]; after: number[] } } | undefined;
+		let pair: ReturnType<typeof pairIn>;
+		for (const path of new Set([hint, fileIn(view, id), graph.lineFile(id)])) {
+			if (path === undefined) continue;
+			const { seq, index } = sequenceOf(path);
+			const at = index.get(id);
+			if (at === undefined) continue;
+			const hunk = hunkOf(graph, seq, at, graph.atom(seq[at]!.atom));
+			const p = pairIn(
+				hunk.before.map((i) => seq[i]!.text),
+				hunk.after.map((i) => seq[i]!.text),
+				hunk.after.indexOf(at),
+			);
+			if (!found || p) [found, pair] = [{ seq, at, hunk }, p];
+			if (p) break;
+		}
+		if (!found) break;
+		const { seq, at, hunk } = found;
 		const atom = graph.atom(seq[at]!.atom);
-		const hunk = hunkOf(graph, seq, at, atom);
-		const pair = pairIn(
-			hunk.before.map((i) => seq[i]!.text),
-			hunk.after.map((i) => seq[i]!.text),
-			hunk.after.indexOf(at),
-		);
-		const replaced = pair ? seq[hunk.before[pair.index]!]!.id : undefined;
+		let replaced = pair ? seq[hunk.before[pair.index]!]!.id : undefined;
+		let formatting = pair?.formatting ?? false;
+		let searched = false;
+		if (replaced === undefined) {
+			const moved = movedFrom(graph, view, atom, seq[at]!.text, new Set(hunk.before.map((i) => seq[i]!.id)), samePush);
+			if (moved) [replaced, formatting, searched] = [moved, true, true];
+		}
+		const maybeMoved = searched || (replaced !== undefined && graph.lineFile(replaced) !== graph.lineFile(id));
 		steps.push({
 			atom: atom.id,
-			line: current,
+			line: id,
 			text: seq[at]!.text,
-			formatting: pair?.formatting ?? false,
+			formatting,
 			...(replaced !== undefined ? { replaced } : {}),
+			...(maybeMoved ? { maybeMoved: true as const } : {}),
 		});
+		hint = replaced === undefined ? hint : (fileIn(view, replaced) ?? hint);
 		current = replaced;
 	}
 	return { steps, more: current !== undefined };
+}
+
+/** The file a line is in, in a view, or undefined when the view can't place it. */
+function fileIn(view: ReadView, line: LineId): string | undefined {
+	try {
+		return view.fileOf(line);
+	} catch {
+		return undefined;
+	}
+}
+
+/** How far either side of a change to look for the others pushed with it. */
+const NEAR = 5000;
+
+/**
+ * Where a line written new came from, when it was moved: a line with the same
+ * code (exactly, else formatted differently) that a change pushed with this
+ * one deleted, if exactly one such line has the best match. Short lines
+ * (a brace, a blank) match too much to follow.
+ */
+function movedFrom(
+	graph: Graph,
+	view: ReadView,
+	atom: Atom,
+	text: string,
+	skip: ReadonlySet<LineId>,
+	samePush: (a: Atom, b: Atom) => boolean,
+): LineId | undefined {
+	const want = normalize([text]);
+	if (want.length < 12) return undefined;
+	const all = graph.atoms();
+	const exact: LineId[] = [];
+	const same: LineId[] = [];
+	for (let s = Math.max(0, atom.seq - NEAR); s <= Math.min(all.length - 1, atom.seq + NEAR); s++) {
+		const other = all[s]!;
+		if (other.author !== atom.author || !view.set.has(other.id) || !samePush(other, atom)) continue;
+		for (const d of other.deletes) {
+			if (skip.has(d)) continue;
+			const t = graph.lineText(d);
+			if (t === undefined) continue;
+			if (t === text) exact.push(d);
+			else if (normalize([t]) === want) same.push(d);
+		}
+	}
+	const found = exact.length > 0 ? exact : same;
+	return found.length === 1 ? found[0] : undefined;
 }
 
 /**
