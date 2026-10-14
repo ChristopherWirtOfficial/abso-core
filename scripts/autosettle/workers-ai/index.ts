@@ -74,16 +74,22 @@ const SCHEMA = {
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		if (request.method !== "POST") return new Response("POST a hold", { status: 405 });
-		const { hold, model = DEFAULT_MODEL } = (await request.json()) as { hold: Hold; model?: string };
+		const {
+			hold,
+			model = DEFAULT_MODEL,
+			samples = 1,
+		} = (await request.json()) as { hold: Hold; model?: string; samples?: number };
 		const started = Date.now();
-		try {
+		// One sample answers at temperature 0 with the model's own confidence. Several sample at 0.7 in parallel,
+		// and the confidence is the share that agree with the most common pick: steadier than a self-report.
+		const one = async () => {
 			const out = (await env.AI.run(model, {
 				messages: [
 					{ role: "system", content: SYSTEM },
 					{ role: "user", content: prompt(hold) },
 				],
 				response_format: { type: "json_schema", json_schema: SCHEMA },
-				temperature: 0,
+				temperature: samples > 1 ? 0.7 : 0,
 				max_tokens: 200,
 			})) as { response: unknown; usage?: { prompt_tokens?: number; completion_tokens?: number } };
 			const answer = (typeof out.response === "string" ? JSON.parse(out.response) : out.response) as {
@@ -91,9 +97,24 @@ export default {
 				confidence: number;
 				reason: string;
 			};
-			if (!(PICKS as readonly string[]).includes(answer.pick))
-				return Response.json({ error: `not a settle choice: ${answer.pick}` }, { status: 502 });
-			return Response.json({ ...answer, model, ms: Date.now() - started, usage: out.usage ?? null });
+			if (!(PICKS as readonly string[]).includes(answer?.pick)) throw new Error(`not a settle choice: ${answer?.pick}`);
+			return { ...answer, usage: out.usage ?? null };
+		};
+		try {
+			const answers = await Promise.all(Array.from({ length: Math.min(9, Math.max(1, samples)) }, one));
+			const votes = Object.fromEntries(PICKS.map((p) => [p, answers.filter((a) => a.pick === p).length]));
+			const pick = PICKS.reduce((a, b) => (votes[b]! > votes[a]! ? b : a));
+			const first = answers.find((a) => a.pick === pick)!;
+			return Response.json({
+				pick,
+				confidence: answers.length > 1 ? votes[pick]! / answers.length : first.confidence,
+				selfReported: answers.map((a) => a.confidence),
+				votes,
+				reason: first.reason,
+				model,
+				ms: Date.now() - started,
+				usage: first.usage,
+			});
 		} catch (e) {
 			return Response.json({ error: (e as Error).message, model, ms: Date.now() - started }, { status: 502 });
 		}
