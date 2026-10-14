@@ -21,7 +21,7 @@ function signedIn(): string {
 			server: SERVER,
 			id: "box_1",
 			credential: CREDENTIAL,
-			grant: { projects: [{ project: "web", role: "writer" }], max_agents: 3 },
+			grant: { projects: [{ project: "web", role: "writer" }] },
 			expiresAt: Date.now() + 86_400_000,
 		},
 		home,

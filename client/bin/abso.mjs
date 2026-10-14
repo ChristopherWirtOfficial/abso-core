@@ -3906,9 +3906,8 @@ import { dirname as dirname7, join as join11 } from "node:path";
 function loginRequest(args) {
   const projects = str(args, "projects");
   const role = str(args, "role");
-  const maxAgents = str(args, "max-agents");
   const days = str(args, "days");
-  if (projects === void 0 && role === void 0 && maxAgents === void 0 && days === void 0) return void 0;
+  if (projects === void 0 && role === void 0 && days === void 0) return void 0;
   if (role !== void 0 && projects === void 0) throw new UsageError("--role needs --projects");
   const requestedRole = role ?? "writer";
   if (requestedRole !== "reader" && requestedRole !== "writer" && requestedRole !== "owner")
@@ -3925,7 +3924,6 @@ function loginRequest(args) {
   };
   return {
     ...names2 ? { projects: [...new Set(names2)].map((project) => ({ project, role: requestedRole })) } : {},
-    ...maxAgents === void 0 ? {} : { max_agents: integer(maxAgents, "max-agents", 50) },
     ...days === void 0 ? {} : { days: integer(days, "days", 90) }
   };
 }
@@ -4050,7 +4048,7 @@ function boxName() {
 }
 function isGrant(g) {
   const x = g;
-  return typeof x === "object" && x !== null && Array.isArray(x.projects) && x.projects.every((p) => typeof p?.project === "string" && typeof p.role === "string") && typeof x.max_agents === "number";
+  return typeof x === "object" && x !== null && Array.isArray(x.projects) && x.projects.every((p) => typeof p?.project === "string" && typeof p.role === "string");
 }
 async function login(server, io, home = homedir6()) {
   const fetcher = io.fetch ?? fetch;
@@ -4124,10 +4122,6 @@ async function mintFreeName(record, project, base, fetcher = fetch, tries = 20) 
       return { ...await mintKey(record, project, agent, fetcher), agent };
     } catch (err) {
       if (err instanceof UsageError && /refused \(409\): that agent name/.test(err.message)) continue;
-      if (err instanceof UsageError && /refused \(409\): this box is at its agent limit/.test(err.message))
-        throw new UsageError(
-          `this box is at its agent limit (${record.grant.max_agents}): abso box shows its grant, and an agent can be revoked on the website's Boxes page`
-        );
       throw err;
     }
   }
@@ -4151,7 +4145,7 @@ function boxText(record, server, now = Date.now()) {
   const expired = record.expiresAt <= now;
   return [
     `Signed in to ${record.server} as box ${record.id}${expired ? ", but the sign-in has expired. abso login renews it." : "."}`,
-    `Projects: ${g.projects.map((p) => `${p.project} (${p.role})`).join(", ")}. Up to ${g.max_agents} agents.`,
+    `Projects: ${g.projects.map((p) => `${p.project} (${p.role})`).join(", ")}.`,
     `${expired ? "Expired" : "Expires"} ${day(record.expiresAt)} UTC.`
   ].join("\n");
 }
@@ -18200,11 +18194,10 @@ var init_main = __esm({
           "no-browser": "boolean",
           projects: "string",
           role: "string",
-          "max-agents": "string",
           days: "string"
         },
-        usage: "abso login [--no-browser] [--projects <name,name>] [--role <reader|writer|owner>] [--max-agents <1-50>] [--days <1-90>]",
-        about: "Sign this box in once: it opens the approve page in your browser with the code filled in, prints the link and the code too, and waits while a person approves the code on the website, choosing the projects, the highest role and how many agents. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. No browser opens with --no-browser or ABSO_NO_BROWSER, over SSH, under CI, or on Linux without a display.",
+        usage: "abso login [--no-browser] [--projects <name,name>] [--role <reader|writer|owner>] [--days <1-90>]",
+        about: "Sign this box in once: it opens the approve page in your browser with the code filled in, prints the link and the code too, and waits while a person approves the code on the website, choosing the projects, the highest role and how long. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. No browser opens with --no-browser or ABSO_NO_BROWSER, over SSH, under CI, or on Linux without a display.",
         run: async (args, env) => {
           const server = boxServer(args, env);
           const open3 = bool(args, "no-browser") || browserSkip(env.env, process.platform) !== null ? void 0 : (url) => openInBrowser(url);

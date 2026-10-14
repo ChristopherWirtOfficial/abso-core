@@ -31,7 +31,6 @@ const grant = {
 		{ project: "abso", role: "writer" },
 		{ project: "game", role: "reader" },
 	],
-	max_agents: 5,
 };
 const EXPIRES = "2026-10-15T00:00:00.000Z";
 const record = { server: SERVER, id: "b_0123abcd", credential: CREDENTIAL, grant, expiresAt: Date.parse(EXPIRES) };
@@ -70,23 +69,21 @@ function clock() {
 	};
 }
 
-test("login grant options validate project lists, roles, limits and duration", () => {
+test("login grant options validate project lists, roles and duration", () => {
 	const request = (...words: string[]) =>
 		loginRequest(
 			parseArgs("login", words, {
 				projects: "string",
 				role: "string",
-				"max-agents": "string",
 				days: "string",
 			}),
 		);
 	assert.equal(request(), undefined);
-	assert.deepEqual(request("--projects", "alpha, beta,alpha", "--max-agents", "1", "--days", "30"), {
+	assert.deepEqual(request("--projects", "alpha, beta,alpha", "--days", "30"), {
 		projects: [
 			{ project: "alpha", role: "writer" },
 			{ project: "beta", role: "writer" },
 		],
-		max_agents: 1,
 		days: 30,
 	});
 	assert.deepEqual(request("--projects", "alpha", "--role", "reader"), {
@@ -95,7 +92,7 @@ test("login grant options validate project lists, roles, limits and duration", (
 	assert.deepEqual(request("--projects", "alpha", "--role", "owner"), {
 		projects: [{ project: "alpha", role: "owner" }],
 	});
-	assert.deepEqual(request("--max-agents", "50", "--days", "90"), { max_agents: 50, days: 90 });
+	assert.deepEqual(request("--days", "90"), { days: 90 });
 	for (const words of [
 		["--role", "writer"],
 		["--projects", ""],
@@ -105,18 +102,16 @@ test("login grant options validate project lists, roles, limits and duration", (
 		["--projects", Array.from({ length: 101 }, (_, i) => `p${i}`).join(",")],
 	])
 		assert.throws(() => request(...words));
-	for (const flag of ["--max-agents", "--days"]) {
-		for (const value of ["0", "-1", "1.5", "1e1", "Infinity", "100", "abc", ""])
-			assert.throws(() => request(flag, value));
-	}
+	for (const value of ["0", "-1", "1.5", "1e1", "Infinity", "100", "abc", ""])
+		assert.throws(() => request("--days", value));
 });
 
 test("login sends requested grants only at device start and retains the user's actual approval", async () => {
 	const h = home();
 	const seen: Seen = [];
 	const c = clock();
-	const requested = { projects: [{ project: "abso", role: "owner" as const }], max_agents: 10, days: 90 };
-	const approved = { projects: [{ project: "abso", role: "reader" }], max_agents: 1 };
+	const requested = { projects: [{ project: "abso", role: "owner" as const }], days: 90 };
+	const approved = { projects: [{ project: "abso", role: "reader" }] };
 	const got = await login(
 		SERVER,
 		{
@@ -209,7 +204,8 @@ test("login shows the code, waits while it's pending, and keeps the credential i
 	assert.equal(files.length, 1);
 	assert.ok(readFileSync(join(h, ".abso", "boxes", files[0]!), "utf8").includes(CREDENTIAL));
 	assert.equal(boxText(got, SERVER, 0).includes(CREDENTIAL), false);
-	assert.match(boxText(got, SERVER, 0), /abso \(writer\), game \(reader\)\. Up to 5 agents\./);
+	assert.match(boxText(got, SERVER, 0), /abso \(writer\), game \(reader\)\.\n/);
+	assert.doesNotMatch(boxText(got, SERVER, 0), /agents/);
 	assert.equal(JSON.stringify(boxPublic(got)).includes(CREDENTIAL), false);
 });
 
@@ -422,13 +418,4 @@ test("join with no --agent takes the box's name, skips names this box holds, and
 		],
 		"snow is this box's already: never minted again, which would replace its key",
 	);
-
-	const limit = server(
-		[
-			[200, { box_id: record.id, agents: [] }],
-			[409, { error: "this box is at its agent limit" }],
-		],
-		[],
-	);
-	await assert.rejects(mintFreeName(record, "abso", "snow", limit), /this box is at its agent limit \(5\)/);
 });

@@ -4736,7 +4736,7 @@ describe("the state folder after the rename to abso", () => {
 			credential: "abso_bx_secret",
 			id: "b_1",
 			expiresAt: Date.now() + 1e6,
-			grant: { projects: [{ project: "p", role: "writer" }], max_agents: 1 },
+			grant: { projects: [{ project: "p", role: "writer" }] },
 		};
 		mkdirSync(join(home, ".avcs", "boxes"), { recursive: true });
 		writeBox(record as never, home);

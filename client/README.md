@@ -49,13 +49,13 @@ the commit, so changes that aren't committed don't run until the next commit.
 An agent can request the access it needs when starting a box login:
 
 ```bash
-abso login --projects alpha,beta --role writer --max-agents 1 --days 30 --no-browser
+abso login --projects alpha,beta --role writer --days 30 --no-browser
 ```
 
 The client sends a `requested_grant` with the device request: `projects`
-(each with `project` and `role`), `max_agents`, and `days`. Only supplied
+(each with `project` and `role`) and `days`. Only supplied
 fields are sent; project roles default to `writer`. The role option requires
-projects. Agent limits range from 1 to 50 and durations from 1 to 90 days.
+projects. Durations range from 1 to 90 days. A box lets in any number of agents.
 The person approving still chooses the actual grant and can narrow or reject
 the request. Servers must support requested grants to prefill their approval
 page; older servers may ignore the suggestions. Without these options, login

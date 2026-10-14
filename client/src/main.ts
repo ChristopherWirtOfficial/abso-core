@@ -184,13 +184,11 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 			"no-browser": "boolean",
 			projects: "string",
 			role: "string",
-			"max-agents": "string",
 			days: "string",
 		},
-		usage:
-			"abso login [--no-browser] [--projects <name,name>] [--role <reader|writer|owner>] [--max-agents <1-50>] [--days <1-90>]",
+		usage: "abso login [--no-browser] [--projects <name,name>] [--role <reader|writer|owner>] [--days <1-90>]",
 		about:
-			"Sign this box in once: it opens the approve page in your browser with the code filled in, prints the link and the code too, and waits while a person approves the code on the website, choosing the projects, the highest role and how many agents. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. No browser opens with --no-browser or ABSO_NO_BROWSER, over SSH, under CI, or on Linux without a display.",
+			"Sign this box in once: it opens the approve page in your browser with the code filled in, prints the link and the code too, and waits while a person approves the code on the website, choosing the projects, the highest role and how long. Then abso join in any of those projects gives each agent its own key, with no approval. The box's sign-in is kept in your user folder, never in a project folder, and is never printed. No browser opens with --no-browser or ABSO_NO_BROWSER, over SSH, under CI, or on Linux without a display.",
 		run: async (args, env) => {
 			const server = boxServer(args, env);
 			const open =

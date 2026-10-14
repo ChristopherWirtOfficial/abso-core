@@ -15,25 +15,25 @@ import { dirname, join } from "node:path";
 import { type Parsed, str, UsageError } from "./args.ts";
 import { homeFile, homeWritePath, OLD_STATE_DIR, STATE_DIR } from "./state-dir.ts";
 
-/** What the person who approved the code allowed: each project with the highest role its agents get there, and how many agents. */
+/**
+ * What the person who approved the code allowed: each project with the highest role its agents get there. A box lets in any
+ * number of agents (abso 642; Christopher, 2026-10-14, ask 1947); the server still records a max_agents it doesn't enforce.
+ */
 export interface Grant {
 	readonly projects: readonly { readonly project: string; readonly role: string }[];
-	readonly max_agents: number;
 }
 
 /** Requested access is a suggestion for the person approving, never an authorization. */
 export interface LoginRequest {
 	readonly projects?: readonly { readonly project: string; readonly role: "reader" | "writer" | "owner" }[];
-	readonly max_agents?: number;
 	readonly days?: number;
 }
 
 export function loginRequest(args: Parsed): LoginRequest | undefined {
 	const projects = str(args, "projects");
 	const role = str(args, "role");
-	const maxAgents = str(args, "max-agents");
 	const days = str(args, "days");
-	if (projects === undefined && role === undefined && maxAgents === undefined && days === undefined) return undefined;
+	if (projects === undefined && role === undefined && days === undefined) return undefined;
 	if (role !== undefined && projects === undefined) throw new UsageError("--role needs --projects");
 	const requestedRole = role ?? "writer";
 	if (requestedRole !== "reader" && requestedRole !== "writer" && requestedRole !== "owner")
@@ -50,7 +50,6 @@ export function loginRequest(args: Parsed): LoginRequest | undefined {
 	};
 	return {
 		...(names ? { projects: [...new Set(names)].map((project) => ({ project, role: requestedRole })) } : {}),
-		...(maxAgents === undefined ? {} : { max_agents: integer(maxAgents, "max-agents", 50) }),
 		...(days === undefined ? {} : { days: integer(days, "days", 90) }),
 	};
 }
@@ -228,8 +227,7 @@ function isGrant(g: unknown): g is Grant {
 		typeof x === "object" &&
 		x !== null &&
 		Array.isArray(x.projects) &&
-		x.projects.every((p) => typeof p?.project === "string" && typeof p.role === "string") &&
-		typeof x.max_agents === "number"
+		x.projects.every((p) => typeof p?.project === "string" && typeof p.role === "string")
 	);
 }
 
@@ -350,10 +348,6 @@ export async function mintFreeName(
 			return { ...(await mintKey(record, project, agent, fetcher)), agent };
 		} catch (err) {
 			if (err instanceof UsageError && /refused \(409\): that agent name/.test(err.message)) continue;
-			if (err instanceof UsageError && /refused \(409\): this box is at its agent limit/.test(err.message))
-				throw new UsageError(
-					`this box is at its agent limit (${record.grant.max_agents}): abso box shows its grant, and an agent can be revoked on the website's Boxes page`,
-				);
 			throw err;
 		}
 	}
@@ -383,7 +377,7 @@ export function boxText(record: BoxRecord | undefined, server: string, now = Dat
 	const expired = record.expiresAt <= now;
 	return [
 		`Signed in to ${record.server} as box ${record.id}${expired ? ", but the sign-in has expired. abso login renews it." : "."}`,
-		`Projects: ${g.projects.map((p) => `${p.project} (${p.role})`).join(", ")}. Up to ${g.max_agents} agents.`,
+		`Projects: ${g.projects.map((p) => `${p.project} (${p.role})`).join(", ")}.`,
 		`${expired ? "Expired" : "Expires"} ${day(record.expiresAt)} UTC.`,
 	].join("\n");
 }

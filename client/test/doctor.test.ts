@@ -14,7 +14,7 @@ const SERVER = "https://staging.abso.example";
 const CREDENTIAL = "abso_bx_the-secret-credential";
 const KEY = "abso_sk_the-secret-key";
 const NOW = Date.parse("2026-10-10T06:00:00.000Z");
-const grant = { projects: [{ project: "game", role: "writer" }], max_agents: 3 };
+const grant = { projects: [{ project: "game", role: "writer" }] };
 const box = (expiresAt = Date.parse("2026-10-20T00:00:00.000Z")) => ({
 	server: SERVER,
 	id: "b_0123abcd",
@@ -180,7 +180,7 @@ test("whoami: the box as the server sees it, who approved it, and this folder's 
 		out.text,
 		/^Signed in to https:\/\/staging\.abso\.example as box b_0123abcd, approved by christopher\.\n/,
 	);
-	assert.match(out.text, /Projects: game \(writer\)\. Up to 3 agents\./);
+	assert.match(out.text, /Projects: game \(writer\)\.\n/);
 	assert.match(
 		out.text,
 		/This folder is agent builder in project game on https:\/\/staging\.abso\.example, with the agent key k_00c0ffee\./,

@@ -197,7 +197,7 @@ describe("a visitor folder", () => {
 				server: url,
 				id: "b_0123abcd",
 				credential: CREDENTIAL,
-				grant: { projects: [{ project: "abso-core", role: "writer" }], max_agents: 3 },
+				grant: { projects: [{ project: "abso-core", role: "writer" }] },
 				expiresAt: Date.now() + 86_400_000,
 			},
 			home,
