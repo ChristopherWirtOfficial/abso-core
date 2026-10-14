@@ -3,6 +3,7 @@
 // 2 MB) is split across rows and joined on load. Ported from the platform's worker/src/engine-project.ts; the
 // writer-adoption and R2 version parts are left out.
 
+import { jsonValueChunks } from "../../src/engine/json-value-chunks.ts";
 import { blame, folderBlame, why } from "../../worker/project/blame.ts";
 import { feedEvents } from "../../worker/project/feed.ts";
 import { type Entry, type ProjectStore as LogStore, MemoryStore, Project } from "../../worker/project/project.ts";
@@ -31,6 +32,22 @@ export function logParts(text: string): string[] {
 		at = end;
 	} while (at < text.length);
 	return parts;
+}
+
+/** Retains one log row plus an encoder fragment, preserving legacy row boundaries. */
+export function* streamedLogParts(value: unknown): IterableIterator<string> {
+	let pending = "";
+	for (const chunk of jsonValueChunks(value)) {
+		pending += chunk;
+		while (pending.length > LOG_PART_CHARACTERS) {
+			let end = LOG_PART_CHARACTERS;
+			const last = pending.charCodeAt(end - 1);
+			if (last >= 0xd800 && last <= 0xdbff) end--;
+			yield pending.slice(0, end);
+			pending = pending.slice(end);
+		}
+	}
+	if (pending) yield pending;
 }
 
 /** The lines an entry's atoms write: what a loaded project's size grows with (#46, #56). */
@@ -424,11 +441,11 @@ export class SqliteLog implements LogStore {
 			if (keys > 0) this.storage.sql.exec("UPDATE counts SET value = value + ? WHERE name = 'keys'", keys);
 			let chars = 0;
 			for (const entry of entries) {
-				const json = JSON.stringify(entry);
-				logParts(json).forEach((text, part) => {
+				let part = 0;
+				for (const text of streamedLogParts(entry)) {
 					chars += text.length;
-					this.storage.sql.exec("INSERT INTO log (seq, part, text) VALUES (?, ?, ?)", next, part, text);
-				});
+					this.storage.sql.exec("INSERT INTO log (seq, part, text) VALUES (?, ?, ?)", next, part++, text);
+				}
 				next++;
 			}
 			// Chars are only added to once counted: a log from before the count is summed whole first (logSize).

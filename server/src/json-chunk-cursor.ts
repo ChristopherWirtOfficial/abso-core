@@ -27,6 +27,24 @@ export class JsonChunkCursor {
 		if (this.take() !== '"') throw Error("expected JSON string");
 		let buffer = "";
 		for (;;) {
+			// Copy ordinary text in bounded slices instead of allocating a string
+			// concatenation for every character of a large canonical field.
+			this.peek();
+			const start = this.#offset;
+			const end = Math.min(this.#chunk.length, start + 16384 - buffer.length);
+			while (this.#offset < end) {
+				const code = this.#chunk.charCodeAt(this.#offset);
+				if (code < 32 || code === 34 || code === 92) break;
+				this.#offset++;
+			}
+			if (this.#offset > start) {
+				buffer += this.#chunk.slice(start, this.#offset);
+				if (buffer.length === 16384) {
+					yield buffer;
+					buffer = "";
+				}
+				continue;
+			}
 			let char = this.take();
 			if (char === '"') {
 				if (buffer) yield buffer;
