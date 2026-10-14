@@ -1,13 +1,14 @@
-// Ask Jev how to settle each marker block in one file (#19), the way abso pull
-// leaves a held push's file. Prints Jev's pick and its probabilities; changes nothing.
+// Ask a model how to settle each marker block in one file (#19), the way abso
+// pull leaves a held push's file. Prints its pick; changes nothing.
 //
-//   node scripts/autosettle/settle-one.ts <file> [--message "<your held push's message>"] [--issue "..."] [--name <path in the project>] [--json]
+//   node scripts/autosettle/settle-one.ts <file> [--via workers-ai|jev] [--model <id>] [--message "<your held push's message>"] [--issue "..."] [--name <path in the project>] [--json]
 //
-// Needs JEV_API_KEY in the environment.
+// --via workers-ai (the default) needs workers-ai/ running under wrangler dev; --via jev needs JEV_API_KEY.
 
 import { readFileSync } from "node:fs";
 import { findBlocks } from "../../client/src/settle.ts";
 import { ask, dollars, type Hold, PICKS } from "./jev.ts";
+import { askWorkersAi } from "./workers-ai.ts";
 
 const CONTEXT = 15;
 const CLOSE = /^>>>>>>> theirs: (.*?), version (\d+) "(.*)"$/;
@@ -57,8 +58,18 @@ async function main(): Promise<void> {
 		process.exit(1);
 	}
 	const results = [];
+	const model = flag(args, "--model") ? { model: flag(args, "--model")! } : {};
 	for (const [i, h] of holds.entries()) {
-		const v = await ask(h);
+		if (flag(args, "--via") !== "jev") {
+			const w = await askWorkersAi(h, model);
+			results.push({ block: i + 1, ...w });
+			if (!args.includes("--json"))
+				console.log(
+					`Block ${i + 1} of ${holds.length} in ${h.file}: ${w.pick}, confidence ${w.confidence.toFixed(2)}\n  ${w.reason}\n  ${w.model}, ${w.ms.toFixed(0)} ms (model ${w.modelMs} ms), ${w.inputTokens} input tokens`,
+				);
+			continue;
+		}
+		const v = await ask(h, model);
 		results.push({ block: i + 1, ...v });
 		if (args.includes("--json")) continue;
 		const pct = (x: number) => `${(x * 100).toFixed(0)}%`;

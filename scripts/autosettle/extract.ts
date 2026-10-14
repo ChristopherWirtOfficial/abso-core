@@ -85,7 +85,7 @@ function regionIn(r: string[], t: string[], start: number, end: number): string[
 	return to < 0 ? null : r.slice(from, to);
 }
 
-const cases = [];
+const cases: { kept: string; yours: string[] | null }[] = [];
 for (const c of review.changes) {
 	for (const s of c.settled) {
 		const before = fileAt(s.theirs.version - 1, s.file);

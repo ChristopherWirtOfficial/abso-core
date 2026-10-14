@@ -1,0 +1,10 @@
+// The auto-settle prototype's Workers AI caller (#19). Local only: npx wrangler dev from this folder.
+// The AI binding always runs on Cloudflare, under the account wrangler is signed in to.
+{
+	"$schema": "../../../server/node_modules/wrangler/config-schema.json",
+	"name": "abso-autosettle",
+	"main": "index.ts",
+	"compatibility_date": "2026-10-01",
+	"workers_dev": false,
+	"ai": { "binding": "AI", "remote": true }
+}

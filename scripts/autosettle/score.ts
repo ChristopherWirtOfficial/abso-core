@@ -1,13 +1,28 @@
-// Score Jev against how agents really settled past holds (#19).
+// Score a model against how agents really settled past holds (#19).
 //
-//   node scripts/autosettle/score.ts <cases.json> [--out <report.json>] [--model jev-latest]
+//   node scripts/autosettle/score.ts <cases.json> [--via workers-ai|jev] [--model <id>] [--out <report.json>]
+//
+// --via workers-ai (the default) needs the Worker in workers-ai/ running under wrangler dev.
 //
 // A case is one settled collision: base, yours, theirsLines, context, both
 // pushes' messages, and `kept` from the server's settled record (yours, theirs,
-// both, or rewrote, which counts as "agent": a hand edit). Needs JEV_API_KEY.
+// both, or rewrote, which counts as "agent": a hand edit). --via jev needs JEV_API_KEY.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { ask, dollars, type Hold, PICKS, type Pick, type Verdict } from "./jev.ts";
+import { ask, dollars, type Hold, PICKS, type Pick } from "./jev.ts";
+import { askWorkersAi } from "./workers-ai.ts";
+
+/** What score needs from either model. */
+interface Verdict {
+	pick: Pick;
+	confidence: number;
+	model: string;
+	ms: number;
+	inputTokens: number;
+	reason?: string;
+	probabilities?: Record<Pick, number>;
+	orders?: readonly { pick: Pick }[];
+}
 
 interface Case {
 	id: string;
@@ -47,17 +62,19 @@ function flag(args: string[], name: string): string | undefined {
 }
 
 const args = process.argv.slice(2);
+const via = flag(args, "--via") ?? "workers-ai";
 const cases = (JSON.parse(readFileSync(args[0]!, "utf8")) as Case[]).filter(
 	(c) => c.yours !== null && c.theirsLines !== null,
 );
 const rows: { id: string; truth: Pick; verdict: Verdict; right: boolean }[] = [];
 for (const c of cases) {
 	try {
-		const verdict = await ask(holdOf(c), { ...(flag(args, "--model") ? { model: flag(args, "--model") } : {}) });
+		const model = flag(args, "--model") ? { model: flag(args, "--model")! } : {};
+		const verdict: Verdict = via === "jev" ? await ask(holdOf(c), model) : await askWorkersAi(holdOf(c), model);
 		const t = truth(c.kept);
 		rows.push({ id: c.id, truth: t, verdict, right: verdict.pick === t });
 		console.log(
-			`${verdict.pick === t ? "agree" : "DIFFER"}  ${c.id}: agent ${t}, Jev ${verdict.pick} ${verdict.confidence.toFixed(2)} (${verdict.ms.toFixed(0)} ms)`,
+			`${verdict.pick === t ? "agree" : "DIFFER"}  ${c.id}: agent ${t}, model ${verdict.pick} ${verdict.confidence.toFixed(2)} (${verdict.ms.toFixed(0)} ms)`,
 		);
 	} catch (e) {
 		console.log(`error   ${c.id}: ${(e as Error).message}`);
@@ -74,6 +91,7 @@ const at = (threshold: number) => {
 	return { threshold, settled: sure.length, agreed: sure.filter((r) => r.right).length };
 };
 const report = {
+	via,
 	model: rows[0]?.verdict.model,
 	cases: rows.length,
 	skipped: cases.length - rows.length,
@@ -87,18 +105,19 @@ const report = {
 			Object.fromEntries(PICKS.map((p) => [p, rows.filter((r) => r.truth === t && r.verdict.pick === p).length])),
 		]),
 	),
-	ordersDisagreed: rows.filter((r) => r.verdict.orders[0]!.pick !== r.verdict.orders[1]!.pick).length,
+	ordersDisagreed: rows.filter((r) => r.verdict.orders && r.verdict.orders[0]!.pick !== r.verdict.orders[1]!.pick)
+		.length,
 	latencyMs: { median: ms[Math.floor(ms.length / 2)], max: ms[ms.length - 1], mean: mean(ms) },
 	inputTokensMean: mean(tokens),
-	dollarsPerCall: dollars(mean(tokens)),
+	...(via === "jev" ? { dollarsPerCall: dollars(mean(tokens)) } : {}),
 	rows: rows.map((r) => ({
 		id: r.id,
 		agent: r.truth,
-		jev: r.verdict.pick,
+		model: r.verdict.pick,
 		confidence: r.verdict.confidence,
 		probabilities: r.verdict.probabilities,
-		orders: r.verdict.orders.map((o) => o.pick),
-		signs: r.verdict.signs,
+		orders: r.verdict.orders?.map((o) => o.pick),
+		reason: r.verdict.reason,
 		ms: Math.round(r.verdict.ms),
 	})),
 };
