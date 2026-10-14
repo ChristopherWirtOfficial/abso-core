@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { canonicalJson } from "../../worker/project/operation-protocol.ts";
+import { jsonValueChunks } from "../../src/engine/json-value-chunks.ts";
 import { Project, type WriterSource } from "../../worker/project/project.ts";
 import type { ProjectOptions } from "../../worker/project/project-types.ts";
 import { EngineProject, SqliteLog, type SqliteStorage } from "./engine-project.ts";
 import { SqliteHistoryHost } from "./history-host.ts";
 import { SqliteProjectionStore } from "./projection-store.ts";
+import { requestIdentityDigest } from "./request-identity-digest.ts";
 import { SqliteWriterHost, SqliteWriterState } from "./writer-host.ts";
 
 type Services = Pick<ProjectOptions, "hasBlob" | "whole">;
@@ -46,17 +47,27 @@ export class DiskFirstRuntime {
 	#saveReceipt(state: SqliteWriterState, id: string, identity: string, result: unknown) {
 		// Receipt payloads can exceed the graph-state value bound. Keep each stored
 		// piece small without increasing that bound for engine state.
-		const json = JSON.stringify({ result });
 		const characters = 64 * 1024;
-		const parts = Math.ceil(json.length / characters);
-		for (let part = 0; part < parts; part++)
-			state.write(`runtime:receipt:${id}`, String(part), json.slice(part * characters, (part + 1) * characters));
+		const digest = createHash("sha256");
+		let pending = "",
+			parts = 0,
+			length = 0;
+		for (const chunk of jsonValueChunks({ result }, { maxDepth: Infinity, unboxPrimitives: true })) {
+			digest.update(chunk);
+			length += chunk.length;
+			pending += chunk;
+			while (pending.length >= characters) {
+				state.write(`runtime:receipt:${id}`, String(parts++), pending.slice(0, characters));
+				pending = pending.slice(characters);
+			}
+		}
+		if (pending) state.write(`runtime:receipt:${id}`, String(parts++), pending);
 		state.write("runtime:receipts", id, {
 			format: 3,
 			identity,
 			parts,
-			characters: json.length,
-			digest: createHash("sha256").update(json).digest("hex"),
+			characters: length,
+			digest: digest.digest("hex"),
 		});
 	}
 	#receiptResult<T>(
@@ -117,12 +128,7 @@ export class DiskFirstRuntime {
 			const result = structuredClone(operation(new EngineProject(project)));
 			this.#validate(validate);
 			if (request && log.seq() > 0)
-				this.#saveReceipt(
-					this.#setup(),
-					request.id,
-					createHash("sha256").update(canonicalJson(request.identity)).digest("hex"),
-					result,
-				);
+				this.#saveReceipt(this.#setup(), request.id, requestIdentityDigest(request.identity), result);
 			return result;
 		});
 	}
@@ -223,7 +229,7 @@ export class DiskFirstRuntime {
 			const host = this.#host();
 			host.root();
 			if (request && (!request.id || request.id.length > 128)) throw Error("invalid disk-first request identity");
-			const identity = request ? createHash("sha256").update(canonicalJson(request.identity)).digest("hex") : undefined;
+			const identity = request ? requestIdentityDigest(request.identity) : undefined;
 			if (request) {
 				const receipt = state.read("runtime:receipts", request.id) as
 					| { format: number; identity: string; result: T }

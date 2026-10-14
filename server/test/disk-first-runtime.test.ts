@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmdirSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -356,7 +357,7 @@ test("a large retry response must not roll back an otherwise successful write", 
 		() => {},
 	);
 	while (!runtime().preparePage(() => {}).ready) {}
-	const large = "x".repeat(8_100_000);
+	const large = "x".repeat(65503) + "🚀" + '\u0000\n"\\é中\ud800'.repeat(1_000_000);
 	const request = { id: "large-response", identity: { agent: "alice", operation: "large-fixture" } };
 	const result = runtime().write(
 		(calls) => {
@@ -368,6 +369,16 @@ test("a large retry response must not roll back an otherwise successful write", 
 		request,
 	);
 	assert.equal(result.body.length, large.length);
+	const state = new SqliteWriterState(storage, "large-receipt");
+	const header = state.read("runtime:receipts", request.id) as { parts: number; characters: number; digest: string };
+	const expected = JSON.stringify({ result });
+	assert.equal(header.characters, expected.length);
+	assert.equal(header.digest, createHash("sha256").update(expected).digest("hex"));
+	for (let part = 0; part < header.parts; part++)
+		assert.equal(
+			state.read(`runtime:receipt:${request.id}`, String(part)),
+			expected.slice(part * 65536, (part + 1) * 65536),
+		);
 	const before = storage.db.prepare("SELECT * FROM log ORDER BY seq,part").all();
 	const replay = runtime().write(
 		() => {

@@ -18,7 +18,10 @@ export class JsonStringChunks {
 /** JSON.stringify-compatible chunks for canonical data, without a whole-value string.
  * Individual input strings and object key lists still belong to the caller.
  */
-export function* jsonValueChunks(input: unknown): IterableIterator<string> {
+export function* jsonValueChunks(
+	input: unknown,
+	options: { maxDepth?: number; unboxPrimitives?: boolean } = {},
+): IterableIterator<string> {
 	const active = new Set<object>();
 	function* string(value: string): IterableIterator<string> {
 		yield '"';
@@ -38,8 +41,10 @@ export function* jsonValueChunks(input: unknown): IterableIterator<string> {
 			const streaming = streamingValues.get(value);
 			if (streaming) return streaming();
 			const toJSON = (value as { toJSON?: unknown }).toJSON;
-			if (typeof toJSON === "function") return toJSON.call(value, key);
+			if (typeof toJSON === "function") value = toJSON.call(value, key);
 		}
+		if (options.unboxPrimitives && (value instanceof String || value instanceof Number || value instanceof Boolean))
+			return value.valueOf();
 		return value;
 	};
 	const omitted = (value: unknown) => value === undefined || typeof value === "function" || typeof value === "symbol";
@@ -63,7 +68,7 @@ export function* jsonValueChunks(input: unknown): IterableIterator<string> {
 		else if (typeof value !== "object" || value === null) throw Error("unsupported canonical JSON value");
 		else {
 			if (active.has(value)) throw Error("cyclic canonical JSON value");
-			if (active.size >= 128) throw Error("canonical JSON depth exceeds bound");
+			if (active.size >= (options.maxDepth ?? 128)) throw Error("canonical JSON depth exceeds bound");
 			active.add(value);
 			try {
 				if (Array.isArray(value)) {
