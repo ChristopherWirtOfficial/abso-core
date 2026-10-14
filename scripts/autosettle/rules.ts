@@ -31,5 +31,15 @@ export function refused(h: Hold, pick: Pick): string | undefined {
 	const clash = solid(h.yours)
 		.map(key)
 		.find((k) => k && theirKeys.has(k));
-	return clash ? `keeping both would set ${clash} twice` : undefined;
+	if (clash) return `keeping both would set ${clash} twice`;
+	// Two versions of one statement, such as an import from the same module with a different list of names:
+	// most of the names on one side are on the other too.
+	const names = (lines: readonly string[]) => new Set(lines.join(" ").match(/[A-Za-z_$][\w$]{2,}/g) ?? []);
+	const a = names(h.yours);
+	const b = names(h.theirs);
+	const shared = [...a].filter((n) => b.has(n)).length;
+	const share = shared / Math.max(1, Math.min(a.size, b.size));
+	return share >= 0.5
+		? `keeping both would repeat one statement in two versions (${shared} names on both sides)`
+		: undefined;
 }
