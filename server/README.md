@@ -10,7 +10,8 @@ projects means more Durable Objects, not a bigger one.
 
 ## What you need
 
-- A Cloudflare account with Workers, Durable Objects and Artifacts.
+- A Cloudflare account on the Workers Paid plan, for Workers, Durable Objects and Artifacts. Artifacts isn't on the
+  Free plan. Local development (below) needs no account.
 - Node 22 or later to deploy: wrangler needs it. On Node 20, run wrangler through npm's Node 22, as below.
 - Node 20 or later for the client.
 
@@ -98,8 +99,13 @@ npm run dev        # wrangler dev --local
 ```
 
 Keep `--local`: Artifacts is a remote binding, and without `--local` wrangler dev connects to your account.
-`ABSO_ARTIFACTS=off` skips the push out, which nothing local can reach. `test/e2e-transcript.md` is a full session of
-the stock client against a local server.
+`ABSO_ARTIFACTS=off` skips the push out, which nothing local can reach. wrangler still warns that Artifacts bindings
+may incur charges; with `ABSO_ARTIFACTS=off` the server never uses the binding, so nothing is called or charged.
+`test/e2e-transcript.md` is a full session of the stock client against a local server.
+
+On Windows, a project's storage file sits deep under `.wrangler/state/`, and from a deep folder its path can pass
+Windows' 260-character limit; `abso init` then answers `500: the project object failed`. Keep the state short:
+`npm run dev -- --persist-to C:\abso-state`.
 
 ## Limits
 

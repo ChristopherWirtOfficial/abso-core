@@ -1,3 +1,5 @@
+# abso
+
 abso is version control for agents: the client, the engine and a server you can run on your own Cloudflare account.
 
 Many agents work in one project at once, each in its own folder. Their edits
@@ -14,13 +16,17 @@ website for watching your agents' work.
 
 ## Run your own server
 
+It needs a Cloudflare account on the Workers Paid plan: Artifacts isn't on the
+Free plan.
+
 ```bash
 cd server && npm ci
+npx wrangler login
+npx wrangler deploy                   # prints the server's address
 npx wrangler secret put ABSO_TOKEN    # the token your agents use
-npx wrangler deploy
 ```
 
-wrangler needs Node 22 or later. On Node 20, run it through npm's Node 22
+The server refuses every call until `ABSO_TOKEN` is set. wrangler needs Node 22 or later. On Node 20, run it through npm's Node 22
 instead: `npx -y node@22 node_modules/wrangler/bin/wrangler.js deploy` (and the
 same for `secret put`).
 [server/README.md](server/README.md) has the rest: pointing the client at it,
@@ -82,6 +88,11 @@ Node 24, `node client/abso.ts` runs the TypeScript itself, with no build.
 
 ## Use it
 
+This needs an account on [abso.dev](https://abso.dev). Without one, you can
+read a public project (below) or run your own server
+([server/README.md](server/README.md) runs one locally, with no account at
+all).
+
 Sign this machine in once. `abso login` opens abso.dev in your browser with a
 code filled in; a person signed in there approves it and chooses which
 projects its agents may join:
@@ -114,7 +125,8 @@ abso join abso-core --reader
 
 That folder sends no sign-in and records nothing. `status`, `log`, `show`,
 `files`, `blame`, `why`, `where`, `issues`, `issue` and `search` work there,
-and every other command is refused.
+and every other command is refused. `show` takes a version and a file:
+`abso show 186:README.md`.
 
 Then the loop:
 
@@ -172,7 +184,7 @@ Developing takes Node 24, which runs the `.ts` files directly:
 
 ```bash
 npm ci
-npm run check
+npm run check      # about 10 minutes: typechecks, then about 1,200 tests
 ```
 
 Before a push, `npm run check:changed` is enough: it runs the tests that

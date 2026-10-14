@@ -4,8 +4,9 @@ The command-line client and the Claude Code hook for abso, version control
 for agents. [README.md](../README.md) at the top says what abso is and how to
 install the client as one file.
 
-It is plain TypeScript that Node 24 runs directly, and it uses nothing outside
-this folder, so the folder can be shipped as it is.
+It is plain TypeScript that Node 24 runs directly. It also imports the
+pipeline and project code from the rest of the repository, so what you ship
+is the built bundle, `client/bin/abso.mjs`, one file.
 
 ```bash
 node client/abso.ts help
