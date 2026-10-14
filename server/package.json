@@ -8,10 +8,15 @@
 	"scripts": {
 		"dev": "wrangler dev --local",
 		"deploy": "wrangler deploy",
-		"typecheck": "tsc --noEmit -p tsconfig.json"
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"install:git-runtime": "node scripts/capacity-install-git-runtime.mjs --root node_modules/isomorphic-git",
+		"check:git-runtime": "node scripts/capacity-install-git-runtime.mjs --root node_modules/isomorphic-git --check",
+		"postinstall": "npm run install:git-runtime",
+		"predev": "npm run check:git-runtime",
+		"predeploy": "npm run check:git-runtime"
 	},
 	"dependencies": {
-		"isomorphic-git": "^1.43.0"
+		"isomorphic-git": "1.44.2"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^5.20261001.1",

@@ -12,6 +12,8 @@ import { BLOB_MAX, BlobStore } from "./blobs.ts";
 import { DiskFirstRuntime } from "./disk-first-runtime.ts";
 import { EngineProject, SqliteLog } from "./engine-project.ts";
 import { artifactsOf, type Env } from "./env.ts";
+import { GitDiskIntake } from "./git-disk-intake.ts";
+import { GitIntakeTrees } from "./git-intake-trees.ts";
 import { pushedSince, remoteHead } from "./ingest.ts";
 import {
 	checkKey,
@@ -59,6 +61,10 @@ const READ_OPS = new Set([
 export const PUSH_EVERY_MS = 60_000;
 /** While agents are working, how often a call looks for plain-git pushes to the repo. */
 const GIT_CHECK_MS = 15_000;
+// Disk scratch admission limits, independent of the Worker's resident memory.
+const GIT_PACK_MAX_BYTES = 128 * 1024 * 1024;
+const GIT_OBJECT_MAX_BYTES = 64 * 1024 * 1024;
+const GIT_DECODED_MAX_BYTES = 256 * 1024 * 1024;
 
 /**
  * The load guard (platform issue 46): an estimate of a loaded project's memory from its log entries, lines and claim
@@ -119,6 +125,10 @@ export class ProjectObject extends DurableObject<Env> {
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		this.blobs = new BlobStore(ctx.storage);
+		if (env.ABSO_DISK_FIRST === "on") {
+			GitDiskIntake.recover(ctx.storage);
+			GitIntakeTrees.recover(ctx.storage);
+		}
 	}
 
 	/** Where files kept whole go: the project's blob store. */
@@ -533,12 +543,23 @@ export class ProjectObject extends DurableObject<Env> {
 		const head = await remoteHead(artifacts, name);
 		if (!head || head === seen || head === pushed?.commit) return null;
 		const sharedBlobs = this.useProject((p) => p.shared().blobs ?? {});
+		using trees = this.diskRuntime() ? new GitIntakeTrees(this.ctx.storage) : undefined;
 		const found = await pushedSince(
 			artifacts,
 			name,
 			seen,
 			async (bytes) => (bytes.byteLength > BLOB_MAX ? null : this.blobs.putBytes(bytes)),
 			(path) => sharedBlobs[path],
+			trees ? (files, path, body, oid) => trees.retainFile(files, path, body, oid) : undefined,
+			trees
+				? {
+						storage: this.ctx.storage,
+						maxPackBytes: GIT_PACK_MAX_BYTES,
+						maxObjectBytes: GIT_OBJECT_MAX_BYTES,
+						maxDecodedBytes: GIT_DECODED_MAX_BYTES,
+						retainFileChunks: (files, path, chunks, oid) => trees.retainChunks(files, path, chunks, oid),
+					}
+				: undefined,
 		);
 		if (!found || found.commits.length === 0) {
 			if (found) await this.ctx.storage.put("git:head", found.head);

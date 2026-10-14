@@ -11,13 +11,20 @@
 	"scripts": {
 		"test": "node --import ./client/test/setup.ts --test \"src/**/*.test.ts\" \"worker/project/**/*.test.ts\" \"client/test/**/*.test.ts\" \"scripts/**/*.test.ts\" \"server/test/**/*.test.ts\"",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
-		"check": "npm run typecheck && npm run typecheck:server && npm test",
+		"check": "npm run check:git-runtime && npm run typecheck && npm run typecheck:server && npm test",
 		"build": "node scripts/build-client.mjs",
 		"pack:npm": "node scripts/pack-npm.mjs",
 		"check:changed": "node scripts/check-changed.mjs",
 		"format": "biome check --write .",
 		"lint": "biome ci .",
-		"typecheck:server": "tsc --noEmit -p server/tsconfig.json"
+		"typecheck:server": "tsc --noEmit -p server/tsconfig.json",
+		"install:git-runtime": "node server/scripts/capacity-install-git-runtime.mjs --root node_modules/isomorphic-git",
+		"check:git-runtime": "node server/scripts/capacity-install-git-runtime.mjs --root node_modules/isomorphic-git --check",
+		"postinstall": "npm run install:git-runtime",
+		"prebuild": "npm run check:git-runtime",
+		"pretest": "npm run check:git-runtime",
+		"pretypecheck": "npm run check:git-runtime",
+		"pretypecheck:server": "npm run check:git-runtime"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.15",
@@ -27,7 +34,7 @@
 		"typescript": "^5.9.3"
 	},
 	"dependencies": {
-		"isomorphic-git": "^1.43.0",
+		"isomorphic-git": "1.44.2",
 		"yaml": "^2.9.1"
 	}
 }

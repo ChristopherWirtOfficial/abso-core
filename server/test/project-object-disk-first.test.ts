@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { registerHooks } from "node:module";
+import { createRequire, registerHooks } from "node:module";
 import { test } from "node:test";
 import git from "isomorphic-git";
 import { Project } from "../../worker/project/project.ts";
 import { EngineProject } from "../src/engine-project.ts";
+import { GitDiskIntake } from "../src/git-disk-intake.ts";
 import { MemoryFS } from "../src/memory-fs.ts";
 import { memoryStorage } from "./helpers.ts";
 
@@ -19,6 +20,40 @@ const hooks = registerHooks({
 });
 const { ProjectObject } = await import("../src/project-object.ts");
 hooks.deregister();
+
+function assertGitScratchEmpty(storage: ReturnType<typeof memoryStorage>) {
+	for (const table of [
+		"git_pack_spool",
+		"git_pack_resolve",
+		"git_object_meta",
+		"git_object_bytes",
+		"git_object_budget",
+	])
+		assert.equal(storage.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!.n, 0, table);
+}
+
+/** Keep transport synthetic while exercising the real disk pack decoder and cache. */
+async function cloneFixture(remote: MemoryFS, options: Parameters<typeof git.clone>[0]) {
+	const intake = (options.cache as Record<symbol, GitDiskIntake> | undefined)?.[Symbol.for("abso.git.disk-pack")];
+	if (!intake) {
+		(options.fs as MemoryFS).entries = structuredClone(remote.entries);
+		return;
+	}
+	const oids = [...remote.entries.keys()].flatMap((path) => {
+		const match = /\/objects\/([0-9a-f]{2})\/([0-9a-f]{38})$/.exec(path);
+		return match ? [match[1]! + match[2]!] : [];
+	});
+	const pack = (await git.packObjects({ fs: remote, dir: "/repo", oids, write: false })).packfile!;
+	const { Inflate } = createRequire(import.meta.url)("pako");
+	await intake.ingest([pack], () => new Inflate({ chunkSize: 16384 }));
+	await git.init({ fs: options.fs, dir: options.dir, defaultBranch: "main" });
+	await git.writeRef({
+		fs: options.fs,
+		dir: options.dir,
+		ref: "main",
+		value: await git.resolveRef({ fs: remote, dir: "/repo", ref: "main" }),
+	});
+}
 
 test("empty disk projects and unloadable legacy projects preserve lookup fallbacks", async (t) => {
 	const storage = memoryStorage();
@@ -344,9 +379,14 @@ test("ProjectObject disk-first calls survive cold objects without replay", async
 	await git.writeRef({ fs: remote, dir: "/repo", ref: "main", value: incoming, force: true });
 	t.mock.method(git, "listServerRefs", async () => [{ ref: "refs/heads/main", oid: incoming }]);
 	t.mock.method(git, "clone", async (options: Parameters<typeof git.clone>[0]) => {
-		(options.fs as MemoryFS).entries = structuredClone(remote.entries);
+		await cloneFixture(remote, options);
 	});
 	const beforeIntake = rows();
+	const originalRead = GitDiskIntake.prototype.read;
+	t.mock.method(GitDiskIntake.prototype, "read", function (this: GitDiskIntake, oid: string) {
+		if (oid === blob) throw Error("whole intake text blob forbidden");
+		return originalRead.call(this, oid);
+	});
 	const originalIngest = EngineProject.prototype.ingest;
 	const failedIngest = t.mock.method(
 		EngineProject.prototype,
@@ -357,15 +397,18 @@ test("ProjectObject disk-first calls survive cold objects without replay", async
 		},
 	);
 	await assert.rejects(() => bound().gitSync(), /injected after Git intake/);
+	assertGitScratchEmpty(storage);
 	assert.deepEqual(rows(), beforeIntake);
 	assert.equal((await bound().out()).git.head, parent, "failed intake must not acknowledge the remote head");
 	failedIngest.mock.restore();
 	failGitAcknowledgement = true;
 	await assert.rejects(() => bound().gitSync(), /Git cursor persistence failure/);
+	assertGitScratchEmpty(storage);
 	const committedIntake = rows();
 	assert.equal((await bound().out()).version, 3);
 	assert.equal((await bound().out()).git.head, parent);
 	const intake = await bound().gitSync();
+	assertGitScratchEmpty(storage);
 	assert.deepEqual(rows(), committedIntake, "retry after cursor failure returns the atomic intake receipt");
 	assert.ok(intake);
 	assert.equal(intake?.head, incoming);
@@ -443,7 +486,7 @@ for (const disk of [false, true]) {
 		let head = await commit({ "A.TXT": "clash\n", "a.txt": "original\n" }, "Refused", [base]);
 		t.mock.method(git, "listServerRefs", async () => [{ ref: "refs/heads/main", oid: head }]);
 		t.mock.method(git, "clone", async (options: Parameters<typeof git.clone>[0]) => {
-			(options.fs as MemoryFS).entries = structuredClone(remote.entries);
+			await cloneFixture(remote, options);
 		});
 		const refused = await object().gitSync();
 		assert.ok(refused);
