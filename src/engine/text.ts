@@ -43,12 +43,129 @@ export interface Hunk {
  * file's length times MAX_COST instead of its length squared.
  */
 export function diffLines(a: readonly string[], b: readonly string[]): Hunk[] {
-	const matches = commonLines(a, b);
-	const hunks: Hunk[] = [];
+	return hunksFromMatches(a.length, b, commonLines(a, b));
+}
+
+/** Diff a single-pass old-line source without retaining its strings. */
+export function diffLineStream(a: Iterable<string>, b: readonly string[]): Hunk[] {
+	const ids = new Map<string, number>();
+	const next = b.map((line) => {
+		let id = ids.get(line);
+		if (id === undefined) {
+			id = ids.size;
+			ids.set(line, id);
+		}
+		return id;
+	});
+	const previous: number[] = [];
+	for (const line of a) previous.push(ids.get(line) ?? -1);
+	return hunksFromMatches(previous.length, b, commonLines(previous, next));
+}
+
+/** Compare replayable old-line chunks without assembling historical strings. */
+export function diffChunkedLines(a: Iterable<() => Iterable<string>>, b: readonly string[]): Hunk[] {
+	const keys = new Map<string, number>();
+	const buckets = new Map<string, number[]>();
+	const next = b.map((line, index) => {
+		let id = keys.get(line);
+		if (id === undefined) {
+			id = index;
+			keys.set(line, id);
+			const key = chunkKey([line]);
+			const bucket = buckets.get(key) ?? [];
+			bucket.push(id);
+			buckets.set(key, bucket);
+		}
+		return id;
+	});
+	const previous: number[] = [];
+	for (const chunks of a) {
+		const iterator = chunks()[Symbol.iterator]();
+		let key: string;
+		const aligned = b[previous.length];
+		let alignedOffset = 0;
+		let alignedEqual = aligned !== undefined;
+		try {
+			const first = iterator.next();
+			if (first.done) {
+				previous.push(keys.get("") ?? -1);
+				continue;
+			}
+			const second = iterator.next();
+			if (second.done) {
+				previous.push(keys.get(first.value) ?? -1);
+				continue;
+			}
+			key = chunkKey(
+				(function* () {
+					function* remaining() {
+						yield first.value;
+						yield second.value;
+						for (let next = iterator.next(); !next.done; next = iterator.next()) yield next.value;
+					}
+					for (const chunk of remaining()) {
+						if (alignedEqual && !aligned!.startsWith(chunk, alignedOffset)) alignedEqual = false;
+						alignedOffset += chunk.length;
+						yield chunk;
+					}
+				})(),
+			);
+		} finally {
+			iterator.return?.();
+		}
+		// Same-position unchanged lines are common. Confirm them during hashing,
+		// retaining exact comparison and the collision-safe fallback for moved lines.
+		if (alignedEqual && alignedOffset === aligned!.length) {
+			previous.push(next[previous.length]!);
+			continue;
+		}
+		const candidates = buckets.get(key);
+		let match = -1;
+		for (const candidate of candidates ?? []) {
+			let offset = 0;
+			let equal = true;
+			for (const chunk of chunks()) {
+				if (!b[candidate]!.startsWith(chunk, offset)) equal = false;
+				offset += chunk.length;
+			}
+			if (equal && offset === b[candidate]!.length) {
+				match = candidate;
+				break;
+			}
+		}
+		previous.push(match);
+	}
+	return hunksFromMatches(previous.length, b, commonLines(previous, next));
+}
+
+function chunkKey(chunks: Iterable<string>): string {
+	let hash = 2166136261;
+	let length = 0;
+	for (const chunk of chunks) {
+		length += chunk.length;
+		for (let i = 0; i < chunk.length; i++) hash = Math.imul(hash ^ chunk.charCodeAt(i), 16777619) >>> 0;
+	}
+	return `${length}:${hash}`;
+}
+
+/** The existing diff algorithm over exact line symbols, without retaining text. */
+export function diffLineSymbols(
+	a: readonly number[],
+	b: readonly number[],
+): { start: number; end: number; lines: number[] }[] {
+	return hunksFromMatches(a.length, b, commonLines(a, b));
+}
+
+function hunksFromMatches<T>(
+	length: number,
+	b: readonly T[],
+	matches: readonly number[],
+): { start: number; end: number; lines: T[] }[] {
+	const hunks: { start: number; end: number; lines: T[] }[] = [];
 	let i = 0;
 	let j = 0;
 	for (let m = 0; m <= matches.length; m += 2) {
-		const mi = m < matches.length ? matches[m]! : a.length;
+		const mi = m < matches.length ? matches[m]! : length;
 		const mj = m < matches.length ? matches[m + 1]! : b.length;
 		if (mi > i || mj > j) hunks.push({ start: i, end: mi, lines: b.slice(j, mj) });
 		i = mi + 1;
@@ -61,7 +178,7 @@ export function diffLines(a: readonly string[], b: readonly string[]): Hunk[] {
  * The matched pairs of a longest common subsequence of `a` and `b`, flattened
  * as [i0, j0, i1, j1, ...] in increasing order.
  */
-function commonLines(a: readonly string[], b: readonly string[]): number[] {
+function commonLines<T>(a: readonly T[], b: readonly T[]): number[] {
 	// Common prefix and suffix match directly.
 	let pre = 0;
 	while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++;
@@ -72,8 +189,8 @@ function commonLines(a: readonly string[], b: readonly string[]): number[] {
 
 	// A line that occurs on only one side can never be matched; leave it out of
 	// the search (this also makes wholly different texts instant).
-	const ids = new Map<string, number>();
-	const intern = (s: string): number => {
+	const ids = new Map<T, number>();
+	const intern = (s: T): number => {
 		let id = ids.get(s);
 		if (id === undefined) {
 			id = ids.size;

@@ -1,10 +1,12 @@
+import { diffLineSymbols } from "../../src/engine/text.ts";
+import { recordFileChanges } from "./record-file.ts";
 // Moves (#28): within one agent's unpublished draft, a line that leaves one place and the same
 // text that arrives somewhere else is the same line. Before a publish, those matches become move
 // atoms so the lines keep their ids. Writes go through ExpressMovesHost; today the host is Project.
 
 import type { AtomId, AttrSet, EditInput, Graph, LineId, MoveInput, ReadView } from "../../src/engine/index.ts";
 import { differenceSet, StableOverlaySet } from "../../src/engine/state-source.ts";
-import { PLAIN_LINE } from "./collisions.ts";
+import { MoveLineText } from "./move-line-text.ts";
 import type { AgentState, Entry, Meta, Mode } from "./project-types.ts";
 
 /** The most moved blocks one publish expresses: the longest ones, when there are more. */
@@ -59,6 +61,7 @@ export function expressMoves(host: ExpressMovesHost, agent: AgentState, time: nu
 	if (draft.length === 0) return;
 	const g = host.graph;
 	const mine = new Set(draft);
+	const text = new MoveLineText(g);
 	const after = host.agentView(agent);
 	const before = host.beforeDraft
 		? host.beforeDraft(agent, draft)
@@ -71,25 +74,25 @@ export function expressMoves(host: ExpressMovesHost, agent: AgentState, time: nu
 		readonly file: string;
 		readonly start: number;
 		readonly ids: LineId[];
-		readonly texts: string[];
+		readonly texts: number[];
 	}
 	const gone: Block[] = [];
 	const written: Block[] = [];
 	for (const file of [...touched].toSorted()) {
 		let cur: Block | undefined;
-		before.lines(file).forEach((l, i) => {
+		before.buildLines(file).forEach((l, i) => {
 			if (g.deletersOf(l.id).some((d) => mine.has(d))) {
 				if (!cur) gone.push((cur = { file, start: i, ids: [], texts: [] }));
 				cur.ids.push(l.id);
-				cur.texts.push(l.text);
+				cur.texts.push(text.intern(l.id));
 			} else cur = undefined;
 		});
 		cur = undefined;
-		after.lines(file).forEach((l, i) => {
+		after.buildLines(file).forEach((l, i) => {
 			if (mine.has(l.atom)) {
 				if (!cur) written.push((cur = { file, start: i, ids: [], texts: [] }));
 				cur.ids.push(l.id);
-				cur.texts.push(l.text);
+				cur.texts.push(text.intern(l.id));
 			} else cur = undefined;
 		});
 	}
@@ -108,7 +111,7 @@ export function expressMoves(host: ExpressMovesHost, agent: AgentState, time: nu
 	// Where each deleted text starts a candidate, in block and line order (abso issue 158): a stretch
 	// can only start where the texts are equal, so each written line looks only there, not at
 	// every deleted line. A text deleted more than MATCH_STARTS times keeps its first ones.
-	const starts = new Map<string, { block: Block; q: number }[]>();
+	const starts = new Map<number, { block: Block; q: number }[]>();
 	for (const block of gone)
 		block.texts.forEach((t, q) => {
 			const list = starts.get(t);
@@ -131,7 +134,7 @@ export function expressMoves(host: ExpressMovesHost, agent: AgentState, time: nu
 				}
 				if (len > 0 && (!best || len > best.len)) best = { block, q, len };
 			}
-			if (best?.block.texts.slice(best.q, best.q + best.len).some((t) => !PLAIN_LINE.test(t))) {
+			if (best?.block.texts.slice(best.q, best.q + best.len).some((t) => !text.plain[t])) {
 				const ids = best.block.ids.slice(best.q, best.q + best.len);
 				for (const id of ids) used.add(id);
 				matches.push({ from: best.block.file, ids, to: run.file, at: run.start + p });
@@ -145,7 +148,7 @@ export function expressMoves(host: ExpressMovesHost, agent: AgentState, time: nu
 	// passed Workers' CPU limit. So the longest blocks move first, up to MOVE_LIMIT of them and
 	// MOVE_BUDGET lines laid out in all; the rest are a delete and a fresh write, as an unmatched block
 	// always is.
-	const length = (path: string) => (after.hasFile(path) ? after.lines(path).length : 0);
+	const length = (path: string) => (after.hasFile(path) ? after.buildLines(path).length : 0);
 	const cost = (m: Match) => length(m.from) + (m.to === m.from ? 0 : length(m.to));
 	const keep = new Set<Match>();
 	let spent = 0;
@@ -185,7 +188,7 @@ export function expressMoves(host: ExpressMovesHost, agent: AgentState, time: nu
 		const start = view.lineNumber(m.from, m.ids[0]!);
 		if (start < 0 || m.ids.some((id, k) => view.lineNumber(m.from, id) !== start + k)) continue;
 		// Land after the nearest line above it in the final text that is already there.
-		const finalLines = host.agentView(finalAgent).lines(m.to);
+		const finalLines = host.agentView(finalAgent).buildLines(m.to);
 		let at = 0;
 		for (let i = m.at - 1; i >= 0; i--) {
 			const n = view.lineNumber(m.to, finalLines[i]!.id);
@@ -207,18 +210,28 @@ export function expressMoves(host: ExpressMovesHost, agent: AgentState, time: nu
 	for (const path of [...involved].toSorted()) {
 		const finalView = host.agentView(finalAgent);
 		const was = finalView.attrs(path);
-		host.recordFile(
+		const view = host.agentView(agent);
+		const target = finalView.buildLines(path);
+		const symbols = new MoveLineText(g);
+		const previous = view.buildLines(path).map((line) => symbols.intern(line.id));
+		const next = target.map((line) => symbols.intern(line.id));
+		const edits = diffLineSymbols(previous, next).map((hunk) => ({
+			file: path,
+			start: hunk.start,
+			end: hunk.end,
+			lines: hunk.lines.map((symbol) => symbols.text(symbol)),
+		}));
+		recordFileChanges(
+			host,
 			agent,
-			host.agentView(agent),
+			view,
 			path,
-			finalView.hasFile(path) ? finalView.text(path) : null,
+			!finalView.hasFile(path) ? "missing" : target.length === 0 ? "empty" : "present",
+			edits,
 			time,
 			{},
 			entries,
-			{
-				exec: was.exec,
-				link: was.link,
-			},
+			{ exec: was.exec, link: was.link },
 		);
 	}
 }

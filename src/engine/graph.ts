@@ -3,6 +3,7 @@
 // atoms and keeps indexes so those questions are cheap.
 
 import { ChildCounts } from "./child-counts.ts";
+import { JsonStringChunks, registerJsonChunkValue } from "./json-value-chunks.ts";
 import {
 	atomId,
 	attrKey,
@@ -358,6 +359,8 @@ export class Graph {
 						encoded.textFormat === 1 || encoded.listFormat === 1 || encoded.insertionFormat === 1
 							? encoded.atom!
 							: value;
+					if (encoded.insertionFormat === 1 && (!Array.isArray(atom.inserts) || atom.inserts.length !== 0))
+						throw Error("invalid stored insertion placeholder");
 					const text =
 						encoded.textFormat === 1
 							? (start: number, length: number): readonly string[] => {
@@ -368,7 +371,7 @@ export class Graph {
 											if (index >= start && index < start + length) {
 												const reference = raw as unknown as TextReference;
 												if (typeof raw === "string") result.push(raw);
-												else if (reference && typeof reference.text === "string")
+												else if (reference && reference.text === JSON.stringify([String(atom.seq), index]))
 													result.push(atomText.read(reference.text));
 												else throw Error("invalid stored atom text reference");
 											}
@@ -377,13 +380,51 @@ export class Graph {
 									throw Error("stored atom text range missing");
 								}
 							: undefined;
+					const streamed = (target: Atom): Atom => {
+						registerJsonChunkValue(target, () => {
+							const line = (raw: unknown, index: number): unknown => {
+								if (typeof raw === "string") return raw;
+								const reference = raw as TextReference;
+								if (!reference || reference.text !== JSON.stringify([String(atom.seq), index]))
+									throw Error("invalid stored atom text reference");
+								return new JsonStringChunks(() => atomText.chunks(reference.text));
+							};
+							let inserts: readonly unknown[];
+							if (encoded.insertionFormat === 1) {
+								const collection = `atom-inserts:${atom.seq}`;
+								inserts = readonlyStoredArray(storage, collection, (raw, index) => {
+									const run = raw as { file: string; parent: string; lines: string };
+									const lines = `${collection}:lines:${index}`;
+									if (run.lines !== lines || typeof run.file !== "string" || typeof run.parent !== "string")
+										throw Error("invalid stored insertion run");
+									let start = 0;
+									for (let prior = 0; prior < index; prior++)
+										start += readonlyStoredArray(storage, `${collection}:lines:${prior}`).length;
+									return {
+										file: run.file,
+										parent: run.parent,
+										lines: readonlyStoredArray(storage, lines, (raw, i) => line(raw, start + i)),
+									};
+								});
+							} else {
+								let index = 0;
+								inserts = atom.inserts.map((run) => ({
+									file: run.file,
+									parent: run.parent,
+									lines: run.lines.map((raw) => line(raw, index++)),
+								}));
+							}
+							return { ...target, inserts };
+						});
+						return target;
+					};
 					const frozen = freezeAtom(
 						atom,
 						(id) => id,
 						(author) => author,
 						text,
 					);
-					if (encoded.listFormat !== 1 && encoded.insertionFormat !== 1) return frozen;
+					if (encoded.listFormat !== 1 && encoded.insertionFormat !== 1) return streamed(frozen);
 					const result = { ...frozen };
 					if (encoded.insertionFormat === 1) {
 						const collection = `atom-inserts:${atom.seq}`;
@@ -396,10 +437,14 @@ export class Graph {
 							return Object.freeze({
 								file: run.file,
 								parent: run.parent,
-								lines: readonlyStoredArray<string>(storage, lines, (rawLine) => {
+								lines: readonlyStoredArray<string>(storage, lines, (rawLine, lineIndex) => {
 									if (typeof rawLine === "string") return rawLine;
 									const ref = rawLine as TextReference;
-									if (!ref || typeof ref.text !== "string") throw Error("invalid stored insertion text");
+									let atomLine = lineIndex;
+									for (let prior = 0; prior < index; prior++)
+										atomLine += readonlyStoredArray(storage, `${collection}:lines:${prior}`).length;
+									if (!ref || ref.text !== JSON.stringify([String(atom.seq), atomLine]))
+										throw Error("invalid stored insertion text");
 									return atomText.read(ref.text);
 								}),
 							});
@@ -413,7 +458,7 @@ export class Graph {
 							throw Error("invalid stored atom list reference");
 						Object.defineProperty(result, field, { value: readonlyStoredArray(storage, collection), enumerable: true });
 					}
-					return Object.freeze(result);
+					return streamed(Object.freeze(result));
 				},
 				(input, key) => {
 					const atom = { ...input };
@@ -779,6 +824,25 @@ export class Graph {
 		return this.#text(n);
 	}
 
+	/** Historical text in bounded chunks, without decoding a whole stored line. */
+	*textChunks(n: number): IterableIterator<string> {
+		if (!this.#storage) {
+			const text = this.#text(n);
+			for (let offset = 0; offset < text.length; offset += StoredText.chunkCharacters)
+				yield text.slice(offset, offset + StoredText.chunkCharacters);
+			return;
+		}
+		if (!Number.isSafeInteger(n) || n < 0 || n >= this.#lineText!.length) throw Error("invalid line number");
+		const value = this.#storage.read("line-text", String(n));
+		if (typeof value === "string") {
+			yield value;
+			return;
+		}
+		const reference = value as { format?: number; text?: string } | undefined;
+		if (reference?.format !== 1 || typeof reference.text !== "string") throw Error("invalid long line reference");
+		yield* new StoredText(this.#storage, "atom-text:long").chunks(reference.text);
+	}
+
 	/** The seq of the atom that wrote line n. */
 	writerSeqOf(n: number): number {
 		return this.#lineAtom.at(n);
@@ -976,12 +1040,13 @@ export class Graph {
 
 	/** The line ids an atom inserted, in k order. */
 	linesOf(id: AtomId): LineId[] {
-		const atom = this.atom(id);
-		const out: LineId[] = [];
-		const seq = atom.seq;
+		return [...this.eachInsertedLine(id)];
+	}
+	/** Inserted identities without decoding or allocating the atom's text. */
+	*eachInsertedLine(id: AtomId): IterableIterator<LineId> {
+		const seq = this.atom(id).seq;
 		const count = (seq + 1 < this.#lineBase.length ? this.#lineBase[seq + 1]! : this.#lineTotal) - this.#lineBase[seq]!;
-		for (let k = 0; k < count; k++) out.push(lineId(id, k));
-		return out;
+		for (let k = 0; k < count; k++) yield lineId(id, k);
 	}
 
 	/** Every atom that deletes this line (across the whole graph). */

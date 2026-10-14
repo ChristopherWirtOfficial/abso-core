@@ -121,8 +121,7 @@ export class ExperimentalMarkerProjection {
 			const state = { ...previous };
 			this.ensureFile(state, this.path);
 			for (const run of atom.inserts) this.ensureFile(state, run.file);
-			let k = 0;
-			for (const run of atom.inserts) for (const _ of run.lines) this.insertLine(state, `${atom.id}.${k++}`);
+			for (const line of this.graph.eachInsertedLine(atom.id)) this.insertLine(state, line);
 			let visibility: Array<{ kind: "visibility"; id: number; delta: number }> = [];
 			for (const line of atom.deletes) {
 				const marker = this.markers.get(state.locator, this.graph.lineN(line) + 1);
@@ -194,13 +193,11 @@ export class ExperimentalMarkerProjection {
 			throw Error("included dependent prevents removal");
 		return this.storage.transaction(() => {
 			const state = { ...previous };
-			let k = 0;
-			for (const run of atom.inserts)
-				for (const text of run.lines) {
-					const marker = this.markers.get(state.locator, this.graph.lineN(`${atom.id}.${k++}`) + 1);
-					if (!marker) throw Error("missing inserted marker");
-					state.sequence = this.sequence.update(state.sequence, { kind: "visibility", id: marker.enter, delta: 1 });
-				}
+			for (const line of this.graph.eachInsertedLine(atom.id)) {
+				const marker = this.markers.get(state.locator, this.graph.lineN(line) + 1);
+				if (!marker) throw Error("missing inserted marker");
+				state.sequence = this.sequence.update(state.sequence, { kind: "visibility", id: marker.enter, delta: 1 });
+			}
 			for (const line of atom.deletes) {
 				const marker = this.markers.get(state.locator, this.graph.lineN(line) + 1);
 				if (!marker) throw Error("missing deleted marker");

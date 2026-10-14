@@ -21,6 +21,10 @@ for (const end of ["commit", "rollback", "source", "nested", "graph"] as const) 
 			assert.throws(() => scope.guard(new Graph()), /mismatch/);
 			const reader = new ProjectionReader(adapter, state, scope.guard(graph));
 			const membership = reader.set;
+			const heldLine = reader.buildLines("f.txt")[0]!;
+			const chunkSource = reader.lineChunks("f.txt").next().value!;
+			const chunks = chunkSource()[Symbol.iterator]();
+			assert.equal(chunks.next().value, "one");
 			const iterator = reader.visibleLines("f.txt");
 			assert.equal(iterator.next().value?.text, "one");
 			if (end === "source") source = {};
@@ -46,6 +50,9 @@ for (const end of ["commit", "rollback", "source", "nested", "graph"] as const) 
 			t.mock.method(graph, "lineN", refuseAccess);
 			t.mock.method(graph, "textOf", refuseAccess);
 			assert.throws(() => reader.text("f.txt"), /expired|stale/);
+			assert.throws(() => heldLine.text, /expired|stale/);
+			assert.throws(() => chunks.next(), /expired|stale/);
+			assert.throws(() => chunkSource()[Symbol.iterator]().next(), /expired|stale/);
 			assert.throws(() => membership.has("a0"), /expired|stale/);
 			assert.throws(() => iterator.next(), /expired|stale/);
 			assert.equal(touched, false);

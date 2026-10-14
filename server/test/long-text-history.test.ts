@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Graph } from "../../src/engine/graph.ts";
+import { StoredText } from "../../src/engine/stored-text.ts";
 import { answer } from "../../worker/project/http.ts";
 import { Project } from "../../worker/project/project.ts";
 import { DiskFirstRuntime } from "../src/disk-first-runtime.ts";
@@ -23,6 +24,9 @@ test("long text remains exact in current and historical storage after later writ
 		(calls) => calls.fileAt("a.txt", 0, null),
 		() => {},
 	);
+	const wholeRead = t.mock.method(StoredText.prototype, "read", () => {
+		throw Error("whole stored text read forbidden during record");
+	});
 	assert.equal(
 		runtime().write(
 			(calls) => answer(calls, "record", "alice", { files: { "a.txt": current } }),
@@ -30,6 +34,7 @@ test("long text remains exact in current and historical storage after later writ
 		).status,
 		200,
 	);
+	wholeRead.mock.restore();
 	assert.equal(
 		runtime().write(
 			(calls) => answer(calls, "publish", "alice", { message: "Replace long line" }),

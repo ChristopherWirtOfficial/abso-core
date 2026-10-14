@@ -194,9 +194,13 @@ function scanLine(line: string, st: ScanState): string {
  * without its string literals and comments. A string or comment opened on
  * one line continues on the next.
  */
-export function codeOfLines(lines: readonly string[]): string[] {
+export function codeOfLines(lines: Iterable<string>): string[] {
+	return [...eachCodeLine(lines)];
+}
+
+export function* eachCodeLine(lines: Iterable<string>): IterableIterator<string> {
 	const st: ScanState = { stack: [{ kind: "code", depth: 0 }], block: false, triple: undefined };
-	return lines.map((line) => scanLine(line, st));
+	for (const line of lines) yield scanLine(line, st);
 }
 
 /** Names in some code (from codeOfLines): identifiers of three or more characters that aren't common names. */

@@ -29,6 +29,7 @@ export interface SeqLine {
 
 /** A visible line of a projected file. */
 export interface VisibleLine {
+	readonly textChunks?: () => Iterable<string>;
 	readonly id: LineId;
 	readonly text: string;
 	readonly atom: AtomId;
@@ -540,6 +541,36 @@ export class View {
 		for (let i = 0; i < a.length; i++)
 			if (a[i] !== b[i] && this.graph.textOf(a[i]!) !== this.graph.textOf(b[i]!)) return false;
 		return true;
+	}
+
+	*lineChunks(path: string): IterableIterator<() => Iterable<string>> {
+		for (const n of this.#file(path).vis) yield () => this.graph.textChunks(n);
+	}
+
+	/** Visible lines without retaining their text in the view cache. */
+	*visibleLines(path: string): IterableIterator<VisibleLine> {
+		const graph = this.graph;
+		for (const n of this.#file(path).vis)
+			yield { id: graph.lineIdOf(n), text: graph.textOf(n), atom: graph.idOfSeq(graph.writerSeqOf(n)) };
+	}
+
+	/** Atom-building line handles; text is loaded only when requested. */
+	buildLines(path: string): readonly VisibleLine[] {
+		const graph = this.graph;
+		const vis = this.#file(path).vis;
+		const lines: VisibleLine[] = new Array(vis.length);
+		for (let i = 0; i < vis.length; i++) {
+			const n = vis[i]!;
+			lines[i] = {
+				id: graph.lineIdOf(n),
+				textChunks: () => graph.textChunks(n),
+				get text() {
+					return graph.textOf(n);
+				},
+				atom: graph.idOfSeq(graph.writerSeqOf(n)),
+			};
+		}
+		return lines;
 	}
 
 	/** Visible lines with their ids. */

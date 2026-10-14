@@ -352,7 +352,7 @@ export function markerCollisions(host: MarkerHost, agent: AgentState): Collision
 	const out: Collision[] = [];
 	for (const file of [...host.draftFiles(agent)].toSorted()) {
 		if (!view.hasFile(file)) continue;
-		const lines = view.lines(file);
+		const lines = view.buildLines(file);
 		const added = lines.map((l, i) => (mine.has(l.atom) && isMarkerLine(l.text) ? i : -1)).filter((i) => i >= 0);
 		if (added.length === 0) continue;
 		const blocks = blocksIn(lines.map((l) => l.text));

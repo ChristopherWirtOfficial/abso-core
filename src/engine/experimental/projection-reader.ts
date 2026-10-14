@@ -110,6 +110,30 @@ export class ProjectionReader implements ReadView {
 		for (const id of this.graph.movers()) if (this.set.has(id)) return true;
 		return false;
 	}
+	*#textChunks(n: number): IterableIterator<string> {
+		this.#assertLive();
+		const iterator = this.graph.textChunks(n);
+		while (true) {
+			this.#assertLive();
+			const next = iterator.next();
+			this.#assertLive();
+			if (next.done) return;
+			yield next.value;
+		}
+	}
+	*lineChunks(path: string): IterableIterator<() => Iterable<string>> {
+		this.#assertLive();
+		const iterator = this.#adapter.lineIds(this.#state, path);
+		while (true) {
+			this.#assertLive();
+			const next = iterator.next();
+			this.#assertLive();
+			if (next.done) return;
+			const n = this.graph.lineN(next.value);
+			yield () => this.#textChunks(n);
+		}
+	}
+
 	*visibleLines(path: string): IterableIterator<VisibleLine> {
 		this.#assertLive();
 		const graph = this.#adapter.graph;
@@ -128,6 +152,34 @@ export class ProjectionReader implements ReadView {
 		this.#assertLive();
 		return [...this.visibleLines(path)];
 	}
+	*#buildingLines(path: string): IterableIterator<VisibleLine> {
+		this.#assertLive();
+		const graph = this.#adapter.graph;
+		const iterator = this.#adapter.lineIds(this.#state, path);
+		while (true) {
+			this.#assertLive();
+			const next = iterator.next();
+			this.#assertLive();
+			if (next.done) return;
+			const id = next.value;
+			const n = graph.lineN(id);
+			const assertLive = () => this.#assertLive();
+			yield {
+				id,
+				textChunks: () => this.#textChunks(n),
+				get text() {
+					assertLive();
+					return graph.textOf(n);
+				},
+				atom: graph.idOfSeq(graph.writerSeqOf(n)),
+			};
+		}
+	}
+	buildLines(path: string): readonly VisibleLine[] {
+		this.#assertLive();
+		return [...this.#buildingLines(path)];
+	}
+
 	sequence(path: string): readonly SeqLine[] {
 		this.#assertLive();
 		const adapter = this.#adapter,

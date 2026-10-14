@@ -1,3 +1,20 @@
+/** Internal values may expose an exact streaming representation without changing public toJSON. */
+const streamingValues = new WeakMap<object, () => unknown>();
+export function registerJsonChunkValue(value: object, representation: () => unknown): void {
+	streamingValues.set(value, representation);
+}
+
+/** A JSON string backed by bounded, replayable UTF-16 chunks. */
+export class JsonStringChunks {
+	readonly chunks: () => Iterable<string>;
+	constructor(chunks: () => Iterable<string>) {
+		this.chunks = chunks;
+	}
+	toJSON(): string {
+		return [...this.chunks()].join("");
+	}
+}
+
 /** JSON.stringify-compatible chunks for canonical data, without a whole-value string.
  * Individual input strings and object key lists still belong to the caller.
  */
@@ -16,7 +33,10 @@ export function* jsonValueChunks(input: unknown): IterableIterator<string> {
 		yield '"';
 	}
 	const normalize = (value: unknown, key: string): unknown => {
+		if (value instanceof JsonStringChunks) return value;
 		if (value !== null && typeof value === "object") {
+			const streaming = streamingValues.get(value);
+			if (streaming) return streaming();
 			const toJSON = (value as { toJSON?: unknown }).toJSON;
 			if (typeof toJSON === "function") return toJSON.call(value, key);
 		}
@@ -24,7 +44,21 @@ export function* jsonValueChunks(input: unknown): IterableIterator<string> {
 	};
 	const omitted = (value: unknown) => value === undefined || typeof value === "function" || typeof value === "symbol";
 	function* encode(value: unknown): IterableIterator<string> {
-		if (typeof value === "string") yield* string(value);
+		if (value instanceof JsonStringChunks) {
+			yield '"';
+			let pending = "";
+			for (const chunk of value.chunks()) {
+				if (typeof chunk !== "string" || chunk.length > 16384) throw Error("JSON string chunk exceeds bound");
+				const text = pending + chunk;
+				let end = text.length;
+				const last = text.charCodeAt(end - 1);
+				if (last >= 0xd800 && last <= 0xdbff) end--;
+				pending = text.slice(end);
+				if (end) yield JSON.stringify(text.slice(0, end)).slice(1, -1);
+			}
+			if (pending) yield JSON.stringify(pending).slice(1, -1);
+			yield '"';
+		} else if (typeof value === "string") yield* string(value);
 		else if (value === null || typeof value === "boolean" || typeof value === "number") yield JSON.stringify(value);
 		else if (typeof value !== "object" || value === null) throw Error("unsupported canonical JSON value");
 		else {

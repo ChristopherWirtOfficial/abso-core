@@ -50,7 +50,7 @@ export function addDraft(
 	const touched = new Set<AtomId>();
 	for (const key of claimsOf(atom)) {
 		const { kind, node } = parseKey(key);
-		if (kind === "line") touched.add(host.graph.line(node)!.atom);
+		if (kind === "line") touched.add(host.graph.idOfSeq(host.graph.writerSeqOf(host.graph.lineN(node))));
 		// Setting an attribute again settles a collision over it.
 		if (kind === "attr") for (const w of host.graph.writersOf(key)) touched.add(w);
 	}

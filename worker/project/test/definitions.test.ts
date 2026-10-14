@@ -68,3 +68,13 @@ test("data files hold no definitions: JSON, CSV and lock files are passed over, 
 	assert.deepEqual(defs({ "fixtures/a.json": codeLike, "data/b.csv": codeLike, "c.lock": codeLike }), {});
 	assert.deepEqual(Object.keys(defs({ "src/a.ts": codeLike })), ["parsePattern"]);
 });
+
+test("definition scanning does not retain the original file line array", (t) => {
+	const graph = new Graph();
+	graph.add(buildBase({ "a.ts": "export function parseThing() { return 1; }\n" }, { author: "t", message: "t" }));
+	const view = new View(graph, ["a0"]);
+	t.mock.method(view, "lines", () => {
+		throw Error("original file line array forbidden");
+	});
+	assert.deepEqual([...definitionsIn(view).keys()], ["parseThing"]);
+});

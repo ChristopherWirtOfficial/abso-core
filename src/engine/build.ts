@@ -4,7 +4,7 @@
 
 import { Graph } from "./graph.ts";
 import { attrKey, gapKey, isStartNode, lineKey, parseKey, posKey, startNode, writerOf } from "./keys.ts";
-import { diffLines, joinLines, normalizeText, splitLines } from "./text.ts";
+import { diffChunkedLines, joinLines, normalizeText, splitLines } from "./text.ts";
 import {
 	ATTR_NAMES,
 	type Atom,
@@ -26,7 +26,32 @@ import { View } from "./view.ts";
 /** Exact read surface used to build atoms; membership requires point lookup only. */
 export type AtomBuildView = Pick<View, "graph" | "lines" | "sequence" | "sequenceIndex" | "parentOf"> & {
 	readonly set: Pick<ReadonlySet<AtomId>, "has">;
+	buildLines?: View["buildLines"];
 };
+
+function buildingLines(view: AtomBuildView, path: string) {
+	return view.buildLines ? view.buildLines(path) : view.lines(path);
+}
+
+/** Cache only within one immutable build; never retain handles across writes. */
+function cachedBuildView(view: AtomBuildView): AtomBuildView {
+	const files = new Map<string, ReturnType<View["lines"]>>();
+	return {
+		graph: view.graph,
+		set: view.set,
+		lines(path) {
+			let lines = files.get(path);
+			if (!lines) {
+				lines = buildingLines(view, path);
+				files.set(path, lines);
+			}
+			return lines;
+		},
+		sequence: (path) => view.sequence(path),
+		sequenceIndex: (path, line) => view.sequenceIndex(path, line),
+		parentOf: (line) => view.parentOf(line),
+	};
+}
 
 /** Replace the one exact occurrence of `old` in `file` with `new`. */
 export interface TextEdit {
@@ -132,6 +157,7 @@ export function buildBase(
 }
 
 function build(view: AtomBuildView, input: AtomInput, allowEmpty: boolean): Atom {
+	view = cachedBuildView(view);
 	const graph = view.graph;
 	const id = graph.nextId();
 	if (typeof input.author !== "string" || typeof input.message !== "string") {
@@ -152,9 +178,14 @@ function build(view: AtomBuildView, input: AtomInput, allowEmpty: boolean): Atom
 	const emptiedBy = new Set<AtomId>();
 
 	for (const region of regions) {
-		const visible = view.lines(region.file);
-		const oldLines = visible.slice(region.start, region.end).map((l) => l.text);
-		for (const hunk of diffLines(oldLines, region.lines)) {
+		const visible = buildingLines(view, region.file);
+		function* oldLines() {
+			for (let i = region.start; i < region.end; i++) {
+				const line = visible[i]!;
+				yield () => (line.textChunks ? line.textChunks() : [line.text]);
+			}
+		}
+		for (const hunk of diffChunkedLines(oldLines(), region.lines)) {
 			const start = region.start + hunk.start;
 			const end = region.start + hunk.end;
 			let parent: NodeId;
@@ -285,7 +316,7 @@ function planMove(view: AtomBuildView, move: MoveInput, writes: Set<Key>, reads:
 		if (typeof path !== "string" || path === "" || /[\n\r]/.test(path))
 			throw new EngineError("bad-edit", `bad file path ${JSON.stringify(path)}`);
 	}
-	const visible = view.lines(move.file);
+	const visible = buildingLines(view, move.file);
 	const { start, end, at } = move;
 	if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > visible.length || start >= end) {
 		throw new EngineError(
@@ -293,7 +324,7 @@ function planMove(view: AtomBuildView, move: MoveInput, writes: Set<Key>, reads:
 			`${move.file} lines [${start}, ${end}) are not a non-empty range of its ${visible.length} visible lines`,
 		);
 	}
-	const dest = view.lines(move.to);
+	const dest = buildingLines(view, move.to);
 	if (!Number.isInteger(at) || at < 0 || at > dest.length) {
 		throw new EngineError("bad-range", `${move.to} has no place ${at} (it has ${dest.length} visible lines)`);
 	}
@@ -396,7 +427,7 @@ function holdSpan(lines: readonly LineId[], holds: Set<Key>): void {
 }
 
 function rangeLines(view: AtomBuildView, range: LineRange): LineId[] {
-	const visible = view.lines(range.file);
+	const visible = buildingLines(view, range.file);
 	if (
 		!Number.isInteger(range.start) ||
 		!Number.isInteger(range.end) ||
@@ -465,7 +496,7 @@ function matchText(view: AtomBuildView, edit: TextEdit, mode: Mode, order: numbe
 		throw new EngineError("bad-edit", "a text edit needs old and new strings");
 	}
 	const file = edit.file;
-	const visible = view.lines(file);
+	const visible = buildingLines(view, file);
 	const oldText = normalizeText(edit.old);
 	const newText = normalizeText(edit.new);
 	if (oldText === "") {
@@ -477,7 +508,8 @@ function matchText(view: AtomBuildView, edit: TextEdit, mode: Mode, order: numbe
 		}
 		return { file, start: 0, end: 0, lines: splitLines(newText), mode, order };
 	}
-	const text = joinLines(visible.map((l) => l.text));
+	const texts = visible.map((line) => line.text);
+	const text = joinLines(texts);
 	const at = text.indexOf(oldText);
 	if (at < 0) throw new EngineError("no-match", `old text not found in ${file}`);
 	if (text.indexOf(oldText, at + 1) >= 0) {
@@ -488,9 +520,9 @@ function matchText(view: AtomBuildView, edit: TextEdit, mode: Mode, order: numbe
 	}
 	const starts: number[] = [];
 	let pos = 0;
-	for (const line of visible) {
+	for (const text of texts) {
 		starts.push(pos);
-		pos += line.text.length + 1;
+		pos += text.length + 1;
 	}
 	const lineAt = (offset: number): number => {
 		let lo = 0;
@@ -506,12 +538,12 @@ function matchText(view: AtomBuildView, edit: TextEdit, mode: Mode, order: numbe
 	const startLine = lineAt(at);
 	let endLine = lineAt(end - 1);
 	const lineStart = starts[startLine]!;
-	const lineEnd = starts[endLine]! + visible[endLine]!.text.length + 1;
+	const lineEnd = starts[endLine]! + texts[endLine]!.length + 1;
 	let replacement = text.slice(lineStart, at) + newText + text.slice(end, lineEnd);
 	if (replacement !== "" && !replacement.endsWith("\n")) {
 		if (endLine + 1 < visible.length) {
 			endLine++;
-			replacement += `${visible[endLine]!.text}\n`;
+			replacement += `${texts[endLine]}\n`;
 		} else {
 			replacement += "\n";
 		}
@@ -520,7 +552,7 @@ function matchText(view: AtomBuildView, edit: TextEdit, mode: Mode, order: numbe
 }
 
 function matchSplice(view: AtomBuildView, edit: SpliceEdit, mode: Mode, order: number): Region {
-	const count = view.lines(edit.file).length;
+	const count = buildingLines(view, edit.file).length;
 	if (
 		!Number.isInteger(edit.start) ||
 		!Number.isInteger(edit.end) ||

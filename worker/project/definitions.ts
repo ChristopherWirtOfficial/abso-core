@@ -20,7 +20,8 @@
 // that defines it (project.ts, #definitionCore).
 
 import type { LineId, ReadView } from "../../src/engine/index.ts";
-import { codeOfLines, holdsNoCode, isCommonName } from "./names.ts";
+import { withDefinitionCode } from "./definition-code.ts";
+import { holdsNoCode, isCommonName } from "./names.ts";
 
 export interface Definition {
 	readonly name: string;
@@ -121,27 +122,28 @@ export function definitionsIn(view: ReadView, files?: Iterable<string>): Map<str
 function definitionsInFile(view: ReadView, file: string, keepCommon = false): Definition[] {
 	if (holdsNoCode(file) || !view.hasFile(file)) return [];
 	const out: Definition[] = [];
-	const visible = view.lines(file);
-	const code = codeOfLines(visible.map((l) => l.text));
-	for (let i = 0; i < code.length; i++) {
-		// Only top-level declarations: what another file can import. Locals,
-		// parameters and methods are indented.
-		if (/^\s/.test(code[i]!)) continue;
-		const found = defineAt(code, i);
-		if (!found || (!keepCommon && (found.name.length < 3 || isCommonName(found.name)))) continue;
-		out.push({
-			name: found.name,
-			file,
-			start: i,
-			end: found.end,
-			lines: visible.slice(i, found.end).map((l) => l.id),
-			text: visible
-				.slice(i, found.end)
-				.map((l) => l.text)
-				.join("\n"),
-		});
-	}
-	return out;
+	const visible = view.buildLines(file);
+	return withDefinitionCode(view, visible, (code) => {
+		for (let i = 0; i < code.length; i++) {
+			// Only top-level declarations: what another file can import. Locals,
+			// parameters and methods are indented.
+			if (/^\s/.test(code[i]!)) continue;
+			const found = defineAt(code, i);
+			if (!found || (!keepCommon && (found.name.length < 3 || isCommonName(found.name)))) continue;
+			out.push({
+				name: found.name,
+				file,
+				start: i,
+				end: found.end,
+				lines: visible.slice(i, found.end).map((l) => l.id),
+				text: visible
+					.slice(i, found.end)
+					.map((l) => l.text)
+					.join("\n"),
+			});
+		}
+		return out;
+	});
 }
 
 /**
@@ -155,25 +157,26 @@ export function definedTwice(view: ReadView, file: string): Map<string, Definiti
 	const count = new Map<string, number>();
 	for (const d of all) count.set(d.name, (count.get(d.name) ?? 0) + 1);
 	if (![...count.values()].some((n) => n > 1)) return out;
-	const visible = view.lines(file);
-	const code = codeOfLines(visible.map((l) => l.text));
-	for (const d of all) {
-		if (count.get(d.name)! < 2) continue;
-		const end = Math.max(d.end, wholeBlockEnd(code, d.start));
-		const whole: Definition = {
-			...d,
-			end,
-			lines: visible.slice(d.start, end).map((l) => l.id),
-			text: visible
-				.slice(d.start, end)
-				.map((l) => l.text)
-				.join("\n"),
-		};
-		const list = out.get(d.name);
-		if (list) list.push(whole);
-		else out.set(d.name, [whole]);
-	}
-	return out;
+	const visible = view.buildLines(file);
+	return withDefinitionCode(view, visible, (code) => {
+		for (const d of all) {
+			if (count.get(d.name)! < 2) continue;
+			const end = Math.max(d.end, wholeBlockEnd(code, d.start));
+			const whole: Definition = {
+				...d,
+				end,
+				lines: visible.slice(d.start, end).map((l) => l.id),
+				text: visible
+					.slice(d.start, end)
+					.map((l) => l.text)
+					.join("\n"),
+			};
+			const list = out.get(d.name);
+			if (list) list.push(whole);
+			else out.set(d.name, [whole]);
+		}
+		return out;
+	});
 }
 
 /**
