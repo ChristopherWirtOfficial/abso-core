@@ -170,10 +170,10 @@ export async function commitShared(
 	// Each file goes into the tree as a blob with its mode (#27): 100755 for exec, 120000 for a link, whose blob is
 	// its target.
 	const enc = new TextEncoder();
-	for (const [path, text] of Object.entries(shared.files)) {
+	for (const path of Object.keys(shared.files)) {
 		const mode = shared.modes?.[path];
 		const link = typeof mode?.link === "string" ? mode.link : null;
-		const bytes = enc.encode(link ?? text);
+		const bytes = enc.encode(link ?? shared.files[path]!);
 		await put(path, bytes, link !== null ? "120000" : mode?.exec ? "100755" : "100644", await blobOid(bytes));
 	}
 	const agent = shared.last?.agent ?? "abso";

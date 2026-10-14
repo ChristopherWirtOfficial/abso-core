@@ -4,6 +4,28 @@ import { MemoryStore, Project } from "../../../worker/project/project.ts";
 import { Graph } from "../graph.ts";
 import { SqlState } from "./storage-helper.ts";
 
+test("large insertion text stays lazy even when the run has few lines", (t) => {
+	const storage = new SqlState();
+	t.after(() => storage.db.close());
+	const memory = new MemoryStore();
+	const line = "x".repeat(100000);
+	new Project(memory).init({ "a.txt": `${line}\n${line}\n${line}\n` }, 0);
+	const entry = memory.entries[0]!;
+	if (entry.type !== "init") throw Error("expected init");
+	new Graph({ storage }).add(entry.atom);
+	const read = storage.read.bind(storage);
+	let textReads = 0;
+	t.mock.method(storage, "read", (collection: string, key: string) => {
+		if (collection === "atom-text:long:chunks") textReads++;
+		return read(collection, key);
+	});
+	const atom = new Graph({ storage }).atom("a0");
+	assert.equal(atom.inserts[0]!.lines.length, 3);
+	assert.equal(textReads, 0, "reading line count must not decode the complete run");
+	assert.equal(atom.inserts[0]!.lines[1], line);
+	assert.equal(textReads, Math.ceil(line.length / 16384), "an indexed read decodes only the selected line");
+});
+
 test("persistent graph stores long lines in chunks and reopens exact text", () => {
 	const storage = new SqlState();
 	try {

@@ -429,7 +429,12 @@ export class Graph {
 					}
 					const listCount = Object.keys(lists).length;
 					const hasLists = listCount > 0;
-					if (atom.inserts.length > 256 || atom.inserts.some((run) => run.lines.length > 256)) {
+					let insertionCharacters = 0;
+					if (
+						atom.inserts.length > 256 ||
+						atom.inserts.some((run) => run.lines.length > 256) ||
+						atom.inserts.some((run) => run.lines.some((line) => (insertionCharacters += line.length) > 65536))
+					) {
 						const collection = `atom-inserts:${input.seq}`;
 						const runs = storedArray<unknown>(storage, collection);
 						let runIndex = 0;

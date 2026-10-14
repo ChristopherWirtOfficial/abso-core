@@ -22,6 +22,33 @@ describe("repo names", () => {
 });
 
 describe("commitShared", () => {
+	it("reads one lazy file at a time and does not read symlink placeholder text", async (t) => {
+		const fs = new MemoryFS();
+		const dir = "/repo";
+		await git.init({ fs, dir, defaultBranch: "main" });
+		let writes = 0;
+		const writeBlob = git.writeBlob;
+		t.mock.method(git, "writeBlob", async (options: Parameters<typeof writeBlob>[0]) => {
+			const result = await writeBlob(options);
+			writes++;
+			return result;
+		});
+		const files = {
+			get a() {
+				assert.equal(writes, 0);
+				return "first";
+			},
+			get b() {
+				assert.equal(writes, 1);
+				return "second";
+			},
+			get link(): string {
+				throw Error("symlink placeholder text must not be read");
+			},
+		};
+		await commitShared(fs, dir, null, { version: 0, files, modes: { link: { link: "a" } } }, () => null);
+		assert.equal(writes, 3);
+	});
 	it("writes shared as a commit with its modes, then only what changed", async () => {
 		const fs = new MemoryFS();
 		const dir = "/repo";

@@ -10,6 +10,30 @@ import { CachedStateStorage } from "../state-source.ts";
 import { Repo } from "./helpers.ts";
 import { SqlState } from "./storage-helper.ts";
 
+test("projected text streams lines and line lookup does not read file text", (t) => {
+	const storage = new SqlState();
+	t.after(() => storage.db.close());
+	const text = `${"x".repeat(40000)}\nsecond\nthird\n`;
+	const repo = Repo.init({ "f.txt": text, "empty.txt": "" });
+	const graph = new Graph({ storage: new CachedStateStorage(storage) });
+	graph.add(repo.graph.atom("a0"));
+	const adapter = new ExperimentalMarkerProjection(storage, graph, "f.txt", "streamed-text");
+	const state = adapter.apply(adapter.empty(), graph.atom("a0"));
+	const reader = new ProjectionReader(adapter, state, () => {});
+	t.mock.method(reader, "lines", () => {
+		throw Error("full line array forbidden");
+	});
+	assert.equal(reader.text("f.txt"), text);
+	assert.equal(reader.text("empty.txt"), "");
+	assert.equal(reader.text("missing.txt"), "");
+	const ids = [...adapter.lineIds(state, "f.txt")];
+	t.mock.method(graph, "textOf", () => {
+		throw Error("line lookup must not read text");
+	});
+	for (let i = 0; i < ids.length; i++) assert.equal(reader.lineNumber("f.txt", ids[i]!), i);
+	assert.equal(reader.lineNumber("f.txt", "missing"), -1);
+});
+
 test("unchanged atom builder consumes the private reader for replacement and insertion edits", () => {
 	const storage = new SqlState();
 	try {

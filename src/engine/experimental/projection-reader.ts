@@ -1,6 +1,5 @@
 import { startNode } from "../keys.ts";
 import { StableSet } from "../state-source.ts";
-import { joinLines } from "../text.ts";
 import type { FileAttrs, ReadView, SeqLine, VisibleLine } from "../view.ts";
 import type { ExperimentalMarkerProjection, MarkerState } from "./projection-marker.ts";
 
@@ -74,7 +73,14 @@ export class ProjectionReader implements ReadView {
 	}
 	lineNumber(path: string, line: string): number {
 		this.#assertLive();
-		return this.lines(path).findIndex((item) => item.id === line);
+		let index = 0;
+		for (const id of this.#adapter.lineIds(this.#state, path)) {
+			this.#assertLive();
+			if (id === line) return index;
+			index++;
+		}
+		this.#assertLive();
+		return -1;
 	}
 	sameText(path: string, other: ReadView): boolean {
 		this.#assertLive();
@@ -193,7 +199,16 @@ export class ProjectionReader implements ReadView {
 	}
 	text(path: string): string {
 		this.#assertLive();
-		return joinLines([...this.visibleLines(path)].map((line) => line.text));
+		let text = "",
+			part = "";
+		for (const line of this.visibleLines(path)) {
+			part += `${line.text}\n`;
+			if (part.length >= 16384) {
+				text += part;
+				part = "";
+			}
+		}
+		return text + part;
 	}
 	hasFile(path: string): boolean {
 		this.#assertLive();
