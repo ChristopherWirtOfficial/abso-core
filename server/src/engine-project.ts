@@ -9,6 +9,7 @@ import { feedEvents } from "../../worker/project/feed.ts";
 import { type Entry, type ProjectStore as LogStore, MemoryStore, Project } from "../../worker/project/project.ts";
 import type { EditBody, ProjectCalls, ProjectHistory } from "../../worker/project/project-api.ts";
 import { where } from "../../worker/project/where.ts";
+import type { PushSnapshotMetadata } from "./push-snapshot.ts";
 
 /** The parts of a Durable Object's storage the log and blob store use, declared structurally so tests can stand in. */
 export interface SqliteStorage {
@@ -806,6 +807,38 @@ export class EngineProject implements ProjectCalls, ProjectHistory {
 	}
 	filesAt(version: number) {
 		return this.project.viewAt(version).files();
+	}
+	fileTextAt(version: number, path: string): string {
+		return this.project.viewAt(version).text(path);
+	}
+	/** One scoped batch: at most 64 files and 64 Ki characters plus one whole file. */
+	fileTextsAt(version: number, paths: readonly string[]): Record<string, string> {
+		const view = this.project.viewAt(version);
+		const files: Record<string, string> = Object.create(null);
+		let characters = 0;
+		for (const path of paths.slice(0, 64)) {
+			const text = view.attrs(path).link !== null ? "" : view.text(path);
+			files[path] = text;
+			characters += text.length;
+			if (characters >= 65536) break;
+		}
+		return files;
+	}
+	/** Capture metadata now; each text read reopens the captured version in a fresh host scope. */
+	sharedPushMetadata(): PushSnapshotMetadata {
+		const version = this.project.version;
+		const view = this.project.viewAt(version);
+		const paths: string[] = [];
+		const modes: PushSnapshotMetadata["modes"] = Object.create(null);
+		const blobs: Record<string, string> = Object.create(null);
+		for (const path of view.paths()) {
+			const attrs = view.attrs(path);
+			modes[path] = { exec: attrs.exec, link: attrs.link };
+			if (attrs.blob !== null) blobs[path] = attrs.blob;
+			else paths.push(path);
+		}
+		const by = version > 0 ? this.project.published(version) : undefined;
+		return { version, paths, modes, blobs, ...(by ? { last: { agent: by.agent, message: by.message } } : {}) };
 	}
 	blobsAt(version: number) {
 		return this.project.viewAt(version).blobs();

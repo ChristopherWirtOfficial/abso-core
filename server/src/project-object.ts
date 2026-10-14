@@ -26,6 +26,7 @@ import {
 	revokeKey,
 } from "./keys.ts";
 import { type PushResult, pushShared, repoName } from "./push.ts";
+import { pushSnapshot } from "./push-snapshot.ts";
 import { SqliteWriterState } from "./writer-host.ts";
 
 const READ_OPS = new Set([
@@ -605,7 +606,11 @@ export class ProjectObject extends DurableObject<Env> {
 					error: e instanceof Error ? e.message : String(e),
 				}),
 		);
-		const shared = this.useProject((p) => p.shared());
+		const shared = pushSnapshot(
+			this.useProject((p) => p.sharedPushMetadata()),
+			(version, path) => this.useProject((current) => current.fileTextAt(version, path)),
+			(version, paths) => this.useProject((current) => current.fileTextsAt(version, paths)),
+		);
 		const done = await this.ctx.storage.get<PushResult>("pushed");
 		if (done && done.version >= shared.version) return;
 		const pushedAt = (await this.ctx.storage.get<number>("pushedAt")) ?? 0;
