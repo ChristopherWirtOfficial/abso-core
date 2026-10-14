@@ -24,26 +24,34 @@ test("decoded budget spans objects and rolls back failed additions", (t) => {
 test("delta results consume budget and failed resolution rolls back all accounting", (t) => {
 	const storage = memoryStorage();
 	t.after(() => storage.db.close());
-	const resolver = new GitPackResolver(storage, 100, 12);
+	const resolver = new GitPackResolver(storage, 100, 6);
 	resolver.add(12, "blob", new TextEncoder().encode("abc"));
 	resolver.add(30, "delta", new Uint8Array([3, 4, 0x90, 3, 1, 100]), 12);
 	assert.throws(() => resolver.resolve(), /total decoded byte limit/);
-	assert.equal(storage.db.prepare("SELECT decoded FROM git_object_budget").get()!.decoded, 9);
+	assert.equal(
+		storage.db.prepare("SELECT decoded FROM git_object_budget WHERE scope NOT LIKE '%:raw'").get()!.decoded,
+		3,
+	);
 	assert.equal(storage.db.prepare("SELECT COUNT(*) AS n FROM git_object_meta").get()!.n, 2);
 	assert.throws(() => resolver.get(oid("abcd")), /missing/);
 	resolver.dispose();
 });
 
-test("resolved delta instructions are deleted without refunding decoded work", (t) => {
+test("raw deltas have a separate bounded budget and are not counted as expanded versions", (t) => {
 	const storage = memoryStorage();
 	t.after(() => storage.db.close());
-	const resolver = new GitPackResolver(storage, 100, 13);
+	const resolver = new GitPackResolver(storage, 100, 7);
 	resolver.add(12, "blob", new TextEncoder().encode("abc"));
 	resolver.add(30, "delta", new Uint8Array([3, 4, 0x90, 3, 1, 100]), 12);
 	resolver.resolve();
 	assert.equal(text(resolver.get(oid("abcd"))), "abcd");
 	assert.equal(storage.db.prepare("SELECT SUM(bytes) AS n FROM git_object_meta").get()!.n, 7);
-	assert.equal(storage.db.prepare("SELECT decoded FROM git_object_budget").get()!.decoded, 13);
+	assert.equal(
+		storage.db.prepare("SELECT decoded FROM git_object_budget WHERE scope NOT LIKE '%:raw'").get()!.decoded,
+		7,
+	);
+	assert.equal(storage.db.prepare("SELECT decoded FROM git_object_budget WHERE scope LIKE '%:raw'").get()!.decoded, 6);
+	assert.throws(() => resolver.add(45, "delta", new Uint8Array([3, 4, 0x90, 3, 1, 100]), 12), /total delta byte limit/);
 	assert.throws(() => resolver.add(50, "blob", new Uint8Array(1)), /total decoded byte limit/);
 	resolver.resolve();
 	resolver.dispose();

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SqliteStorage } from "./engine-project.ts";
 import type { GitByteRanges } from "./git-delta-stream.ts";
+import { GitIntakeLimitError } from "./git-intake-limit.ts";
 
 export type StoredGitBytes = GitByteRanges & {
 	id: string;
@@ -30,14 +31,21 @@ export class GitObjectBytes {
 	private active(): void {
 		if (this.closed) throw Error("Git object store is closed");
 	}
-	put(type: string, produce: (write: (bytes: Uint8Array) => void) => void, maxBytes: number): StoredGitBytes {
+	put(
+		type: string,
+		produce: (write: (bytes: Uint8Array) => void) => void,
+		maxBytes: number,
+		rawDelta = false,
+	): StoredGitBytes {
 		this.active();
 		if (!["blob", "tree", "commit", "tag"].includes(type) || !Number.isSafeInteger(maxBytes) || maxBytes < 0)
 			throw Error("invalid Git object limits or type");
 		const id = crypto.randomUUID();
 		this.storage.transactionSync(() => {
+			const budgetScope = rawDelta ? `${this.scope}:raw` : this.scope;
+			if (rawDelta) this.storage.sql.exec("INSERT OR IGNORE INTO git_object_budget VALUES (?, 0)", budgetScope);
 			const budget = this.storage.sql
-				.exec("SELECT decoded FROM git_object_budget WHERE scope = ?", this.scope)
+				.exec("SELECT decoded FROM git_object_budget WHERE scope = ?", budgetScope)
 				.toArray() as { decoded: number }[];
 			if (budget.length !== 1) throw Error("missing Git decoded budget");
 			const remaining = this.maxDecodedBytes - budget[0]!.decoded;
@@ -56,8 +64,12 @@ export class GitObjectBytes {
 				used = 0;
 			};
 			produce((bytes) => {
-				if (length + bytes.length > maxBytes) throw Error("Git object exceeds byte limit");
-				if (length + bytes.length > remaining) throw Error("Git pack exceeds total decoded byte limit");
+				if (length + bytes.length > maxBytes) throw new GitIntakeLimitError("object", "Git object exceeds byte limit");
+				if (length + bytes.length > remaining)
+					throw new GitIntakeLimitError(
+						rawDelta ? "delta" : "decoded",
+						rawDelta ? "Git pack exceeds total delta byte limit" : "Git pack exceeds total decoded byte limit",
+					);
 				length += bytes.length;
 				for (let at = 0; at < bytes.length; ) {
 					const count = Math.min(pending.length - used, bytes.length - at);
@@ -78,7 +90,7 @@ export class GitObjectBytes {
 				length,
 				hash.digest("hex"),
 			);
-			this.storage.sql.exec("UPDATE git_object_budget SET decoded = decoded + ? WHERE scope = ?", length, this.scope);
+			this.storage.sql.exec("UPDATE git_object_budget SET decoded = decoded + ? WHERE scope = ?", length, budgetScope);
 		});
 		return this.get(id);
 	}
@@ -140,7 +152,7 @@ export class GitObjectBytes {
 		this.storage.transactionSync(() => {
 			this.storage.sql.exec("DELETE FROM git_object_bytes WHERE scope = ?", this.scope);
 			this.storage.sql.exec("DELETE FROM git_object_meta WHERE scope = ?", this.scope);
-			this.storage.sql.exec("DELETE FROM git_object_budget WHERE scope = ?", this.scope);
+			this.storage.sql.exec("DELETE FROM git_object_budget WHERE scope IN (?, ?)", this.scope, `${this.scope}:raw`);
 		});
 	}
 }

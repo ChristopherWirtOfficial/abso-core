@@ -13,6 +13,8 @@ import { DiskFirstRuntime } from "./disk-first-runtime.ts";
 import { EngineProject, SqliteLog } from "./engine-project.ts";
 import { artifactsOf, type Env } from "./env.ts";
 import { GitDiskIntake } from "./git-disk-intake.ts";
+import { GitFileContents } from "./git-file-contents.ts";
+import { GitIntakeLimitError } from "./git-intake-limit.ts";
 import { GitIntakeTrees } from "./git-intake-trees.ts";
 import { pushedSince, remoteHead } from "./ingest.ts";
 import {
@@ -65,6 +67,7 @@ const GIT_CHECK_MS = 15_000;
 const GIT_PACK_MAX_BYTES = 128 * 1024 * 1024;
 const GIT_OBJECT_MAX_BYTES = 64 * 1024 * 1024;
 const GIT_DECODED_MAX_BYTES = 256 * 1024 * 1024;
+const GIT_LIMIT_POLICY = `expanded-v2:${GIT_PACK_MAX_BYTES}:${GIT_OBJECT_MAX_BYTES}:${GIT_DECODED_MAX_BYTES}`;
 
 /**
  * The load guard (platform issue 46): an estimate of a loaded project's memory from its log entries, lines and claim
@@ -127,6 +130,7 @@ export class ProjectObject extends DurableObject<Env> {
 		this.blobs = new BlobStore(ctx.storage);
 		if (env.ABSO_DISK_FIRST === "on") {
 			GitDiskIntake.recover(ctx.storage);
+			GitFileContents.recover(ctx.storage);
 			GitIntakeTrees.recover(ctx.storage);
 		}
 	}
@@ -541,6 +545,22 @@ export class ProjectObject extends DurableObject<Env> {
 		const seen = await this.ctx.storage.get<string>("git:head");
 		const pushed = await this.ctx.storage.get<PushResult>("pushed");
 		const head = await remoteHead(artifacts, name);
+		const refusal = this.diskRuntime()
+			? await this.ctx.storage.get<{ head: string; policy: string; kind: GitIntakeLimitError["kind"]; error: string }>(
+					"git:size-refusal",
+				)
+			: undefined;
+		if (refusal) {
+			if (
+				head &&
+				head !== seen &&
+				head !== pushed?.commit &&
+				refusal.head === head &&
+				refusal.policy === GIT_LIMIT_POLICY
+			)
+				throw new GitIntakeLimitError(refusal.kind, refusal.error);
+			await this.ctx.storage.delete("git:size-refusal");
+		}
 		if (!head || head === seen || head === pushed?.commit) return null;
 		const sharedBlobs = this.useProject((p) => p.shared().blobs ?? {});
 		using trees = this.diskRuntime() ? new GitIntakeTrees(this.ctx.storage) : undefined;
@@ -560,7 +580,19 @@ export class ProjectObject extends DurableObject<Env> {
 						retainFileChunks: (files, path, chunks, oid) => trees.retainChunks(files, path, chunks, oid),
 					}
 				: undefined,
-		);
+		).catch(async (error: unknown) => {
+			if (trees && error instanceof GitIntakeLimitError) {
+				const refusal = {
+					head,
+					policy: GIT_LIMIT_POLICY,
+					kind: error.kind,
+					error: error.message,
+					at: new Date().toISOString(),
+				};
+				await this.ctx.storage.put({ "git:size-refusal": refusal, "git:error": refusal });
+			}
+			throw error;
+		});
 		if (!found || found.commits.length === 0) {
 			if (found) await this.ctx.storage.put("git:head", found.head);
 			return null;
@@ -619,14 +651,25 @@ export class ProjectObject extends DurableObject<Env> {
 		if (!artifacts) return;
 		const name = await this.ctx.storage.get<string>("name");
 		if (!name || !this.useProject((p) => p.exists())) return;
+		let intakeFailed = false;
 		await this.gitSync().then(
-			() => this.ctx.storage.delete("git:error"),
-			(e) =>
-				this.ctx.storage.put("git:error", {
+			async () => {
+				await this.ctx.storage.delete("git:error");
+				await this.ctx.storage.delete("git:retry-attempts");
+			},
+			async (e) => {
+				intakeFailed = true;
+				const attempts = ((await this.ctx.storage.get<number>("git:retry-attempts")) ?? 0) + 1;
+				await this.ctx.storage.put("git:retry-attempts", attempts);
+				await this.ctx.storage.put("git:error", {
 					at: new Date().toISOString(),
 					error: e instanceof Error ? e.message : String(e),
-				}),
+				});
+				await this.soon(Date.now() + (attempts === 1 ? 1 : attempts === 2 ? 5 : 15) * 60_000);
+			},
 		);
+		// Never export over a remote head whose changes could not be taken in.
+		if (intakeFailed) return;
 		const shared = pushSnapshot(
 			this.useProject((p) => p.sharedPushMetadata()),
 			(version, path) => this.useProject((current) => current.fileTextAt(version, path)),
@@ -641,7 +684,20 @@ export class ProjectObject extends DurableObject<Env> {
 		}
 		let result: PushResult;
 		try {
-			result = await pushShared(artifacts, name, shared, (sha) => this.blobs.read(sha));
+			result = await pushShared(
+				artifacts,
+				name,
+				shared,
+				(sha) => this.blobs.read(sha),
+				this.env.ABSO_DISK_FIRST === "on"
+					? {
+							storage: this.ctx.storage,
+							maxPackBytes: GIT_PACK_MAX_BYTES,
+							maxObjectBytes: GIT_OBJECT_MAX_BYTES,
+							maxDecodedBytes: GIT_DECODED_MAX_BYTES,
+						}
+					: undefined,
+			);
 		} catch (e) {
 			// Kept for /out, and tried again with a backoff of our own (a thrown alarm is retried only six times).
 			const was = await this.ctx.storage.get<{ attempts?: number }>("pushError");

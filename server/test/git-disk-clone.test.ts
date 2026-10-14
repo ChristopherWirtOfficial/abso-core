@@ -3,9 +3,11 @@ import { randomBytes } from "node:crypto";
 import { test } from "node:test";
 import git, { type HttpClient } from "isomorphic-git";
 import { GitDiskIntake } from "../src/git-disk-intake.ts";
+import { GitFileContents } from "../src/git-file-contents.ts";
 import { GitIntakeTrees } from "../src/git-intake-trees.ts";
 import { pushedSince } from "../src/ingest.ts";
 import { MemoryFS } from "../src/memory-fs.ts";
+import { commitShared } from "../src/push.ts";
 import { memoryStorage } from "./helpers.ts";
 
 const packet = (text: string | Uint8Array) => {
@@ -117,7 +119,8 @@ for (const mode of ["success", "limit", "fatal", "server-intake", "text-intake"]
 		};
 		const cache = {};
 		intake.attach(cache);
-		const fs = new MemoryFS();
+		const contents = new GitFileContents(storage, 1000000, 2000000);
+		const fs = new MemoryFS(contents);
 		const write = fs.promises.writeFile;
 		fs.promises.writeFile = async (path, ...args) => {
 			assert.ok(!/\.(pack|idx)$/.test(path), "clone must not persist a collected pack or index");
@@ -206,7 +209,34 @@ for (const mode of ["success", "limit", "fatal", "server-intake", "text-intake"]
 			assert.equal(await git.resolveRef({ fs, dir, ref: "main" }), head);
 			assert.equal((await git.readCommit({ fs, dir, cache, oid: head })).commit.tree, tree);
 			assert.deepEqual(Buffer.from((await git.readBlob({ fs, dir, cache, oid: blobOid })).blob), blob);
+			const exported = await commitShared(
+				fs,
+				dir,
+				head,
+				{
+					version: 1,
+					files: { "new.txt": "Disk export fixture" },
+					blobs: { "large.bin": "fixture-blob" },
+				},
+				() => blob,
+				undefined,
+				cache,
+			);
+			const next = await git.readCommit({ fs, dir, cache, oid: exported.commit });
+			assert.deepEqual(next.commit.parent, [head]);
+			assert.deepEqual(
+				Buffer.from((await git.readBlob({ fs, dir, cache, oid: exported.commit, filepath: "large.bin" })).blob),
+				blob,
+			);
+			assert.equal(
+				Buffer.from(
+					(await git.readBlob({ fs, dir, cache, oid: exported.commit, filepath: "new.txt" })).blob,
+				).toString(),
+				"Disk export fixture",
+			);
+			for (const entry of fs.entries.values()) if (entry.kind === "file") assert.equal(entry.data.byteLength, 0);
 		} finally {
+			contents.dispose();
 			intake.dispose();
 			storage.db.close();
 		}

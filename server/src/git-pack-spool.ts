@@ -49,7 +49,7 @@ export class GitPackSpool {
 				if (!(chunk instanceof Uint8Array)) throw Error("invalid pack chunk");
 				for (let at = 0; at < chunk.length; ) {
 					const count = Math.min(GitPackSpool.chunkBytes - used, chunk.length - at);
-					if (this.size + count > maxBytes) throw Error("pack exceeds byte limit");
+					if (this.size + count > maxBytes) throw new GitIntakeLimitError("pack", "pack exceeds byte limit");
 					const piece = chunk.subarray(at, at + count);
 					const joined = new Uint8Array(tail.length + piece.length);
 					joined.set(tail);
@@ -117,3 +117,5 @@ export class GitPackSpool {
 		this.storage.sql.exec("DELETE FROM git_pack_spool WHERE id = ?", this.id);
 	}
 }
+
+import { GitIntakeLimitError } from "./git-intake-limit.ts";

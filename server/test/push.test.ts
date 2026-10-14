@@ -3,7 +3,13 @@ import { describe, it } from "node:test";
 import git from "isomorphic-git";
 import { absoVersion } from "../src/ingest.ts";
 import { MemoryFS } from "../src/memory-fs.ts";
-import { commitShared, projectOfRepo, readTreeFiles, repoName } from "../src/push.ts";
+import { blobOid, commitShared, projectOfRepo, readTreeFiles, repoName } from "../src/push.ts";
+
+it("hashes exact Git blob bytes including a nonzero buffer offset", async () => {
+	assert.equal(await blobOid(new Uint8Array()), "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
+	const bytes = new TextEncoder().encode("prefixhello\nsuffix");
+	assert.equal(await blobOid(bytes.subarray(6, 12)), "ce013625030ba8dba906f756967f9e9ca394464a");
+});
 
 describe("repo names", () => {
 	it("names a project's Artifacts repo abso-<project>, and back", () => {

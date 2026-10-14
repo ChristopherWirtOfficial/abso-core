@@ -46,7 +46,7 @@ export class GitPackResolver {
 				throw Error("invalid delta base reference");
 		} else if (base !== undefined) throw Error("ordinary object has delta base");
 		this.storage.transactionSync(() => {
-			const stored = this.objects.put(type === "delta" ? "blob" : type, produce, this.maxObjectBytes);
+			const stored = this.objects.put(type === "delta" ? "blob" : type, produce, this.maxObjectBytes, type === "delta");
 			this.storage.sql.exec(
 				"INSERT INTO git_pack_resolve VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 				this.scope,

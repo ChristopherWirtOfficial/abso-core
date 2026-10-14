@@ -39,7 +39,7 @@ export function applyGitDeltaChunks(
 	};
 	if (integer() !== base.byteLength) throw Error("Git delta base length mismatch");
 	const size = integer();
-	if (size > maxResultBytes) throw Error("Git delta result exceeds bound");
+	if (size > maxResultBytes) throw new GitIntakeLimitError("object", "Git delta result exceeds bound");
 	const emit = (chunk: Uint8Array) => {
 		if (produced + chunk.length > size) throw Error("Git delta result length mismatch");
 		write(chunk);
@@ -71,3 +71,5 @@ export function applyGitDeltaChunks(
 	if (produced !== size) throw Error("Git delta result length mismatch");
 	return size;
 }
+
+import { GitIntakeLimitError } from "./git-intake-limit.ts";

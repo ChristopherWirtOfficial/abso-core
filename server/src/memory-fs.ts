@@ -9,10 +9,17 @@ function fsError(code: string, path: string): Error {
 
 type Entry =
 	| { kind: "dir"; children: Set<string>; mtimeMs: number }
-	| { kind: "file"; data: Uint8Array; exec: boolean; mtimeMs: number }
+	| { kind: "file"; data: Uint8Array; byteLength?: number; exec: boolean; mtimeMs: number }
 	| { kind: "link"; target: string; mtimeMs: number };
 
 const enc = new TextEncoder();
+
+/** Optional scratch storage for file contents; directory metadata remains in memory. */
+export interface FileContents {
+	write(path: string, bytes: Uint8Array): void;
+	read(path: string): Uint8Array;
+	remove(path: string): void;
+}
 
 /** Plain fields, not getters: isomorphic-git writes to them when it normalizes stats. */
 class MemoryStats {
@@ -25,7 +32,11 @@ class MemoryStats {
 	constructor(entry: Entry) {
 		this.kind = entry.kind;
 		this.size =
-			entry.kind === "file" ? entry.data.byteLength : entry.kind === "link" ? enc.encode(entry.target).byteLength : 0;
+			entry.kind === "file"
+				? (entry.byteLength ?? entry.data.byteLength)
+				: entry.kind === "link"
+					? enc.encode(entry.target).byteLength
+					: 0;
 		this.mtimeMs = entry.mtimeMs;
 		this.ctimeMs = entry.mtimeMs;
 		this.mode = entry.kind === "dir" ? 0o040000 : entry.kind === "link" ? 0o120000 : entry.exec ? 0o100755 : 0o100644;
@@ -45,6 +56,10 @@ class MemoryStats {
 }
 
 export class MemoryFS {
+	private readonly contents?: FileContents;
+	constructor(contents?: FileContents) {
+		this.contents = contents;
+	}
 	encoder = new TextEncoder();
 	decoder = new TextDecoder();
 	entries = new Map<string, Entry>([["/", { kind: "dir", children: new Set(), mtimeMs: Date.now() }]]);
@@ -157,10 +172,12 @@ export class MemoryFS {
 		const bytes =
 			typeof data === "string" ? this.encoder.encode(data) : data instanceof Uint8Array ? data : new Uint8Array(data);
 		const mode = typeof options === "object" && options !== null ? options.mode : undefined;
+		this.contents?.write(target, bytes);
 
 		this.entries.set(target, {
 			kind: "file",
-			data: bytes,
+			data: this.contents ? new Uint8Array(0) : bytes,
+			...(this.contents ? { byteLength: bytes.byteLength } : {}),
 			exec: mode !== undefined && (mode & 0o111) !== 0,
 			mtimeMs: Date.now(),
 		});
@@ -174,7 +191,12 @@ export class MemoryFS {
 			throw fsError("EISDIR", path);
 		}
 
-		const data = entry.kind === "link" ? this.encoder.encode(entry.target) : entry.data;
+		const data =
+			entry.kind === "link"
+				? this.encoder.encode(entry.target)
+				: this.contents
+					? this.contents.read(this.normalize(path))
+					: entry.data;
 		const encoding = typeof options === "string" ? options : options?.encoding;
 		return encoding ? this.decoder.decode(data) : data;
 	}
@@ -190,6 +212,7 @@ export class MemoryFS {
 			throw fsError("EISDIR", path);
 		}
 
+		if (entry.kind === "file") this.contents?.remove(target);
 		this.entries.delete(target);
 		this.requireDir(this.parent(target)).children.delete(this.basename(target));
 	}

@@ -3,9 +3,14 @@
 // is created on first use. isomorphic-git works in an in-memory filesystem:
 // a depth-1 clone of main with nothing checked out, then a new tree from
 // shared's files that compresses and writes only what changed (abso issue 293).
+import { createHash } from "node:crypto";
 import git from "isomorphic-git";
 import http from "isomorphic-git/http/web";
 import type { FileModes } from "../../worker/project/project-api.ts";
+import type { SqliteStorage } from "./engine-project.ts";
+import { GitDiskIntake } from "./git-disk-intake.ts";
+import { GitFileContents } from "./git-file-contents.ts";
+import { gitHttp } from "./git-http.ts";
 import { MemoryFS } from "./memory-fs.ts";
 
 export interface PushResult {
@@ -33,28 +38,23 @@ export async function readTreeFiles(
 	prefix = "",
 	files = new Map<string, TreeFile>(),
 	trees = new Map<string, string>(),
+	cache?: object,
 ): Promise<{ files: Map<string, TreeFile>; trees: Map<string, string> }> {
 	trees.set(prefix, oid);
-	const { tree } = await git.readTree({ fs, dir, oid });
+	const { tree } = await git.readTree({ fs, dir, oid, cache });
 	for (const e of tree) {
 		const path = prefix === "" ? e.path : `${prefix}/${e.path}`;
-		if (e.type === "tree") await readTreeFiles(fs, dir, e.oid, path, files, trees);
+		if (e.type === "tree") await readTreeFiles(fs, dir, e.oid, path, files, trees, cache);
 		else if (e.type === "blob") files.set(path, { oid: e.oid, mode: e.mode });
 	}
 	return { files, trees };
 }
 
 /**
- * A blob's git oid, with the platform's SHA-1 (abso issue 293): native and awaited, so hashing every file of a big
- * project neither burns the object's CPU in JavaScript nor holds its other requests back for long.
+ * Hash the Git header and content separately so export does not allocate a second whole-file buffer.
  */
 export async function blobOid(bytes: Uint8Array): Promise<string> {
-	const head = new TextEncoder().encode(`blob ${bytes.byteLength}\0`);
-	const all = new Uint8Array(head.byteLength + bytes.byteLength);
-	all.set(head);
-	all.set(bytes, head.byteLength);
-	const d = new Uint8Array(await crypto.subtle.digest("SHA-1", all));
-	return [...d].map((b) => b.toString(16).padStart(2, "0")).join("");
+	return createHash("sha1").update(`blob ${bytes.byteLength}\0`).update(bytes).digest("hex");
 }
 
 const parentOf = (path: string) => {
@@ -152,9 +152,18 @@ export async function commitShared(
 	shared: SharedFiles,
 	readBlob: (sha256: string) => Uint8Array | null,
 	part: (commit: string) => Promise<void> = async () => {},
+	cache?: object,
 ): Promise<{ commit: string; changed: number }> {
 	const old = head
-		? await readTreeFiles(fs, dir, (await git.readCommit({ fs, dir, oid: head })).commit.tree)
+		? await readTreeFiles(
+				fs,
+				dir,
+				(await git.readCommit({ fs, dir, oid: head, cache })).commit.tree,
+				"",
+				new Map(),
+				new Map(),
+				cache,
+			)
 		: { files: new Map<string, TreeFile>(), trees: new Map<string, string>() };
 	const blobs = shared.blobs ?? {};
 	const now = new Map<string, TreeFile>();
@@ -187,6 +196,7 @@ export async function commitShared(
 		for (const [path, f] of old.files) if (!files.has(path) && path in blobs) files.set(path, f);
 		const tree = await writeTrees(fs, dir, files, old.trees, changed);
 		parent = await git.commit({
+			cache,
 			fs,
 			dir,
 			message,
@@ -226,27 +236,59 @@ export async function pushShared(
 	shared: SharedFiles,
 	/** A binary file's bytes by SHA-256 (#27), from the project's blob store. */
 	readBlob: (sha256: string) => Uint8Array | null = () => null,
+	disk?: { storage: SqliteStorage; maxPackBytes: number; maxObjectBytes: number; maxDecodedBytes: number },
 ): Promise<PushResult> {
 	const t0 = Date.now();
 	const name = repoName(project);
 	const { remote, secret } = await writeAccess(artifacts, name);
 	const onAuth = () => ({ username: "x", password: secret });
-	let fs = new MemoryFS();
+	using contents = disk ? new GitFileContents(disk.storage, disk.maxObjectBytes, disk.maxDecodedBytes) : undefined;
+	using intake = disk
+		? new GitDiskIntake(disk.storage, disk.maxPackBytes, disk.maxObjectBytes, disk.maxDecodedBytes)
+		: undefined;
+	const cache = disk ? {} : undefined;
+	if (intake && cache) intake.attach(cache);
+	const transport = disk ? gitHttp() : http;
+	let fs = new MemoryFS(contents);
 	const dir = "/repo";
 	// A new repo has no main yet. isomorphic-git "clones" an empty repo without
 	// an error but leaves HEAD on master, so check for main and start clean.
 	// Nothing is checked out: the new tree is built from tree objects (293).
-	const head = await git
-		.clone({ fs, http, dir, url: remote, ref: "main", singleBranch: true, depth: 1, noCheckout: true, onAuth })
-		.then(() => git.resolveRef({ fs, dir, ref: "main" }))
-		.catch(() => null);
+	// Only an explicitly absent main is an empty repository. Transport, decode,
+	// and size failures must never become permission to replace remote history.
+	const refs = await git.listServerRefs({ http: transport, url: remote, onAuth, prefix: "refs/heads/main" });
+	let head: string | null = null;
+	if (refs.some((ref) => ref.ref === "refs/heads/main")) {
+		await git.clone({
+			fs,
+			http: transport,
+			cache,
+			dir,
+			url: remote,
+			ref: "main",
+			singleBranch: true,
+			depth: 1,
+			noCheckout: true,
+			onAuth,
+		});
+		intake?.assertReady();
+		head = await git.resolveRef({ fs, dir, ref: "main" });
+	}
 	if (head === null) {
-		fs = new MemoryFS();
+		fs = new MemoryFS(contents);
 		await git.init({ fs, dir, defaultBranch: "main" });
 	}
 	const t1 = Date.now();
-	const push = () => git.push({ fs, http, dir, url: remote, ref: "main", remoteRef: "main", onAuth });
-	const { commit, changed } = await commitShared(fs, dir, head, shared, readBlob, async () => void (await push()));
+	const push = () => git.push({ fs, http: transport, cache, dir, url: remote, ref: "main", remoteRef: "main", onAuth });
+	const { commit, changed } = await commitShared(
+		fs,
+		dir,
+		head,
+		shared,
+		readBlob,
+		async () => void (await push()),
+		cache,
+	);
 	const t2 = Date.now();
 	await push();
 	console.log(

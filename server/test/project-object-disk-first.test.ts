@@ -5,6 +5,7 @@ import git from "isomorphic-git";
 import { Project } from "../../worker/project/project.ts";
 import { EngineProject } from "../src/engine-project.ts";
 import { GitDiskIntake } from "../src/git-disk-intake.ts";
+import { GitIntakeLimitError } from "../src/git-intake-limit.ts";
 import { MemoryFS } from "../src/memory-fs.ts";
 import { memoryStorage } from "./helpers.ts";
 
@@ -20,6 +21,160 @@ const hooks = registerHooks({
 });
 const { ProjectObject } = await import("../src/project-object.ts");
 hooks.deregister();
+
+for (const disk of [false, true])
+	test(`failed intake retries across cold objects with disk mode ${disk}`, async (t) => {
+		const storage = memoryStorage();
+		t.after(() => storage.db.close());
+		const values = new Map<string, unknown>();
+		let alarm: number | null = null;
+		const context = {
+			id: { toString: () => "retry" },
+			storage: {
+				...storage,
+				get: async (key: string) => values.get(key),
+				put: async (key: string | Record<string, unknown>, value?: unknown) => {
+					if (typeof key === "string") values.set(key, value);
+					else for (const [name, item] of Object.entries(key)) values.set(name, item);
+				},
+				delete: async (key: string) => values.delete(key),
+				getAlarm: async () => alarm,
+				setAlarm: async (value: number) => {
+					alarm = value;
+				},
+			},
+		};
+		const object = (enabled: boolean) =>
+			new ProjectObject(
+				context as never,
+				{
+					ABSO_DISK_FIRST: disk ? "on" : "off",
+					ABSO_ARTIFACTS: enabled ? "on" : "off",
+					ARTIFACTS: {},
+				} as never,
+			);
+		assert.equal((await object(false).call("retry", "init", undefined, { files: { "a.txt": "first\n" } })).status, 200);
+		let ready = false;
+		for (let page = 0; page < 100; page++) {
+			if ((await object(false).call("retry", "status", undefined, {})).status === 200) {
+				ready = true;
+				break;
+			}
+		}
+		assert.equal(ready, true);
+		let fails = true;
+		t.mock.method(ProjectObject.prototype, "gitSync", async () => {
+			if (fails) throw Error("transient intake failure");
+			return null;
+		});
+		for (const [index, minutes] of [1, 5, 15, 15].entries()) {
+			alarm = null;
+			const before = Date.now();
+			await object(true).alarm();
+			assert.equal(values.get("git:retry-attempts"), index + 1);
+			assert.ok(alarm !== null && alarm >= before + minutes * 60000 && alarm <= Date.now() + minutes * 60000);
+			assert.equal(values.get("pushed"), undefined);
+		}
+		fails = false;
+		values.set("pushed", { version: Number.MAX_SAFE_INTEGER });
+		alarm = null;
+		await object(true).alarm();
+		assert.equal(values.has("git:retry-attempts"), false);
+		assert.equal(values.has("git:error"), false);
+	});
+
+test("size refusals survive cold objects, retry changed heads or policy, and prevent outgoing pushes", async (t) => {
+	let scheduled = 0;
+	const storage = memoryStorage();
+	t.after(() => storage.db.close());
+	const values = new Map<string, unknown>();
+	const context = {
+		id: { toString: () => "size-refusal" },
+		storage: {
+			...storage,
+			get: async (key: string) => values.get(key),
+			put: async (key: string | Record<string, unknown>, value?: unknown) => {
+				if (typeof key === "string") values.set(key, value);
+				else for (const [name, item] of Object.entries(key)) values.set(name, item);
+			},
+			delete: async (key: string) => values.delete(key),
+			getAlarm: async () => null,
+			setAlarm: async (value: number) => {
+				scheduled = value;
+			},
+		},
+	};
+	const artifacts = {
+		get: async () => ({
+			info: async () => ({ remote: "https://artifacts.invalid/size" }),
+			createToken: async () => ({ plaintext: "invented-test-token" }),
+			[Symbol.dispose]() {},
+		}),
+	};
+	const object = (enabled = true) =>
+		new ProjectObject(
+			context as never,
+			{
+				ABSO_DISK_FIRST: "on",
+				ABSO_ARTIFACTS: enabled ? "on" : "off",
+				ARTIFACTS: artifacts,
+			} as never,
+		);
+	assert.equal(
+		(await object(false).call("size-refusal", "init", undefined, { files: { "a.txt": "original\n" } })).status,
+		200,
+	);
+	let ready = false;
+	for (let page = 0; page < 100; page++) {
+		const result = await object(false).call("size-refusal", "status", undefined, {});
+		if (result.status === 200) {
+			ready = true;
+			break;
+		}
+		assert.equal(result.status, 503);
+	}
+	assert.equal(ready, true, "project indexing must finish before testing intake refusals");
+	let head = "a".repeat(40),
+		downloads = 0,
+		pushes = 0,
+		transient = false;
+	t.mock.method(git, "listServerRefs", async () => [{ ref: "refs/heads/main", oid: head }]);
+	t.mock.method(git, "clone", async () => {
+		downloads++;
+		if (transient) throw Error("temporary network failure");
+		throw new GitIntakeLimitError("decoded", "Git pack exceeds total decoded byte limit");
+	});
+	t.mock.method(git, "push", async () => {
+		pushes++;
+		return { ok: true };
+	});
+	await assert.rejects(() => object().gitSync(), /decoded byte limit/);
+	await assert.rejects(() => object().gitSync(), /decoded byte limit/);
+	assert.equal(downloads, 1);
+	assert.equal(values.get("git:head"), undefined);
+	assert.equal((await object().out()).version, 0);
+	assert.match(JSON.stringify((await object().out()).git.error), /decoded byte limit/);
+	await object().alarm();
+	assert.ok(scheduled >= Date.now() + 59_000);
+	assert.equal(values.get("git:retry-attempts"), 1);
+	assert.equal(downloads, 1);
+	assert.equal(pushes, 0);
+	head = "b".repeat(40);
+	await assert.rejects(() => object().gitSync(), /decoded byte limit/);
+	assert.equal(downloads, 2);
+	values.set("git:size-refusal", { ...(values.get("git:size-refusal") as object), policy: "old-policy" });
+	await assert.rejects(() => object().gitSync(), /decoded byte limit/);
+	assert.equal(downloads, 3);
+	head = "c".repeat(40);
+	transient = true;
+	await assert.rejects(() => object().gitSync(), /temporary network failure/);
+	await assert.rejects(() => object().gitSync(), /temporary network failure/);
+	assert.equal(downloads, 5);
+	assert.equal(values.has("git:size-refusal"), false);
+	await object().alarm();
+	assert.equal(pushes, 0);
+	assertGitScratchEmpty(storage);
+});
 
 function assertGitScratchEmpty(storage: ReturnType<typeof memoryStorage>) {
 	for (const table of [
@@ -333,7 +488,16 @@ test("ProjectObject disk-first calls survive cold objects without replay", async
 		const blob = await git.readBlob({ fs: options.fs, dir: options.dir, oid, filepath: "a.txt" });
 		assert.equal(new TextDecoder().decode(blob.blob), "Alice's change\n");
 		pushed++;
-		remoteFiles = options.fs as MemoryFS;
+		// The remote owns its copy; the export's scratch files expire when push returns.
+		remoteFiles = new MemoryFS();
+		for (const [path, entry] of (options.fs as MemoryFS).entries) {
+			remoteFiles.entries.set(
+				path,
+				entry.kind === "file"
+					? { ...entry, data: new Uint8Array((await (options.fs as MemoryFS).readFile(path)) as Uint8Array) }
+					: { ...entry },
+			);
+		}
 		return { ok: true };
 	});
 	const artifacts = {
