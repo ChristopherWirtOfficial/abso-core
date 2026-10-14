@@ -18,6 +18,7 @@
 // ABSO_TOKEN set, the server refuses every call.
 
 import { type Answer, validName } from "../../worker/project/http.ts";
+import { adviseHeld } from "./autosettle.ts";
 import { artifactsOf, type Env, secret } from "./env.ts";
 import type { IssuesAuth, issuesFetch } from "./issues-entry.ts";
 import { isAgentKey, type KeyRole, keyAllows, keysEnabled, timingSame } from "./keys.ts";
@@ -268,6 +269,15 @@ async function projectRoute(
 			keyForCall,
 			request.headers.get("Idempotency-Key") ?? undefined,
 		)) as unknown as Answer;
+		// A held push gets a first opinion on each collision (#19), when the server is set up for it.
+		if (op === "publish" && env.AUTOSETTLE === "on" && env.AI && agent) {
+			const held = a.body as { ok?: boolean; collisions?: Parameters<typeof adviseHeld>[1] };
+			if (held.ok === false && held.collisions && held.collisions.length > 0) {
+				const message = String((body as { message?: unknown } | undefined)?.message ?? "");
+				const advice = await adviseHeld(env.AI, held.collisions, { agent, message });
+				if (advice.some((x) => x !== null)) return json(a.status, { ...held, advice });
+			}
+		}
 		return json(a.status, a.body);
 	} catch (e) {
 		const error = `the project object failed: ${e instanceof Error ? e.message : String(e)}`;

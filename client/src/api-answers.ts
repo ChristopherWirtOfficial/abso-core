@@ -88,7 +88,21 @@ export type PublishAnswer =
 	  }
 	/** With the merge queue on (#39): queued, not landed yet; `ahead` publishes wait in front of it. */
 	| { ok: true; queued: number; position: number; ahead: number; changes: number; settled?: readonly Settled[] }
-	| { ok: false; collisions: readonly Collision[]; reason?: string };
+	| { ok: false; collisions: readonly Collision[]; reason?: string; advice?: readonly (Advice | null)[] };
+/**
+ * A server's first opinion on one collision of a held push (#19), when it runs AUTOSETTLE: which settle fits,
+ * how sure, and why. `by`: rule (code decided), model (Workers AI), or turned down (the model's pick would break
+ * the file, so an agent settles).
+ */
+export interface Advice {
+	readonly pick: "yours" | "theirs" | "both" | "agent";
+	readonly confidence: number;
+	readonly reason: string;
+	readonly by: "rule" | "model" | "turned down";
+	readonly modelPick?: string;
+	readonly model?: string;
+	readonly ms: number;
+}
 /** A note on lines (#44): where its lines are now, or null when they're all gone. */
 export interface NoteAnswer {
 	readonly id: number;

@@ -24,6 +24,10 @@ export interface Env {
 	/** Per-agent keys: "on" with KEY_HMAC_SECRET set. */
 	AGENT_KEYS?: string;
 	KEY_HMAC_SECRET?: string;
+	/** "on" gives a held push a first opinion on each collision from Workers AI (#19); needs the AI binding. */
+	AUTOSETTLE?: string;
+	/** Workers AI, for AUTOSETTLE. Unbound unless wrangler.jsonc names it. */
+	AI?: { run(model: string, input: unknown): Promise<unknown> };
 }
 
 /** A secret by its abso name, or its avcs name from before the rename. Empty counts as unset. */

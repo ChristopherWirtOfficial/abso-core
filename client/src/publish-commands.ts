@@ -2,7 +2,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Api, ApiError, type Collision, type Settled } from "./api.ts";
+import { type Advice, type Api, ApiError, type Collision, type Settled } from "./api.ts";
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { boxOf, knownPrep, runRun, shellWord } from "./box-commands.ts";
 import { collisionsHeading, collisionText, mergedLinesText, mergedText } from "./collision-text.ts";
@@ -458,6 +458,8 @@ async function publishSteps(
 	const real = collisions.filter((c) => !isLocalOnly(c.file));
 	const twice = real.filter((c) => c.kind === "duplicate");
 	const newer = real.filter((c) => c.kind !== "duplicate");
+	// The server's first opinion on each collision (#19), when it runs AUTOSETTLE. Advice only: the agent settles.
+	const advice = answer.advice ?? [];
 	return {
 		exit: EXIT.refused,
 		text: [
@@ -465,6 +467,12 @@ async function publishSteps(
 			// A name defined twice is already in your folder (sync listed it); the rest is newer work.
 			`Not pushed: ${plural(collisions.length, "collision")}${newer.length > 0 ? " with work pushed since your last pull" : ""}.${answer.reason ? ` (${answer.reason})` : ""}`,
 			...real.map(collisionText),
+			...(advice.some((a) => a)
+				? [
+						"First opinion (a model on the server, with checks in code; you still settle):",
+						...collisions.flatMap((c, i) => (advice[i] ? [`  ${c.file}: ${adviceWords(advice[i]!)}`] : [])),
+					]
+				: []),
 			...(local.length > 0
 				? [
 						`  ${local.map((c) => c.file).join(", ")}: local files that should never have been shared. abso pull drops them from your draft and leaves your copy on disk.`,
@@ -481,8 +489,24 @@ async function publishSteps(
 					? "Keep one definition of each name defined twice (delete yours, or theirs), then push again."
 					: "Run abso pull, then push again.",
 		].join("\n"),
-		json: { collisions, recorded: recorded.sent, ...(answer.reason ? { reason: answer.reason } : {}) },
+		json: {
+			collisions,
+			recorded: recorded.sent,
+			...(answer.reason ? { reason: answer.reason } : {}),
+			...(advice.length > 0 ? { advice } : {}),
+		},
 	};
+}
+
+function adviceWords(a: Advice): string {
+	const what = a.pick === "agent" ? "needs an agent" : `keep ${a.pick}`;
+	const how =
+		a.by === "rule"
+			? "by a check in code"
+			: a.by === "turned down"
+				? `the model said keep ${a.modelPick}, turned down`
+				: `${a.confidence.toFixed(2)} of samples agree`;
+	return `${what} (${how}): ${a.reason}`;
 }
 
 export async function runSync(args: Parsed, env: Env): Promise<Output> {
