@@ -6,6 +6,24 @@ import { JsonStringChunks, jsonValueChunks, registerJsonChunkValue } from "../js
 import { StoredText } from "../stored-text.ts";
 import { SqlState } from "./storage-helper.ts";
 
+test("many stored insertion runs serialize with linear reads and support backwards access", (t) => {
+	const storage = new SqlState();
+	t.after(() => storage.db.close());
+	const files = Object.fromEntries(Array.from({ length: 128 }, (_, i) => [`f${i}`, `${i}:${"x".repeat(17000)}\n`]));
+	const graph = new Graph({ storage });
+	graph.add(buildBase(files, { author: "writer", message: "many runs" }));
+	const stored = graph.atom("a0");
+	const expected = JSON.stringify(stored);
+	const before = storage.reads;
+	assert.equal([...jsonValueChunks(stored)].join(""), expected);
+	assert.ok(storage.reads - before < 128 * 25, `serialization used ${storage.reads - before} reads`);
+	for (const index of [127, 0, 64, 2, 126, 1]) {
+		const run = stored.inserts[index]!;
+		assert.equal(run.lines[0], files[run.file]!.trimEnd());
+	}
+	assert.equal([...jsonValueChunks(stored)].join(""), expected);
+});
+
 test("chunk-backed JSON strings preserve escaping and split UTF-16 exactly", () => {
 	const values = [
 		"",

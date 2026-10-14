@@ -380,6 +380,20 @@ export class Graph {
 									throw Error("stored atom text range missing");
 								}
 							: undefined;
+					// Sequential reads advance once per run without retaining a history-sized offset array.
+					let offsetRun = 0;
+					let offsetLine = 0;
+					const insertionStart = (index: number): number => {
+						if (index < offsetRun) {
+							offsetRun = 0;
+							offsetLine = 0;
+						}
+						while (offsetRun < index) {
+							offsetLine += readonlyStoredArray(storage, `atom-inserts:${atom.seq}:lines:${offsetRun}`).length;
+							offsetRun++;
+						}
+						return offsetLine;
+					};
 					const streamed = (target: Atom): Atom => {
 						registerJsonChunkValue(target, () => {
 							const line = (raw: unknown, index: number): unknown => {
@@ -397,9 +411,7 @@ export class Graph {
 									const lines = `${collection}:lines:${index}`;
 									if (run.lines !== lines || typeof run.file !== "string" || typeof run.parent !== "string")
 										throw Error("invalid stored insertion run");
-									let start = 0;
-									for (let prior = 0; prior < index; prior++)
-										start += readonlyStoredArray(storage, `${collection}:lines:${prior}`).length;
+									const start = insertionStart(index);
 									return {
 										file: run.file,
 										parent: run.parent,
@@ -440,9 +452,7 @@ export class Graph {
 								lines: readonlyStoredArray<string>(storage, lines, (rawLine, lineIndex) => {
 									if (typeof rawLine === "string") return rawLine;
 									const ref = rawLine as TextReference;
-									let atomLine = lineIndex;
-									for (let prior = 0; prior < index; prior++)
-										atomLine += readonlyStoredArray(storage, `${collection}:lines:${prior}`).length;
+									const atomLine = insertionStart(index) + lineIndex;
 									if (!ref || ref.text !== JSON.stringify([String(atom.seq), atomLine]))
 										throw Error("invalid stored insertion text");
 									return atomText.read(ref.text);
