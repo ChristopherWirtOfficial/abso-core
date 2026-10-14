@@ -15626,9 +15626,9 @@ var require_cst = __commonJS({
     var cstStringify = require_cst_stringify();
     var cstVisit = require_cst_visit();
     var BOM = "\uFEFF";
-    var DOCUMENT = "";
-    var FLOW_END = "";
-    var SCALAR = "";
+    var DOCUMENT = "\x02";
+    var FLOW_END = "\x18";
+    var SCALAR = "\x1f";
     var isCollection = (token) => !!token && "items" in token;
     var isScalar = (token) => !!token && (token.type === "scalar" || token.type === "single-quoted-scalar" || token.type === "double-quoted-scalar" || token.type === "block-scalar");
     function prettyToken(token) {

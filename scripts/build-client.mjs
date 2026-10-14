@@ -43,7 +43,12 @@ export function buildClient() {
 			].join("\n"),
 		},
 	});
-	return result.outputFiles[0].text;
+	// esbuild leaves control characters in string literals as they are (yaml's lexer has \x02, \x18 and \x1f).
+	// Escaped, the file is plain text that every tool shows and stores as it is.
+	return result.outputFiles[0].text.replace(
+		/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g,
+		(c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, "0")}`,
+	);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
