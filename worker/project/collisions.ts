@@ -68,26 +68,44 @@ export function pairsIn(
  * atom key, retaining no candidate set proportional to historical claims. */
 function* orderedClaimants(g: Graph, streams: IterableIterator<AtomId>[]): IterableIterator<AtomId> {
 	try {
-		const heads = streams.map((stream) => stream.next());
-		let previous = -1;
-		for (;;) {
-			let best = -1;
-			let seq = Infinity;
-			for (let i = 0; i < heads.length; i++) {
-				const head = heads[i]!;
-				if (head.done) continue;
-				const current = g.atom(head.value).seq;
-				if (current < seq) {
-					best = i;
-					seq = current;
-				}
+		type Head = { id: AtomId; seq: number; stream: number };
+		const heap: Head[] = [];
+		const less = (a: Head, b: Head) => a.seq < b.seq || (a.seq === b.seq && a.stream < b.stream);
+		const push = (head: Head) => {
+			let at = heap.length;
+			heap.push(head);
+			while (at > 0) {
+				const parent = (at - 1) >>> 1;
+				if (!less(head, heap[parent]!)) break;
+				heap[at] = heap[parent]!;
+				at = parent;
 			}
-			if (best < 0) return;
-			const id = heads[best]!.value!;
-			heads[best] = streams[best]!.next();
-			if (seq === previous) continue;
-			previous = seq;
-			yield id;
+			heap[at] = head;
+		};
+		const advance = (stream: number) => {
+			const next = streams[stream]!.next();
+			if (!next.done) push({ id: next.value, seq: g.atom(next.value).seq, stream });
+		};
+		for (let stream = 0; stream < streams.length; stream++) advance(stream);
+		let previous = -1;
+		while (heap.length) {
+			const head = heap[0]!;
+			const tail = heap.pop()!;
+			if (heap.length) {
+				let at = 0;
+				while (at * 2 + 1 < heap.length) {
+					let child = at * 2 + 1;
+					if (child + 1 < heap.length && less(heap[child + 1]!, heap[child]!)) child++;
+					if (!less(heap[child]!, tail)) break;
+					heap[at] = heap[child]!;
+					at = child;
+				}
+				heap[at] = tail;
+			}
+			advance(head.stream);
+			if (head.seq === previous) continue;
+			previous = head.seq;
+			yield head.id;
 		}
 	} finally {
 		for (const stream of streams) stream.return?.();

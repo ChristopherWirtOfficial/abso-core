@@ -7,6 +7,16 @@ import { test } from "node:test";
 import { MemoryStore, Project } from "../project.ts";
 import { where } from "../where.ts";
 
+test("where does not construct shared history when every draft is empty", (t) => {
+	const project = new Project(new MemoryStore());
+	project.init({ "a.txt": "one\n" }, 0);
+	project.sync("idle");
+	t.mock.method(project, "sharedView", () => {
+		throw Error("unnecessary shared history construction");
+	});
+	assert.deepEqual(where(project), { version: 0, files: {}, starting: [] });
+});
+
 test("where answers right with more agents than the view cache holds, and lays out no view for an empty draft", () => {
 	const store = new MemoryStore();
 	const project = new Project(store);

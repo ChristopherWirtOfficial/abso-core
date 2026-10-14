@@ -103,3 +103,30 @@ test("bounded locator batches preserve old roots, discard intermediate pages, an
 		db.db.close();
 	}
 });
+
+test("multi-key locator updates match sequential sparse edits and retain previous roots", () => {
+	const db = new SqlState();
+	try {
+		const batched = new ProjectionLocator(db, "multi", decode);
+		const sequential = new ProjectionLocator(db, "oracle", decode);
+		let left: number | null = null,
+			right: number | null = null;
+		let seed = 12345;
+		const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
+		const keys = [0, 0xffffffff, 1, 16, 255, 256, ...Array.from({ length: 60 }, random)];
+		for (let round = 0; round < 8; round++) {
+			const edits: [number, number][] = Array.from({ length: 64 }, (_, i) => [
+				keys[random() % keys.length]!,
+				round * 100 + i,
+			]);
+			const prior: number | null = left;
+			const oldEntries: (readonly [number, number])[] = [...batched.entries(prior)];
+			left = batched.setMany(left, edits);
+			for (const [key, value] of edits) right = sequential.set(right, key, value);
+			assert.deepEqual([...batched.entries(left)], [...sequential.entries(right)]);
+			assert.deepEqual([...batched.entries(prior)], oldEntries);
+		}
+	} finally {
+		db.db.close();
+	}
+});

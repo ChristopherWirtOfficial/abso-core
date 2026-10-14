@@ -282,7 +282,12 @@ export function storedNumbers(storage: GraphStateStorage, name: string) {
 }
 
 /** Array-shaped access without retaining its historical values in memory. */
-export function storedArray<T>(storage: GraphStateStorage, name: string, decode?: (value: T) => T): T[] {
+export function storedArray<T>(
+	storage: GraphStateStorage,
+	name: string,
+	decode?: (value: T) => T,
+	encode?: (value: T, key: string) => unknown,
+): T[] {
 	const length = () => (storage.read(`${name}:meta`, "length") as number | undefined) ?? 0;
 	const read = (key: string) => {
 		const value = storage.read(name, key) as T;
@@ -303,7 +308,7 @@ export function storedArray<T>(storage: GraphStateStorage, name: string, decode?
 			const index = Number(key);
 			const size = length();
 			if (index > size) throw new Error("stored graph arrays cannot contain gaps");
-			storage.write(name, key, value);
+			storage.write(name, key, encode ? encode(value, key) : value);
 			if (index === size) storage.write(`${name}:meta`, "length", size + 1);
 			return true;
 		},
@@ -370,6 +375,14 @@ export function storedLists<V>(
 					throw new Error(`incomplete writer list page in ${name}`);
 				yield* values;
 			}
+		},
+		last(key: string): V | undefined {
+			const count = length(key);
+			if (count === 0) return undefined;
+			const values = page(key, Math.floor((count - 1) / pageSize));
+			const expected = ((count - 1) % pageSize) + 1;
+			if (values.length !== expected) throw new Error(`incomplete writer list page in ${name}`);
+			return values[expected - 1];
 		},
 		append(key: string, value: V): void {
 			const count = length(key);
@@ -531,4 +544,64 @@ export class StoredSet<K extends string | number> extends Set<K> {
 	override forEach(callback: (value: K, key: K, set: Set<K>) => void, thisArg?: unknown): void {
 		for (const key of this.values()) callback.call(thisArg, key, key, this);
 	}
+}
+
+/** Read-only array access to individually stored values, without copying the list. */
+export function readonlyStoredArray<T>(
+	storage: GraphStateStorage,
+	name: string,
+	decode?: (value: unknown, index: number) => T,
+): readonly T[] {
+	const length = () => {
+		const count = storage.read(`${name}:meta`, "length");
+		if (!Number.isSafeInteger(count) || (count as number) < 0) throw Error("invalid stored list length");
+		return count as number;
+	};
+	length();
+	return new Proxy([] as T[], {
+		get(target, key, receiver) {
+			if (key === "length") return length();
+			if (indexKey(key)) {
+				if (Number(key) >= length()) return undefined;
+				const raw = storage.read(name, key);
+				const value = raw === undefined ? undefined : decode ? decode(raw, Number(key)) : (raw as T);
+				if (value === undefined) throw Error("missing stored list element");
+				return value && typeof value === "object" ? Object.freeze(value) : value;
+			}
+			return Reflect.get(target, key, receiver);
+		},
+		has(target, key) {
+			return indexKey(key) ? Number(key) < length() : Reflect.has(target, key);
+		},
+		ownKeys() {
+			return [...Array.from({ length: length() }, (_, index) => String(index)), "length"];
+		},
+		getOwnPropertyDescriptor(target, key) {
+			if (key === "length") return { ...Reflect.getOwnPropertyDescriptor(target, key)!, value: length() };
+			if (indexKey(key) && Number(key) < length()) {
+				const raw = storage.read(name, key);
+				const value = raw === undefined ? undefined : decode ? decode(raw, Number(key)) : (raw as T);
+				if (value === undefined) throw Error("missing stored list element");
+				return {
+					configurable: true,
+					enumerable: true,
+					writable: false,
+					value: value && typeof value === "object" ? Object.freeze(value) : value,
+				};
+			}
+			return Reflect.getOwnPropertyDescriptor(target, key);
+		},
+		preventExtensions() {
+			throw Error("stored list is read-only");
+		},
+		set() {
+			throw Error("stored list is read-only");
+		},
+		deleteProperty() {
+			throw Error("stored list is read-only");
+		},
+		defineProperty() {
+			throw Error("stored list is read-only");
+		},
+	});
 }

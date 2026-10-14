@@ -63,42 +63,52 @@ export class ProjectionLocator<T> {
 		this.#storage.write(this.#collection, "next", next + 1);
 		return next;
 	}
-	/** Persist only pages reachable from the final root of a bounded update batch. */
+	/** Update each touched branch once, retaining at most 256 decoded values. */
 	setMany(root: Page, values: ReadonlyArray<readonly [number, T]>): Page {
 		page(root);
 		if (values.length > 256) throw Error("locator batch limit");
 		return this.#storage.transaction(() => {
-			const staged = new Map<string, unknown>();
-			const storage: GraphStateStorage = {
-				read: (collection, key) =>
-					collection === this.#collection && staged.has(key) ? staged.get(key) : this.#storage.read(collection, key),
-				write: (collection, key, value) => {
-					if (collection !== this.#collection) throw Error("unexpected batch collection");
-					staged.set(key, value);
-				},
-				remove: () => {
-					throw Error("unexpected batch removal");
-				},
-				entries: () => {
-					throw Error("unexpected batch scan");
-				},
-				transaction: (body) => body(),
+			if (!values.length) return root;
+			let next = this.#storage.read(this.#collection, "next") ?? 0;
+			if (!safe(next)) throw Error("invalid locator allocation");
+			const write = (node: Node): number => {
+				if (!safe(next) || !Number.isSafeInteger(next + 1)) throw Error("invalid locator allocation");
+				if (this.#storage.read(this.#collection, String(next)) !== undefined)
+					throw Error("locator allocation collision");
+				const id = next++;
+				this.#storage.write(this.#collection, String(id), node);
+				return id;
 			};
-			// The namespace is encoded into the collection at construction.
-			const namespace = JSON.parse(this.#collection.slice("experimental-locator:".length)) as string;
-			const index = new ProjectionLocator<T>(storage, namespace, this.#decode);
-			let result = root;
-			for (const [id, value] of values) result = index.set(result, id, value);
-			const retained = new Set<number>();
-			const visit = (id: Page): void => {
-				if (id === null || retained.has(id) || !staged.has(String(id))) return;
-				retained.add(id);
-				const node = staged.get(String(id)) as Node;
-				if (node.kind === "branch") for (const child of Object.values(node.children)) visit(child);
+			const checked = new Map<string, T>();
+			for (const [id, value] of values) checked.set(keyOf(id), structuredClone(this.#decode(structuredClone(value))));
+			const updates = [...checked].sort(([a], [b]) => a.localeCompare(b));
+			const visit = (current: Page, edits: [string, T][], parent?: string, digit?: string, depth = 0): Page => {
+				if (!edits.length) return current;
+				if (depth > 8) throw Error("invalid locator depth");
+				const node = current === null ? undefined : this.#read(current, parent, digit);
+				let prefix = node?.prefix ?? edits[0]![0];
+				for (const [key] of edits) {
+					let common = 0;
+					while (common < prefix.length && prefix[common] === key[common]) common++;
+					prefix = prefix.slice(0, common);
+				}
+				if (prefix.length === 8) return write({ format: 1, kind: "leaf", prefix, value: edits[edits.length - 1]![1] });
+				const children: Record<string, number> =
+					node?.kind === "branch" && node.prefix === prefix ? { ...node.children } : {};
+				if (node && node.prefix !== prefix) children[node.prefix[prefix.length]!] = current!;
+				const groups = new Map<string, [string, T][]>();
+				for (const edit of edits) {
+					const edge = edit[0][prefix.length]!;
+					const group = groups.get(edge) ?? [];
+					group.push(edit);
+					groups.set(edge, group);
+				}
+				for (const [edge, group] of groups)
+					children[edge] = visit(children[edge] ?? null, group, prefix, edge, depth + 1)!;
+				return write({ format: 1, kind: "branch", prefix, children });
 			};
-			visit(result);
-			for (const id of retained) this.#storage.write(this.#collection, String(id), staged.get(String(id)));
-			if (staged.has("next")) this.#storage.write(this.#collection, "next", staged.get("next"));
+			const result = visit(root, updates);
+			this.#storage.write(this.#collection, "next", next);
 			return result;
 		});
 	}

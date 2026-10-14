@@ -2,11 +2,12 @@
 // the host is Project. Ingest and pluck call landDraft, the inner step.
 
 import { type AtomId, buildAtom, type Graph, type ReadView } from "../../src/engine/index.ts";
+import { differenceSet, StableOverlaySet, unionOverlay } from "../../src/engine/state-source.ts";
 import type { Pair } from "./collisions.ts";
 import type { DefinitionRule } from "./definition-rule.ts";
 import { ProjectError } from "./project-error.ts";
 import type { AgentState, Collision, Entry, LandAnswer } from "./project-types.ts";
-import { SHARED, type Space, sharedBaseOf } from "./spaces.ts";
+import { SHARED, SharedAdditions, type Space, sharedBaseOf } from "./spaces.ts";
 
 /** What landing a named draft needs from a project. */
 export interface LandHost {
@@ -23,6 +24,7 @@ export interface LandHost {
 	setOf(space: Space): ReadonlySet<AtomId>;
 	at(space: Space, version: number): ReadonlySet<AtomId>;
 	view(set: ReadonlySet<AtomId>): ReadView;
+	viewAt(space: Space, version: number, changes?: readonly AtomId[]): ReadView;
 	sharedView(): ReadView;
 	pairs(draft: readonly AtomId[], against: ReadonlySet<AtomId>, settled: ReadonlySet<AtomId>): Pair[];
 	describe(pair: Pair, yoursView: ReadView, theirsView: ReadView, spaceName: string): Collision;
@@ -70,21 +72,32 @@ export function landCollisions(
 	space: Space,
 	changes: AtomId[],
 	pick: boolean,
-): { collisions: Collision[]; newer: Set<AtomId>; union: Set<AtomId> } {
+): { collisions: Collision[]; newer: ReadonlySet<AtomId>; union: ReadonlySet<AtomId> } {
 	const shared = host.shared();
 	const base = host.at(shared, sharedBaseOf(space));
-	const own = new Set(changes);
-	const union = new Set([...shared.own, ...changes]);
+	const own = new StableOverlaySet(changes);
+	const current = host.at(shared, host.version());
+	const union = unionOverlay(current, changes);
 	// The draft's own changes (some already plucked into shared) are never newer work to it.
-	const newer = new Set([...shared.own].filter((id) => !base.has(id) && !own.has(id) && !space.own.has(id)));
+	const newer = differenceSet(
+		differenceSet(
+			shared.membershipVersion
+				? new SharedAdditions(shared, sharedBaseOf(space), base, current)
+				: differenceSet(current, base),
+			own,
+		),
+		space.own,
+	);
 	// A pluck is checked as the draft's base plus only the plucked changes.
-	const draftView = host.view(pick ? new Set([...base, ...changes]) : host.setOf(space));
+	const draftView = pick
+		? host.viewAt(shared, sharedBaseOf(space), changes)
+		: host.viewAt(space, space.versions.length - 1);
 	const describeLand = (p: Pair): Collision => host.describe(p, draftView, host.sharedView(), SHARED);
 	const collisions = [
 		...host.pairs(changes, newer, union).map(describeLand),
 		...host
 			.definitionRule()
-			.collisions(own, draftView, host.view(base), host.sharedView(), newer, SHARED)
+			.collisions(own, draftView, host.viewAt(shared, sharedBaseOf(space)), host.sharedView(), newer, SHARED)
 			.map((d) => d.collision),
 	];
 	return { collisions, newer, union };
@@ -107,9 +120,15 @@ export function landDraft(
 	if (changes.length === 0) return { ok: true, version: host.version(), changes: 0 };
 	const { collisions, newer, union } = landCollisions(host, space, changes, !!pick);
 	if (collisions.length > 0) return host.refuse(agent, space, "land", time, collisions, entries);
-	const seen = host.pairs(changes, new Set([...shared.own].filter((id) => !newer.has(id))), union);
+	const seen = host.pairs(changes, differenceSet(host.at(shared, host.version()), newer), union);
 	const resolves = [...new Set(seen.flatMap((p) => [p.yours, p.theirs]))];
-	const tie = buildAtom(host.view(union), { author: agent.name, message, time, needs: changes, resolves });
+	const tie = buildAtom(host.viewAt(shared, host.version(), changes), {
+		author: agent.name,
+		message,
+		time,
+		needs: changes,
+		resolves,
+	});
 	host.requireClosed(tie, union);
 	const version = host.version() + 1;
 	// A pluck leaves the draft where it is: the rest of it lands later.

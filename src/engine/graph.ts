@@ -20,12 +20,14 @@ import { OrderedIndex, orderedChildKey } from "./ordered-index.ts";
 import { withProjectionScratch } from "./projection-scratch.ts";
 import {
 	type GraphStateStorage,
+	readonlyStoredArray,
 	type StateMap,
 	storedArray,
 	storedLists,
 	storedMap,
 	storedNumbers,
 } from "./state-source.ts";
+import { StoredText } from "./stored-text.ts";
 import {
 	ATTR_NAMES,
 	type Atom,
@@ -306,12 +308,169 @@ export class Graph {
 		if (options.storage) {
 			const storage = options.storage;
 			const numbers = (name: string): NumberIndex => storedNumbers(storage, name);
-			this.#atoms = storedArray<Atom>(storage, "atoms", (atom) =>
-				freezeAtom(
-					atom,
-					(id) => id,
-					(author) => author,
-				),
+			const atomText = new StoredText(storage, "atom-text:long");
+			type TextReference = { text: string };
+			const listFields = [
+				"deletes",
+				"writes",
+				"reads",
+				"holds",
+				"needs",
+				"resolves",
+				"deps",
+				"reasons",
+				"attrs",
+				"moves",
+			] as const;
+			type EncodedAtom = {
+				insertionFormat?: 1;
+				insertionRuns?: string;
+				textFormat?: 1;
+				listFormat?: 1;
+				listCount?: number;
+				lists?: Partial<Record<(typeof listFields)[number], string>>;
+				atom: Atom;
+			};
+			this.#atoms = storedArray<Atom>(
+				storage,
+				"atoms",
+				(value) => {
+					const encoded = value as unknown as Partial<EncodedAtom>;
+					if (encoded.textFormat !== undefined && encoded.textFormat !== 1)
+						throw Error("invalid stored atom text format");
+					if (encoded.listFormat !== undefined && encoded.listFormat !== 1)
+						throw Error("invalid stored atom list format");
+					if (encoded.listFormat === 1) {
+						if (
+							!encoded.lists ||
+							typeof encoded.lists !== "object" ||
+							Array.isArray(encoded.lists) ||
+							!Number.isSafeInteger(encoded.listCount) ||
+							encoded.listCount! < 1 ||
+							Object.keys(encoded.lists).length !== encoded.listCount ||
+							Object.keys(encoded.lists).some((field) => !listFields.includes(field as (typeof listFields)[number]))
+						)
+							throw Error("invalid stored atom list references");
+					}
+					if (encoded.insertionFormat !== undefined && encoded.insertionFormat !== 1)
+						throw Error("invalid stored insertion format");
+					const atom =
+						encoded.textFormat === 1 || encoded.listFormat === 1 || encoded.insertionFormat === 1
+							? encoded.atom!
+							: value;
+					const text =
+						encoded.textFormat === 1
+							? (start: number, length: number): readonly string[] => {
+									const result: string[] = [];
+									let index = 0;
+									for (const run of atom.inserts)
+										for (const raw of run.lines) {
+											if (index >= start && index < start + length) {
+												const reference = raw as unknown as TextReference;
+												if (typeof raw === "string") result.push(raw);
+												else if (reference && typeof reference.text === "string")
+													result.push(atomText.read(reference.text));
+												else throw Error("invalid stored atom text reference");
+											}
+											if (++index >= start + length) return result;
+										}
+									throw Error("stored atom text range missing");
+								}
+							: undefined;
+					const frozen = freezeAtom(
+						atom,
+						(id) => id,
+						(author) => author,
+						text,
+					);
+					if (encoded.listFormat !== 1 && encoded.insertionFormat !== 1) return frozen;
+					const result = { ...frozen };
+					if (encoded.insertionFormat === 1) {
+						const collection = `atom-inserts:${atom.seq}`;
+						if (encoded.insertionRuns !== collection) throw Error("invalid stored insertion reference");
+						const inserts = readonlyStoredArray<InsertRun>(storage, collection, (raw, index) => {
+							const run = raw as { file: string; parent: InsertRun["parent"]; lines: string };
+							const lines = `${collection}:lines:${index}`;
+							if (run.lines !== lines || typeof run.file !== "string" || typeof run.parent !== "string")
+								throw Error("invalid stored insertion run");
+							return Object.freeze({
+								file: run.file,
+								parent: run.parent,
+								lines: readonlyStoredArray<string>(storage, lines, (rawLine) => {
+									if (typeof rawLine === "string") return rawLine;
+									const ref = rawLine as TextReference;
+									if (!ref || typeof ref.text !== "string") throw Error("invalid stored insertion text");
+									return atomText.read(ref.text);
+								}),
+							});
+						});
+						Object.defineProperty(result, "inserts", { value: inserts, enumerable: true });
+					}
+					for (const field of listFields) {
+						const collection = encoded.lists?.[field];
+						if (collection === undefined) continue;
+						if (typeof collection !== "string" || collection !== `atom-list:${atom.seq}:${field}`)
+							throw Error("invalid stored atom list reference");
+						Object.defineProperty(result, field, { value: readonlyStoredArray(storage, collection), enumerable: true });
+					}
+					return Object.freeze(result);
+				},
+				(input, key) => {
+					const atom = { ...input };
+					const lists: Partial<Record<(typeof listFields)[number], string>> = {};
+					for (const field of listFields) {
+						const values = input[field];
+						if (!values || values.length <= 256) continue;
+						const collection = `atom-list:${input.seq}:${field}`;
+						const saved = storedArray<unknown>(storage, collection);
+						for (const value of values) saved.push(value);
+						lists[field] = collection;
+						Object.defineProperty(atom, field, { value: [], enumerable: true });
+					}
+					const listCount = Object.keys(lists).length;
+					const hasLists = listCount > 0;
+					if (atom.inserts.length > 256 || atom.inserts.some((run) => run.lines.length > 256)) {
+						const collection = `atom-inserts:${input.seq}`;
+						const runs = storedArray<unknown>(storage, collection);
+						let runIndex = 0;
+						let lineIndex = 0;
+						for (const run of atom.inserts) {
+							const lineCollection = `${collection}:lines:${runIndex++}`;
+							const lines = storedArray<unknown>(storage, lineCollection);
+							for (const line of run.lines) {
+								const text = JSON.stringify([key, lineIndex++]);
+								if (line.length > StoredText.chunkCharacters) {
+									atomText.write(text, line);
+									lines.push({ text });
+								} else lines.push(line);
+							}
+							runs.push({ file: run.file, parent: run.parent, lines: lineCollection });
+						}
+						return {
+							insertionFormat: 1,
+							insertionRuns: collection,
+							...(hasLists ? { listFormat: 1, listCount, lists } : {}),
+							atom: { ...atom, inserts: [] },
+						};
+					}
+					if (!atom.inserts.some((run) => run.lines.some((line) => line.length > StoredText.chunkCharacters)))
+						return hasLists ? { listFormat: 1, listCount, lists, atom } : atom;
+					let index = 0;
+					const inserts = atom.inserts.map((run) => ({
+						...run,
+						lines: run.lines.map((line) => {
+							const text = JSON.stringify([key, index++]);
+							if (line.length <= StoredText.chunkCharacters) return line;
+							atomText.write(text, line);
+							return { text };
+						}),
+					}));
+					return {
+						textFormat: 1,
+						...(hasLists ? { listFormat: 1, listCount, lists } : {}),
+						atom: { ...atom, inserts },
+					};
+				},
 			);
 			this.#lamport = storedArray(storage, "lamport");
 			this.#lineBase = storedArray(storage, "line-base");
@@ -324,7 +483,26 @@ export class Graph {
 			this.#lineParent = numbers("line-parent");
 			this.#deleter = numbers("deleter");
 			this.#replacing = numbers("replacing");
-			this.#lineText = storedArray(storage, "line-text");
+			const longText = atomText;
+			this.#lineText = storedArray<string>(
+				storage,
+				"line-text",
+				(value) => {
+					if (typeof value === "string") return value;
+					const reference = value as unknown as { format: number; text: string };
+					if (reference?.format !== 1 || typeof reference.text !== "string") throw Error("invalid long line reference");
+					return longText.read(reference.text);
+				},
+				(value, key) => {
+					if (value.length <= StoredText.chunkCharacters) return value;
+					const number = Number(key);
+					const seq = this.#lineAtom.at(number);
+					const text = JSON.stringify([String(seq), number - this.#lineBase[seq]!]);
+					const header = storage.read("atom-text:long", text) as { characters?: number } | undefined;
+					if (header?.characters !== value.length) throw Error("long line atom text is missing");
+					return { format: 1, text };
+				},
+			);
 			this.#pathIndex = storedMap(storage, "path-index");
 			this.#moreDeleterPages = storedLists<number>(storage, "more-deleters", (key) =>
 				JSON.stringify(["number", Number(key)]),
@@ -565,6 +743,15 @@ export class Graph {
 
 	/** The lines an atom deletes, from the graph's own packed copy (#46): never a read of the log. */
 	deletedLines(id: AtomId): readonly LineId[] {
+		const seq = this.#seq(id);
+		const count = this.#storage?.read("atom-delete-counts", String(seq));
+		if (count !== undefined) {
+			const out: LineId[] = [];
+			for (const n of storedLists<number>(this.#storage!, "atom-deletes").values(String(seq)))
+				out.push(this.#lineName(n));
+			if (out.length !== count) throw Error("incomplete atom deletion index");
+			return out;
+		}
 		const ns = this.#atomDeletes[this.#seq(id)];
 		if (!ns) return EMPTY;
 		const out: LineId[] = new Array(ns.length);
@@ -574,7 +761,13 @@ export class Graph {
 
 	/** How many lines an atom deletes, without reading its lists. */
 	deleteCount(id: AtomId): number {
-		return this.#atomDeletes[this.#seq(id)]?.length ?? 0;
+		const seq = this.#seq(id);
+		const count = this.#storage?.read("atom-delete-counts", String(seq));
+		if (count !== undefined) {
+			if (!Number.isSafeInteger(count) || (count as number) < 0) throw Error("invalid atom deletion count");
+			return count as number;
+		}
+		return this.#atomDeletes[seq]?.length ?? 0;
 	}
 
 	textOf(n: number): string {
@@ -957,10 +1150,6 @@ export class Graph {
 	#reaches(from: Iterable<AtomId>, target: AtomId): boolean {
 		const floor = this.#lamport[this.#seq(target)]!;
 		if (this.#storage) {
-			// Roots belong to the current atom's dependency list, not its history.
-			const roots = [...from];
-			if (roots.includes(target)) return true;
-			if (roots.every((id) => this.#lamport[this.#seq(id)]! <= floor)) return false;
 			return this.withProjectionScratch((scratch) => {
 				let length = 0;
 				const push = (id: AtomId): void => {
@@ -968,7 +1157,10 @@ export class Graph {
 					scratch.write("seen", id, true);
 					scratch.write("stack", String(length++), id);
 				};
-				for (const id of roots) push(id);
+				for (const id of from) {
+					if (id === target) return true;
+					if (this.#lamport[this.#seq(id)]! > floor) push(id);
+				}
 				while (length > 0) {
 					const key = String(--length);
 					const current = scratch.read("stack", key) as AtomId;
@@ -1011,12 +1203,11 @@ export class Graph {
 		else this.#add(atom);
 	}
 
-	#add(atom: Atom): void {
-		if (this.#storage && this.#storage.read("ordered-children", "format") !== 2) {
-			if (this.#atoms.length !== 0) throw new Error("ordered children require fresh adoption");
-			this.#storage.write("ordered-children", "format", 2);
-		}
-
+	#validateAcceptedAtom(atom: Atom, scratch?: GraphStateStorage): void {
+		const membership = <T extends string>(name: string): { has(key: T): boolean; add(key: T): unknown } => {
+			if (!scratch) return new Set<T>();
+			return { has: (key) => scratch.read(name, key) === true, add: (key) => scratch.write(name, key, true) };
+		};
 		validateShape(atom);
 		const seq = this.#atoms.length;
 		const bad = (why: string): never => {
@@ -1024,24 +1215,32 @@ export class Graph {
 		};
 		if (atom.seq !== seq || atom.id !== atomId(seq)) bad(`expected id ${atomId(seq)} with seq ${seq}`);
 
-		const deps = new Set<AtomId>();
+		const deps = membership<AtomId>("deps");
 		for (const d of atom.deps) {
 			if (!this.has(d)) bad(`dependency ${d} is not in the graph`);
 			if (deps.has(d)) bad(`dependency ${d} listed twice`);
 			deps.add(d);
 		}
-		for (const d of [...atom.needs, ...atom.resolves]) {
-			if (!deps.has(d)) bad(`${d} is in needs/resolves but not in deps`);
-		}
+		for (const list of [atom.needs, atom.resolves])
+			for (const d of list) {
+				if (!deps.has(d)) bad(`${d} is in needs/resolves but not in deps`);
+			}
 		for (const r of atom.reasons) if (!this.has(r.to)) bad(`reason points at unknown atom ${r.to}`);
 
 		// Everything it touches must come from its closure. Derived deps name the
 		// writers directly, so this is usually one lookup per writer.
-		const below = new Map<AtomId, boolean>();
+		const memoryBelow = scratch ? undefined : new Map<AtomId, boolean>();
+		const below = {
+			get: (key: AtomId) => (scratch ? (scratch.read("below", key) as boolean | undefined) : memoryBelow!.get(key)),
+			set: (key: AtomId, value: boolean) => {
+				if (scratch) scratch.write("below", key, value);
+				else memoryBelow!.set(key, value);
+			},
+		};
 		const inClosure = (writer: AtomId): boolean => {
 			let hit = below.get(writer);
 			if (hit === undefined) {
-				hit = deps.has(writer) || this.#reaches(deps, writer);
+				hit = deps.has(writer) || this.#reaches(atom.deps, writer);
 				below.set(writer, hit);
 			}
 			return hit;
@@ -1060,45 +1259,65 @@ export class Graph {
 				checkLine(run.parent, "an insert");
 			}
 		}
-		const moved = new Set<LineId>();
+		const writes = membership<Key>("writes");
+		for (const key of atom.writes) writes.add(key);
+		const moved = membership<LineId>("moved");
 		for (const m of atom.moves ?? []) {
 			checkLine(m.line, "a move");
 			if (!isStartNode(m.parent)) checkLine(m.parent, "a move");
 			if (m.line === m.parent) bad(`moves ${m.line} after itself`);
 			if (moved.has(m.line)) bad(`moves ${m.line} twice`);
 			moved.add(m.line);
-			if (!atom.writes.includes(posKey(m.line)) || !atom.writes.includes(gapKey(m.parent))) {
+			if (!writes.has(posKey(m.line)) || !writes.has(gapKey(m.parent))) {
 				bad(`moves ${m.line} without writing ${posKey(m.line)} and ${gapKey(m.parent)}`);
 			}
 		}
-		const deleted = new Set<LineId>();
+		const deleted = membership<LineId>("deleted");
 		for (const line of atom.deletes) {
 			checkLine(line, "a delete");
 			if (deleted.has(line)) bad(`deletes ${line} twice`);
 			deleted.add(line);
 		}
-		const writes = new Set(atom.writes);
-		for (const line of deleted) if (!writes.has(lineKey(line))) bad(`deletes ${line} without writing ${lineKey(line)}`);
-		for (const key of [...atom.writes, ...atom.reads, ...atom.holds]) {
-			const parsed = parseKey(key);
-			if (parsed.kind === "line") checkLine(parsed.node, `key ${key}`);
-			else if ((parsed.kind === "gap" || parsed.kind === "pos") && !isStartNode(parsed.node))
-				checkLine(parsed.node, `key ${key}`);
+		for (const line of atom.deletes)
+			if (!writes.has(lineKey(line))) bad(`deletes ${line} without writing ${lineKey(line)}`);
+		for (const list of [atom.writes, atom.reads, atom.holds])
+			for (const key of list) {
+				const parsed = parseKey(key);
+				if (parsed.kind === "line") checkLine(parsed.node, `key ${key}`);
+				else if ((parsed.kind === "gap" || parsed.kind === "pos") && !isStartNode(parsed.node))
+					checkLine(parsed.node, `key ${key}`);
+			}
+	}
+
+	#add(atom: Atom): void {
+		if (this.#storage && this.#storage.read("ordered-children", "format") !== 2) {
+			if (this.#atoms.length !== 0) throw new Error("ordered children require fresh adoption");
+			this.#storage.write("ordered-children", "format", 2);
 		}
 
+		if (this.#storage) this.withProjectionScratch((scratch) => this.#validateAcceptedAtom(atom, scratch));
+		else this.#validateAcceptedAtom(atom);
+		const seq = this.#atoms.length;
+		const deps = atom.deps;
+		const deleted = this.#storage ? undefined : new Set(atom.deletes);
+		const writes = this.#storage ? atom.writes : new Set(atom.writes);
+
 		// Accept.
-		const frozen = freezeAtom(
-			atom,
-			(id) => this.idOfSeq(seqOf(id)),
-			(author) => {
-				if (this.#storage) return author;
-				let a = this.#authors.get(author);
-				if (a === undefined) this.#authors.set(author, (a = author));
-				return a;
-			},
-			this.#texts ? this.#reader(seq) : undefined,
-			this.#lists ? this.#listReader(seq) : undefined,
-		);
+		// Persistent storage copies the accepted atom; a second frozen copy only duplicates its lists.
+		const frozen = this.#storage
+			? atom
+			: freezeAtom(
+					atom,
+					(id) => this.idOfSeq(seqOf(id)),
+					(author) => {
+						if (this.#storage) return author;
+						let a = this.#authors.get(author);
+						if (a === undefined) this.#authors.set(author, (a = author));
+						return a;
+					},
+					this.#texts ? this.#reader(seq) : undefined,
+					this.#lists ? this.#listReader(seq) : undefined,
+				);
 		this.#atoms.push(this.#storage ? atom : frozen);
 		let lam = 0;
 		for (const d of deps) lam = Math.max(lam, this.lamport(d) + 1);
@@ -1106,9 +1325,28 @@ export class Graph {
 
 		// The run starts' parents and the deleted lines, as codes, before this atom's own lines exist.
 		// The atom as given: with lists kept elsewhere, the frozen one reads them back from the log.
-		const deletes = atom.deletes.length > 0 ? new Set(atom.deletes) : undefined;
-		const deletedN = atom.deletes.map((line) => this.#lineN(line));
-		this.#atomDeletes.push(deletedN.length > 0 ? (this.#storage ? deletedN : Int32Array.from(deletedN)) : undefined);
+		const deletes = (line: LineId | NodeId): boolean => {
+			if (isStartNode(line)) return false;
+			if (deleted) return deleted.has(line);
+			const n = this.#lineN(line);
+			return this.#deleter.at(n) === seq || this.#moreDeleterPages!.last(String(n)) === seq;
+		};
+		const deletedN = this.#storage ? undefined : atom.deletes.map((line) => this.#lineN(line));
+		this.#atomDeletes.push(deletedN?.length ? Int32Array.from(deletedN) : undefined);
+		if (this.#storage) {
+			const pages = storedLists<number>(this.#storage, "atom-deletes");
+			for (const line of atom.deletes) pages.append(String(seq), this.#lineN(line));
+			this.#storage.write("atom-delete-counts", String(seq), atom.deletes.length);
+		}
+		const deletedNumbers = function* (graph: Graph) {
+			if (deletedN) yield* deletedN;
+			else for (const line of atom.deletes) yield graph.#lineN(line);
+		};
+		for (const n of deletedNumbers(this)) {
+			if (this.#deleter.at(n) < 0) this.#deleter.set(n, seq);
+			else if (this.#moreDeleterPages) this.#moreDeleterPages.append(String(n), seq);
+			else pushIndex(this.#moreDeleters, n, seq);
+		}
 		this.#lineBase.push(this.#lineTotal);
 		for (const run of atom.inserts) {
 			const file = this.#pathOf(run.file);
@@ -1119,7 +1357,7 @@ export class Graph {
 				new OrderedIndex(this.#storage, "ordered-children", String(parent)).insert(
 					orderedChildKey({
 						n: first,
-						replaces: deletes?.has(run.parent) ? 1 : 0,
+						replaces: deletes(run.parent) ? 1 : 0,
 						lamport: lam,
 						seq,
 						k: first - this.#lineBase[seq]!,
@@ -1137,7 +1375,7 @@ export class Graph {
 				this.#lineParent.push(parent);
 				this.#lineText?.push(run.lines[i]!);
 				this.#deleter.push(-1);
-				this.#replacing.push(i === 0 && deletes?.has(run.parent) ? 1 : 0);
+				this.#replacing.push(i === 0 && deletes(run.parent) ? 1 : 0);
 				parent = n;
 			}
 		}
@@ -1152,37 +1390,39 @@ export class Graph {
 			else pushIndex(this.#relocatedToCode, parentCode, info);
 		});
 		if (frozen.moves) this.#movers.push(frozen.id);
-		for (const n of deletedN) {
-			if (this.#deleter.at(n) < 0) this.#deleter.set(n, seq);
-			else if (this.#moreDeleterPages) this.#moreDeleterPages.append(String(n), seq);
-			else pushIndex(this.#moreDeleters, n, seq);
-		}
-		for (const key of new Set(atom.writes)) {
+		for (const key of writes) {
 			const code = this.#code(key);
-			if (this.#writersPages) this.#writersPages.append(JSON.stringify([typeof code, code]), frozen.id);
-			else pushOne(this.#writers, code, frozen.id);
+			if (this.#writersPages) {
+				const key = JSON.stringify([typeof code, code]);
+				if (this.#writersPages.last(key) !== frozen.id) this.#writersPages.append(key, frozen.id);
+			} else pushOne(this.#writers, code, frozen.id);
 		}
-		for (const key of new Set(atom.reads)) {
+		for (const key of this.#storage ? atom.reads : new Set(atom.reads)) {
 			const code = this.#code(key);
-			if (this.#readersPages) this.#readersPages.append(JSON.stringify([typeof code, code]), frozen.id);
-			else pushOne(this.#readers, code, frozen.id);
+			if (this.#readersPages) {
+				const key = JSON.stringify([typeof code, code]);
+				if (this.#readersPages.last(key) !== frozen.id) this.#readersPages.append(key, frozen.id);
+			} else pushOne(this.#readers, code, frozen.id);
 		}
-		for (const key of new Set(atom.holds)) {
+		for (const key of this.#storage ? atom.holds : new Set(atom.holds)) {
 			const code = this.#code(key);
-			if (this.#holdersPages) this.#holdersPages.append(JSON.stringify([typeof code, code]), frozen.id);
-			else pushOne(this.#holders, code, frozen.id);
+			if (this.#holdersPages) {
+				const key = JSON.stringify([typeof code, code]);
+				if (this.#holdersPages.last(key) !== frozen.id) this.#holdersPages.append(key, frozen.id);
+			} else pushOne(this.#holders, code, frozen.id);
 		}
 		for (const d of deps) {
 			if (this.#dependentsPages) this.#dependentsPages.append(d, frozen.id);
 			else pushOne(this.#dependents, d, frozen.id);
 		}
-		for (const r of new Set(frozen.resolves)) {
-			if (this.#resolversPages) this.#resolversPages.append(r, frozen.id);
-			else pushOne(this.#resolvers, r, frozen.id);
+		for (const r of this.#storage ? frozen.resolves : new Set(frozen.resolves)) {
+			if (this.#resolversPages) {
+				if (this.#resolversPages.last(r) !== frozen.id) this.#resolversPages.append(r, frozen.id);
+			} else pushOne(this.#resolvers, r, frozen.id);
 		}
 		const files = new Set<string>();
 		for (const run of atom.inserts) files.add(run.file);
-		for (const n of deletedN) files.add(this.#paths[this.#lineFile.at(n)]!);
+		for (const n of deletedNumbers(this)) files.add(this.#paths[this.#lineFile.at(n)]!);
 		for (const a of frozen.attrs ?? []) files.add(a.file);
 		for (const m of frozen.moves ?? []) {
 			files.add(this.lineFile(m.line)!);

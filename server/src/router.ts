@@ -257,7 +257,16 @@ async function projectRoute(
 		body = { ...rest, ...(/^[\w.+-]{1,20}\/[\w.+-]{1,40}$/.test(client) ? { client } : {}) };
 	}
 	try {
-		const a = (await obj.call(project, (op ?? top)!, agent, body, false, how, keyForCall)) as unknown as Answer;
+		const a = (await obj.call(
+			project,
+			(op ?? top)!,
+			agent,
+			body,
+			false,
+			how,
+			keyForCall,
+			request.headers.get("Idempotency-Key") ?? undefined,
+		)) as unknown as Answer;
 		return json(a.status, a.body);
 	} catch (e) {
 		const error = `the project object failed: ${e instanceof Error ? e.message : String(e)}`;

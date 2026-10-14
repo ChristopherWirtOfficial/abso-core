@@ -96,6 +96,23 @@ export class SqliteLog implements LogStore {
 	}
 
 	/** Reject an oversized canonical frame before loading its text into JavaScript. */
+	frameBytes(seq: number): number {
+		if (!Number.isSafeInteger(seq) || seq < 0) throw Error("invalid canonical frame position");
+		const size = this.storage.sql
+			.exec(
+				"SELECT COUNT(*) AS parts, COALESCE(SUM(LENGTH(CAST(text AS BLOB))), 0) AS bytes FROM log WHERE seq = ?",
+				seq,
+			)
+			.toArray()[0] as { parts: number; bytes: number };
+		if (!size || size.parts < 1 || size.parts > 256 || size.bytes < 1 || !Number.isSafeInteger(size.bytes))
+			throw Error("canonical frame exceeds hard decoding bound or is missing");
+		return size.bytes;
+	}
+	/** A larger first frame gets its own budget; later frames are deferred. */
+	adoptionPageBytes(from: number): number {
+		return Math.max(1_048_576, this.frameBytes(from));
+	}
+
 	boundedFrame(seq: number, maxBytes: number): string {
 		if (
 			!Number.isSafeInteger(seq) ||
@@ -120,6 +137,26 @@ export class SqliteLog implements LogStore {
 		if (rows.length !== size.parts || rows.some((row, part) => row.part !== part))
 			throw new Error("canonical frame parts are incomplete");
 		return rows.map((row) => row.text).join("");
+	}
+
+	/** Stream one canonical frame without retaining its complete JSON text. */
+	*frameChunks(seq: number): IterableIterator<string> {
+		if (!Number.isSafeInteger(seq) || seq < 0) throw Error("invalid canonical frame position");
+		let expected = 0;
+		for (;;) {
+			const rows = this.storage.sql
+				.exec("SELECT part, text FROM log WHERE seq = ? AND part >= ? ORDER BY part LIMIT 1", seq, expected)
+				.toArray() as { part: number; text: string }[];
+			if (!rows.length) {
+				if (!expected) throw Error("canonical frame is missing");
+				return;
+			}
+			const row = rows[0]!;
+			if (row.part !== expected || row.text.length > LOG_PART_CHARACTERS)
+				throw Error("canonical frame parts are incomplete or oversized");
+			expected++;
+			yield row.text;
+		}
 	}
 
 	/** Refreshes the in-memory cursor after an enclosing transaction rolls back. */
@@ -524,11 +561,18 @@ export class EngineProject implements ProjectCalls, ProjectHistory {
 	/** Reads stored entries by log position, for the feed and replay (#41); absent, those answer 501. */
 	private readonly read: ((from: number, limit: number) => Entry[]) | undefined;
 	private readonly store: SqliteLog | undefined;
+	private readonly historical: (<T>(at: number, operation: (project: Project) => T) => T) | undefined;
 
-	constructor(project: Project, read?: (from: number, limit: number) => Entry[], store?: SqliteLog) {
+	constructor(
+		project: Project,
+		read?: (from: number, limit: number) => Entry[],
+		store?: SqliteLog,
+		historical?: <T>(at: number, operation: (project: Project) => T) => T,
+	) {
 		this.project = project;
 		this.read = read;
 		this.store = store;
+		this.historical = historical;
 	}
 
 	/** The project's events from log position `from` (#41): reading consumes nothing. */
@@ -638,6 +682,11 @@ export class EngineProject implements ProjectCalls, ProjectHistory {
 		return this.replica;
 	}
 	statusAt(at: number) {
+		if (this.historical)
+			return this.historical(Math.max(0, Math.min(at, this.project.logLength)), (p) => ({
+				at: Math.min(at, this.project.logLength),
+				...(p.initialized ? p.status() : { version: -1, agents: [] }),
+			}));
 		const p = this.at(at);
 		const answer = {
 			at: Math.min(at, this.project.logLength),
@@ -647,6 +696,11 @@ export class EngineProject implements ProjectCalls, ProjectHistory {
 		return answer;
 	}
 	whereAt(at: number) {
+		if (this.historical)
+			return this.historical(Math.max(0, Math.min(at, this.project.logLength)), (p) => ({
+				at: Math.min(at, this.project.logLength),
+				...(p.initialized ? where(p) : { version: -1, files: {} }),
+			}));
 		const p = this.at(at);
 		const answer = {
 			at: Math.min(at, this.project.logLength),

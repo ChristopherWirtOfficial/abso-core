@@ -17,6 +17,7 @@ export interface ProjectionReadBinding {
 	committed(): { version: number; handle: ProjectionHandle };
 	at(version: number): ProjectionHandle | undefined;
 	delta(version: number): Published | undefined;
+	namedVersion?(name: string, version: number): { sharedBase: number; atoms: Iterable<string> } | undefined;
 	/** Read-through overlay owned and cleaned by the current transaction. */
 	allocate(): GraphStateStorage;
 	/** Checks this exact transaction, graph revision and verified source binding. */
@@ -41,9 +42,13 @@ export function projectedReader(binding: ProjectionReadBinding, key: string): Pr
 			throw Error("expired projection source binding");
 	};
 	assertLive();
-	const match = /^(v|a) @(0|[1-9]\d*)(?:\+(.+))?$/.exec(key);
-	if (!match || (match[1] === "v" && match[3])) throw Error(`unsupported projection key: ${key}`);
-	const version = Number(match[2]);
+	const match = /^(v|a) (.*)@(0|[1-9]\d*)(?:\+(.+))?$/.exec(key);
+	if (!match || (match[1] === "v" && match[4])) throw Error(`unsupported projection key: ${key}`);
+	const requested = Number(match[3]);
+	if (!Number.isSafeInteger(requested)) throw Error("projection version outside authority");
+	const named = match[2] ? binding.namedVersion?.(match[2], requested) : undefined;
+	if (match[2] && !named) throw Error("named projection version outside authority");
+	const version = named?.sharedBase ?? requested;
 	if (!Number.isSafeInteger(version) || version > binding.version())
 		throw Error("projection version outside authority");
 	const exact = binding.at(version);
@@ -74,7 +79,8 @@ export function projectedReader(binding: ProjectionReadBinding, key: string): Pr
 		for (const atom of delta.atoms.map((id) => binding.graph.atom(id)).sort((a, b) => a.seq - b.seq))
 			state = adapter.apply(state, atom);
 	}
-	for (const id of match[3]?.split(",") ?? []) state = adapter.apply(state, binding.graph.atom(id));
+	for (const id of named?.atoms ?? []) state = adapter.apply(state, binding.graph.atom(id));
+	for (const id of match[4]?.split(",") ?? []) state = adapter.apply(state, binding.graph.atom(id));
 	assertLive();
 	return new ProjectionReader(adapter, state, assertLive);
 }

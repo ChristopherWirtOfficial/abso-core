@@ -10,7 +10,7 @@ import {
 } from "../../src/engine/experimental/projection-root.ts";
 import { ProjectionSnapshots } from "../../src/engine/experimental/projection-snapshots.ts";
 import { Graph } from "../../src/engine/graph.ts";
-import { CachedStateStorage } from "../../src/engine/state-source.ts";
+import { CachedStateStorage, type GraphStateStorage } from "../../src/engine/state-source.ts";
 import { canonicalJson } from "../../worker/project/operation-protocol.ts";
 import { projectedReader } from "../../worker/project/projection-provider.ts";
 import { Membership, type Published } from "../../worker/project/spaces.ts";
@@ -326,7 +326,8 @@ export class SqliteProjectionStore implements WriterProjectionHost {
 		const token = {};
 		const overlays: ProjectionOverlayStorage[] = [];
 		const scopes: ProjectionReadScope[] = [];
-		const versions = new Membership(state).shared.versions;
+		const membership = new Membership(state);
+		const versions = membership.shared.versions;
 		const current = (): WriterRoot => {
 			if (!live) throw Error("closed projection writer");
 			if (log.seq() === observed.logLength && log.generation() !== observed.generation)
@@ -339,45 +340,98 @@ export class SqliteProjectionStore implements WriterProjectionHost {
 				});
 			return observed;
 		};
-		return {
-			readViewProvider: (graph) => {
+		const provider =
+			(membershipState: GraphStateStorage): WriterProjectionSession["readViewProvider"] =>
+			(graph) => {
+				const membership = new Membership(membershipState);
+				const versions = membership.shared.versions;
 				const scope = new ProjectionReadScope(graph, () => (live ? token : undefined));
 				scopes.push(scope);
+				const readers = new Map<string, ReturnType<typeof projectedReader>>();
+				let identity = "";
+				const reuse = (key: string, build: () => ReturnType<typeof projectedReader>) => {
+					const source = current();
+					const next = JSON.stringify([
+						graph.size,
+						source.generation,
+						source.logLength,
+						source.digest,
+						versions.length,
+					]);
+					if (next !== identity) {
+						readers.clear();
+						identity = next;
+					}
+					const cacheable = key.length <= 8192 && /^(?:v|a) @/.test(key);
+					const cached = cacheable ? readers.get(key) : undefined;
+					if (cached) {
+						scope.guard(graph)();
+						return cached;
+					}
+					const reader = build();
+					if (cacheable) {
+						if (readers.size >= 32) readers.delete(readers.keys().next().value!);
+						readers.set(key, reader);
+					}
+					return reader;
+				};
 				return {
 					keyed: (key) =>
-						projectedReader(
-							{
-								graph,
-								context: this.#context,
-								sourceGeneration: this.#generation,
-								sourceLength: () => current().logLength,
-								prefixDigest: (length) =>
-									length === current().logLength
-										? current().digest
-										: (state.read(`${this.#meta}:prefixes`, String(length)) as string | undefined),
-								version: () => versions.length - 1,
-								committed: () => head,
-								at: (version) => state.read(`${this.#meta}:versions`, String(version)) as ProjectionHandle | undefined,
-								delta: (version) => versions[version],
-								guard: () => scope.guard(graph),
-								allocate: () => {
-									const overlay = new ProjectionOverlayStorage(
-										state,
-										`${this.#context.namespace}:${this.#nextOverlay++}`,
-										(collection) => state.clearProjectionOverlay(collection),
-									);
-									overlays.push(overlay);
-									return new CachedStateStorage(overlay, overlays.length <= 32 ? 8192 : 0, 32);
+						reuse(key, () =>
+							projectedReader(
+								{
+									graph,
+									context: this.#context,
+									sourceGeneration: this.#generation,
+									sourceLength: () => current().logLength,
+									prefixDigest: (length) =>
+										length === current().logLength
+											? current().digest
+											: (state.read(`${this.#meta}:prefixes`, String(length)) as string | undefined),
+									version: () => versions.length - 1,
+									committed: () => head,
+									at: (version) =>
+										state.read(`${this.#meta}:versions`, String(version)) as ProjectionHandle | undefined,
+									delta: (version) => versions[version],
+									namedVersion: (name, version) => {
+										const space = membership.spaces.get(name);
+										const selected = space?.versions[version];
+										if (!space || selected?.sharedBase === undefined) return undefined;
+										return {
+											sharedBase: selected.sharedBase,
+											atoms: (function* () {
+												for (let at = 0; at <= version; at++) {
+													const delta = space.versions[at]!;
+													if (delta.dropped?.length) throw Error("unexpected named draft removal");
+													yield* delta.atoms;
+												}
+											})(),
+										};
+									},
+									guard: () => scope.guard(graph),
+									allocate: () => {
+										const overlay = new ProjectionOverlayStorage(
+											state,
+											`${this.#context.namespace}:${this.#nextOverlay++}`,
+											(collection) => state.clearProjectionOverlay(collection),
+										);
+										overlays.push(overlay);
+										return new CachedStateStorage(overlay, overlays.length <= 32 ? 65_536 : 0, 256);
+									},
 								},
-							},
-							key,
+								key,
+							),
 						),
 				};
-			},
+			};
+		return {
+			readViewProvider: provider(state),
+			historicalReadViewProvider: provider,
 			commit: (project, committed) => {
 				if (canonicalJson(current()) !== canonicalJson(committed)) throw Error("projection commit source mismatch");
+				const commitState = new CachedStateStorage(state, 65_536, 256);
 				const adapter = new ExperimentalMarkerProjection(
-					state,
+					commitState,
 					project.graph,
 					this.#context.defaultFile,
 					this.#context.namespace,

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { test } from "node:test";
+import git from "isomorphic-git";
 import { Project } from "../../worker/project/project.ts";
 import { EngineProject } from "../src/engine-project.ts";
+import { MemoryFS } from "../src/memory-fs.ts";
 import { memoryStorage } from "./helpers.ts";
 
 const hooks = registerHooks({
@@ -45,6 +47,8 @@ test("ProjectObject disk-first calls survive cold objects without replay", async
 	const values = new Map<string, unknown>();
 	let alarm: number | null = null;
 	let onReaders: (() => Promise<void>) | undefined;
+	let failGitAcknowledgement = false;
+	let failNamePersistence = false;
 	const context = {
 		id: { toString: () => "project-1" },
 		storage: {
@@ -58,6 +62,14 @@ test("ProjectObject disk-first calls survive cold objects without replay", async
 				return values.get(key);
 			},
 			put: async (key: string | Record<string, unknown>, value?: unknown) => {
+				if (key === "name" && failNamePersistence) {
+					failNamePersistence = false;
+					throw Error("injected name persistence failure");
+				}
+				if (failGitAcknowledgement && typeof key === "object" && "git:head" in key) {
+					failGitAcknowledgement = false;
+					throw Error("injected Git cursor persistence failure");
+				}
 				if (typeof key === "string") values.set(key, value);
 				else for (const [name, v] of Object.entries(key)) values.set(name, v);
 			},
@@ -76,9 +88,9 @@ test("ProjectObject disk-first calls survive cold objects without replay", async
 	t.mock.method(Project, "load", () => {
 		throw Error("full history replay forbidden");
 	});
-	const call = async (op: string, agent: string | undefined, body: unknown) => {
+	const call = async (op: string, agent: string | undefined, body: unknown, requestId?: string) => {
 		for (let page = 0; page < 100; page++) {
-			const result = await object().call("project", op, agent, body);
+			const result = await object().call("project", op, agent, body, false, undefined, undefined, requestId);
 			if (result.status !== 503) {
 				assert.notEqual(result.status, 500, JSON.stringify({ op, result }));
 				return result;
@@ -88,12 +100,114 @@ test("ProjectObject disk-first calls survive cold objects without replay", async
 		}
 		throw Error("adoption did not finish");
 	};
-	assert.equal((await call("init", undefined, { files: { "a.txt": "one\ntwo\n" } })).status, 200);
+	const initId = "00000000-0000-4000-8000-000000000008";
+	const initBody = { files: { "a.txt": "one\ntwo\n" } };
+	failNamePersistence = true;
+	await assert.rejects(
+		() => object().call("project", "init", undefined, initBody, false, undefined, undefined, initId),
+		/name persistence failure/,
+	);
+	const initializedLog = storage.db.prepare("SELECT * FROM log ORDER BY seq,part").all();
+	assert.equal((await call("init", undefined, initBody, initId)).status, 200);
+	assert.deepEqual(storage.db.prepare("SELECT * FROM log ORDER BY seq,part").all(), initializedLog);
 	assert.equal((await call("sync", "alice", {})).status, 200);
-	assert.equal((await call("record", "alice", { files: { "a.txt": "changed\n" } })).status, 200);
+	const requestId = "00000000-0000-4000-8000-000000000007";
+	const recordBody = { files: { "a.txt": "changed\n" } };
+	failNamePersistence = true;
+	await assert.rejects(
+		() => object().call("project", "record", "alice", recordBody, false, undefined, undefined, requestId),
+		/name persistence failure/,
+	);
+	const recordedLog = storage.db.prepare("SELECT * FROM log ORDER BY seq,part").all();
+	assert.equal(
+		(await object().call("project", "record", "alice", recordBody, false, undefined, undefined, requestId)).status,
+		200,
+	);
+	assert.deepEqual(storage.db.prepare("SELECT * FROM log ORDER BY seq,part").all(), recordedLog);
+	assert.equal(
+		(
+			await object().call(
+				"project",
+				"record",
+				"alice",
+				{ files: { "a.txt": "different\n" } },
+				false,
+				undefined,
+				undefined,
+				requestId,
+			)
+		).status,
+		409,
+	);
 	const published = await call("publish", "alice", { message: "Disk first" });
 	assert.equal(published.status, 200);
 	assert.equal((published.body as { ok: boolean }).ok, true);
+	const issued = await object().issueAgentKey("alice", "test-address", null, "writer");
+	assert.ok("key" in issued);
+	const keyCall = { presented: issued.key, address: "test-address", write: true, route: "record" };
+	const crossPrincipal = await object().call(
+		"project",
+		"record",
+		"alice",
+		recordBody,
+		false,
+		undefined,
+		keyCall,
+		requestId,
+	);
+	assert.equal(crossPrincipal.status, 200, "each checked principal owns its own request ID namespace");
+	const principalReceipts = storage.db
+		.prepare("SELECT DISTINCT key FROM writer_state WHERE collection = 'runtime:receipts' AND key LIKE ?")
+		.all(`http:%:${requestId}`);
+	assert.equal(principalReceipts.length, 2);
+	const beforeSharedReplay = storage.db.prepare("SELECT * FROM log ORDER BY seq,part").all();
+	assert.equal((await call("record", "alice", recordBody, requestId)).status, 200);
+	assert.deepEqual(storage.db.prepare("SELECT * FROM log ORDER BY seq,part").all(), beforeSharedReplay);
+	const keyRequestId = "00000000-0000-4000-8000-000000000010";
+	assert.equal(
+		(await object().call("project", "record", "alice", recordBody, false, undefined, keyCall, keyRequestId)).status,
+		200,
+	);
+	await object().revokeAgentKey(issued.id, "test-address");
+	const beforeRevokedRetry = storage.db.prepare("SELECT * FROM log ORDER BY seq,part").all();
+	const revokedRetry = await object().call(
+		"project",
+		"record",
+		"alice",
+		recordBody,
+		false,
+		undefined,
+		keyCall,
+		keyRequestId,
+	);
+	assert.equal(revokedRetry.status, 403);
+	assert.deepEqual(storage.db.prepare("SELECT * FROM log ORDER BY seq,part").all(), beforeRevokedRetry);
+	const readerId = "00000000-0000-4000-8000-000000000009";
+	failNamePersistence = true;
+	await assert.rejects(
+		() => object().call("project", "reader", "alice", { reader: true }, false, undefined, undefined, readerId),
+		/name persistence failure/,
+	);
+	const nowRefused = await object().call(
+		"project",
+		"record",
+		"alice",
+		recordBody,
+		false,
+		undefined,
+		undefined,
+		requestId,
+	);
+	assert.equal(
+		(nowRefused.body as { ok: boolean }).ok,
+		false,
+		"current reader authority overrides an earlier successful receipt",
+	);
+	assert.equal(
+		(await object().call("project", "reader", "alice", { reader: true }, false, undefined, undefined, readerId)).status,
+		200,
+	);
+	assert.equal((await call("reader", "alice", { reader: false })).status, 200);
 	const file = await call("file", undefined, { path: "a.txt", version: "1" });
 	assert.equal(file.status, 200);
 	assert.match(JSON.stringify(file.body), /changed/);
@@ -165,4 +279,171 @@ test("ProjectObject disk-first calls survive cold objects without replay", async
 		/injected after record/,
 	);
 	assert.deepEqual(rows(), stable);
+	// Exercise the real alarm and commit builder; only remote transport is mocked.
+	t.mock.method(git, "listServerRefs", async () => []);
+	t.mock.method(git, "clone", async () => {
+		throw Error("empty test repository");
+	});
+	let pushed = 0;
+	let remoteFiles: MemoryFS | undefined;
+	t.mock.method(git, "push", async (options: Parameters<typeof git.push>[0]) => {
+		const oid = await git.resolveRef({ fs: options.fs, dir: options.dir, ref: "main" });
+		const commit = await git.readCommit({ fs: options.fs, dir: options.dir, oid });
+		assert.match(commit.commit.message, /abso-version: 2/);
+		const blob = await git.readBlob({ fs: options.fs, dir: options.dir, oid, filepath: "a.txt" });
+		assert.equal(new TextDecoder().decode(blob.blob), "Alice's change\n");
+		pushed++;
+		remoteFiles = options.fs as MemoryFS;
+		return { ok: true };
+	});
+	const artifacts = {
+		get: async () => ({
+			info: async () => ({ remote: "https://artifacts.invalid/test" }),
+			createToken: async () => ({ plaintext: "invented-test-token" }),
+			[Symbol.dispose]() {},
+		}),
+	};
+	const bound = () => new ProjectObject(context as never, { ABSO_DISK_FIRST: "on", ARTIFACTS: artifacts } as never);
+	await bound().alarm();
+	assert.equal(pushed, 1);
+	assert.equal((await bound().out()).pushed?.version, 2);
+	assert.deepEqual(rows(), stable, "pushing shared does not mutate canonical project state");
+	await bound().alarm();
+	assert.equal(pushed, 1, "a cold alarm does not push the same version again");
+	assert.ok(remoteFiles);
+	const remote = remoteFiles;
+	const parent = await git.resolveRef({ fs: remote, dir: "/repo", ref: "main" });
+	const blob = await git.writeBlob({ fs: remote, dir: "/repo", blob: new TextEncoder().encode("From Git\n") });
+	const tree = await git.writeTree({
+		fs: remote,
+		dir: "/repo",
+		tree: [{ mode: "100644", path: "a.txt", oid: blob, type: "blob" }],
+	});
+	const incoming = await git.commit({
+		fs: remote,
+		dir: "/repo",
+		tree,
+		parent: [parent],
+		message: "Plain Git edit",
+		author: { name: "Git writer", email: "test@example.invalid" },
+	});
+	await git.writeRef({ fs: remote, dir: "/repo", ref: "main", value: incoming, force: true });
+	t.mock.method(git, "listServerRefs", async () => [{ ref: "refs/heads/main", oid: incoming }]);
+	t.mock.method(git, "clone", async (options: Parameters<typeof git.clone>[0]) => {
+		(options.fs as MemoryFS).entries = structuredClone(remote.entries);
+	});
+	const beforeIntake = rows();
+	const originalIngest = EngineProject.prototype.ingest;
+	const failedIngest = t.mock.method(
+		EngineProject.prototype,
+		"ingest",
+		function (this: EngineProject, ...args: Parameters<EngineProject["ingest"]>) {
+			originalIngest.apply(this, args);
+			throw Error("injected after Git intake");
+		},
+	);
+	await assert.rejects(() => bound().gitSync(), /injected after Git intake/);
+	assert.deepEqual(rows(), beforeIntake);
+	assert.equal((await bound().out()).git.head, parent, "failed intake must not acknowledge the remote head");
+	failedIngest.mock.restore();
+	failGitAcknowledgement = true;
+	await assert.rejects(() => bound().gitSync(), /Git cursor persistence failure/);
+	const committedIntake = rows();
+	assert.equal((await bound().out()).version, 3);
+	assert.equal((await bound().out()).git.head, parent);
+	const intake = await bound().gitSync();
+	assert.deepEqual(rows(), committedIntake, "retry after cursor failure returns the atomic intake receipt");
+	assert.ok(intake);
+	assert.equal(intake?.head, incoming);
+	assert.equal(intake?.commits, 1);
+	assert.equal((intake.answer as { landed: boolean }).landed, true, JSON.stringify(intake));
+	const imported = await call("file", undefined, { path: "a.txt", version: "3" });
+	assert.equal(imported.status, 200);
+	assert.match(JSON.stringify(imported.body), /From Git/);
+	const afterIntake = rows();
+	assert.equal(await bound().gitSync(), null);
+	assert.deepEqual(rows(), afterIntake, "cold intake does not apply the same commit twice");
 });
+
+for (const disk of [false, true]) {
+	test(`Git refusal permits a later fixing commit with disk mode ${disk}`, async (t) => {
+		const storage = memoryStorage();
+		t.after(() => storage.db.close());
+		const values = new Map<string, unknown>();
+		const context = {
+			id: { toString: () => "refusal" },
+			storage: {
+				...storage,
+				get: async (key: string) => values.get(key),
+				put: async (key: string | Record<string, unknown>, value?: unknown) => {
+					if (typeof key === "string") values.set(key, value);
+					else for (const [k, v] of Object.entries(key)) values.set(k, v);
+				},
+				getAlarm: async () => null,
+				setAlarm: async () => {},
+			},
+		};
+		const artifacts = {
+			get: async () => ({
+				info: async () => ({ remote: "https://artifacts.invalid/refusal" }),
+				createToken: async () => ({ plaintext: "invented-test-token" }),
+				[Symbol.dispose]() {},
+			}),
+		};
+		const object = () =>
+			new ProjectObject(context as never, { ABSO_DISK_FIRST: disk ? "on" : "off", ARTIFACTS: artifacts } as never);
+		const call = async (op: string, body: unknown) => {
+			for (let page = 0; page < 100; page++) {
+				const result = await object().call("refusal", op, undefined, body);
+				if (result.status !== 503) return result;
+			}
+			throw Error("preparation did not finish");
+		};
+		assert.equal((await call("init", { files: { "a.txt": "original\n" } })).status, 200);
+		assert.equal((await call("status", {})).status, 200);
+		const remote = new MemoryFS();
+		await git.init({ fs: remote, dir: "/repo", defaultBranch: "main" });
+		const commit = async (files: Record<string, string>, message: string, parent: string[]) => {
+			const entries = [];
+			for (const [path, text] of Object.entries(files))
+				entries.push({
+					mode: "100644",
+					path,
+					type: "blob" as const,
+					oid: await git.writeBlob({ fs: remote, dir: "/repo", blob: new TextEncoder().encode(text) }),
+				});
+			const tree = await git.writeTree({ fs: remote, dir: "/repo", tree: entries });
+			const oid = await git.commit({
+				fs: remote,
+				dir: "/repo",
+				tree,
+				parent,
+				message,
+				author: { name: "Git writer", email: "test@example.invalid" },
+			});
+			await git.writeRef({ fs: remote, dir: "/repo", ref: "main", value: oid, force: true });
+			return oid;
+		};
+		const base = await commit({ "a.txt": "original\n" }, "Initial\n\nabso-version: 0", []);
+		values.set("git:head", base);
+		let head = await commit({ "A.TXT": "clash\n", "a.txt": "original\n" }, "Refused", [base]);
+		t.mock.method(git, "listServerRefs", async () => [{ ref: "refs/heads/main", oid: head }]);
+		t.mock.method(git, "clone", async (options: Parameters<typeof git.clone>[0]) => {
+			(options.fs as MemoryFS).entries = structuredClone(remote.entries);
+		});
+		const refused = await object().gitSync();
+		assert.ok(refused);
+		assert.match(JSON.stringify(refused.answer), /one file|clash/i);
+		assert.equal(values.get("git:head"), head);
+		assert.equal(await object().gitSync(), null);
+		head = await commit({ "a.txt": "fixed\n" }, "Fixed", [head]);
+		const fixed = await object().gitSync();
+		assert.ok(fixed);
+		assert.equal((fixed.answer as { landed: boolean }).landed, true, JSON.stringify(fixed));
+		assert.equal(values.get("git:head"), head);
+		assert.match(
+			JSON.stringify((await call("file", { path: "a.txt", version: String((await object().out()).version) })).body),
+			/fixed/,
+		);
+	});
+}

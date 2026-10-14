@@ -280,18 +280,22 @@ export function newsForOthers(
 	entries: Entry[],
 ): void {
 	const just = new Set(space.versions[version]!.atoms);
-	// Most publishes change no definition; then only the same-lines rule can bring news.
-	const touched = touchedFiles(host.graph, just, [host.viewAt(space, version - 1), host.viewAt(space, last(space))]);
-	const before = definitionsIn(host.viewAt(space, version - 1), touched);
-	const after = definitionsIn(host.viewAt(space, last(space)), touched);
-	const changedDefinitions = [...new Set([...before.keys(), ...after.keys()])].some(
-		(name) => !before.has(name) || signature(before.get(name)!) !== signature(after.get(name) ?? []),
-	);
+	let changedDefinitions: boolean | undefined;
+	const compareDefinitions = () => {
+		// Most publishes change no definition; then only the same-lines rule can bring news.
+		const touched = touchedFiles(host.graph, just, [host.viewAt(space, version - 1), host.viewAt(space, last(space))]);
+		const before = definitionsIn(host.viewAt(space, version - 1), touched);
+		const after = definitionsIn(host.viewAt(space, last(space)), touched);
+		return [...new Set([...before.keys(), ...after.keys()])].some(
+			(name) => !before.has(name) || signature(before.get(name)!) !== signature(after.get(name) ?? []),
+		);
+	};
 	for (const agent of [...host.agents.values()].toSorted((a, b) => (a.name < b.name ? -1 : 1))) {
 		if (agent === publisher || agent.space !== space.name) continue;
 		const draft = host.draft(agent);
 		if (draft.length === 0) continue;
 		const lines = pairsIn(host.graph, draft, just, unionOverlay(host.setOf(space), draft));
+		changedDefinitions ??= compareDefinitions();
 		const defs = changedDefinitions
 			? host.definitionCollisions(agent, host.newerFor(agent)).filter((d) => just.has(d.by))
 			: [];

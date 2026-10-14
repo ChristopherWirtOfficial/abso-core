@@ -107,3 +107,51 @@ test("persistent conflict candidates and resolver intersections stream in exact 
 		source.db.close();
 	}
 });
+
+test("wide claim merging reads each stream head once and closes streams on failure", () => {
+	const count = 256;
+	let reads = 0,
+		opened = 0,
+		closed = 0;
+	let fail = false;
+	const draft = {
+		seq: 3,
+		writes: Array.from({ length: count }, (_, n) => `L:a0.${n}`),
+		reads: [],
+		holds: [],
+		inserts: [],
+		deletes: [],
+		deps: [],
+		resolves: [],
+		needs: [],
+		reasons: [],
+	};
+	const stream = function* () {
+		opened++;
+		try {
+			yield "a0";
+			yield "a1";
+			if (fail) throw Error("claim stream failure");
+			yield "a2";
+		} finally {
+			closed++;
+		}
+	};
+	const graph = {
+		atom: (id: string) => {
+			reads++;
+			return id === "a3" ? draft : { seq: Number(id.slice(1)) };
+		},
+		eachWriterOf: stream,
+		eachReaderOf: stream,
+		eachHolderOf: stream,
+	} as unknown as Graph;
+	assert.deepEqual(pairsIn(graph, ["a3"], new Set(), new Set()), []);
+	assert.ok(reads <= count * 12 + 1, `Unexpected repeated head reads: ${reads}`);
+	assert.equal(closed, opened);
+	fail = true;
+	opened = 0;
+	closed = 0;
+	assert.throws(() => pairsIn(graph, ["a3"], new Set(), new Set()), /claim stream failure/);
+	assert.equal(closed, opened);
+});

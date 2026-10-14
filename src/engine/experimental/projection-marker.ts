@@ -118,16 +118,21 @@ export class ExperimentalMarkerProjection {
 			if (!this.members.get(previous.membership, this.graph.atom(id).seq)?.present) throw Error("missing dependency");
 		return this.storage.transaction(() => {
 			const state = { ...previous };
-			const sequence = this.sequence;
 			this.ensureFile(state, this.path);
 			for (const run of atom.inserts) this.ensureFile(state, run.file);
 			let k = 0;
 			for (const run of atom.inserts) for (const _ of run.lines) this.insertLine(state, `${atom.id}.${k++}`);
+			let visibility: Array<{ kind: "visibility"; id: number; delta: number }> = [];
 			for (const line of atom.deletes) {
 				const marker = this.markers.get(state.locator, this.graph.lineN(line) + 1);
 				if (!marker) throw Error("missing deleted marker");
-				state.sequence = sequence.update(state.sequence, { kind: "visibility", id: marker.enter, delta: 1 });
+				visibility.push({ kind: "visibility", id: marker.enter, delta: 1 });
+				if (visibility.length === 16) {
+					state.sequence = this.sequence.updateMany(state.sequence, visibility);
+					visibility = [];
+				}
 			}
+			if (visibility.length) state.sequence = this.sequence.updateMany(state.sequence, visibility);
 			for (const id of atom.deps) {
 				const seq = this.graph.atom(id).seq,
 					member = required(this.members.get(state.membership, seq));
@@ -143,12 +148,6 @@ export class ExperimentalMarkerProjection {
 	insertLine(state: MarkerState, line: string): void {
 		this.assertContext(state);
 		const sequence = this.sequence;
-		const insert = (rank: number, text: string, hidden = false): number => {
-			const id = state.sequence.next;
-			state.sequence = sequence.update(state.sequence, { kind: "insert", rank, text });
-			if (hidden) state.sequence = sequence.update(state.sequence, { kind: "visibility", id, delta: 1 });
-			return id;
-		};
 		const n = this.graph.lineN(line),
 			parent = this.graph.parentCodeOf(n);
 		if (n + 1 >= 0x80000000) throw Error("prototype line identity limit");
@@ -175,8 +174,12 @@ export class ExperimentalMarkerProjection {
 			preceding === undefined ? parentMarker.enter : required(this.markers.get(state.locator, preceding + 1)).exit;
 		state.children = this.childRoots.set(state.children, parentKey, { root: index.insert(root, key, n) });
 		const at = sequence.rank(state.sequence, anchor) + 1;
-		const enter = insert(at, line),
-			exit = insert(at + 1, `${line}:end`, true);
+		const enter = state.sequence.next,
+			exit = enter + 1;
+		state.sequence = sequence.updateMany(state.sequence, [
+			{ kind: "insert", rank: at, text: line },
+			{ kind: "insert", rank: at + 1, text: `${line}:end`, hidden: true },
+		]);
 		state.locator = this.markers.set(state.locator, n + 1, { kind: "line", enter, exit, parentKey, key });
 	}
 	removeDeleter(previous: MarkerState, atom: Atom): MarkerState {

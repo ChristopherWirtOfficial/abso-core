@@ -2,6 +2,7 @@
 // except `run`, which sends a tar.gz and reads the answer as a stream of JSON
 // lines (box-run.ts).
 
+import { randomUUID } from "node:crypto";
 import { setDefaultResultOrder } from "node:dns";
 import type {
 	ChangeAnswer,
@@ -201,6 +202,7 @@ export class Api {
 		if (this.config.visitor && method !== "GET")
 			throw new ApiError(`${path}: a folder that reads signed out sends only reads`);
 		const sent = body === undefined ? undefined : JSON.stringify(body);
+		const requestId = method === "POST" ? randomUUID() : undefined;
 		const timeoutMs = Math.max(atLeastMs, timeoutFor(this.timeoutMs, sent));
 		// A connection that never opened is tried once more, IPv4 first (#37, GAME - UI/UX: one IPv6
 		// address timed out, and the same command went through seconds later). Nothing went out, so
@@ -209,7 +211,10 @@ export class Api {
 			try {
 				res = await this.send(this.url(path, server), {
 					method,
-					headers: this.headers(sent === undefined ? undefined : "application/json"),
+					headers: {
+						...this.headers(sent === undefined ? undefined : "application/json"),
+						...(requestId ? { "Idempotency-Key": requestId } : {}),
+					},
 					...(sent === undefined ? {} : { body: sent }),
 					signal: AbortSignal.timeout(timeoutMs),
 				});

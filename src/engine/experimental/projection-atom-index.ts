@@ -61,7 +61,8 @@ function itemValue(field: Field, value: unknown): unknown {
 		)
 			throw Error("invalid projection atom attribute");
 	}
-	return structuredClone(value);
+	// Every validated record field is scalar; detach proxy-backed records without cloning a container graph.
+	return value && typeof value === "object" ? { ...value } : value;
 }
 
 /** Derived index only. The caller supplies an already validated canonical atom and

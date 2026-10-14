@@ -228,6 +228,19 @@ interface WriterAdoption {
 	ready: boolean;
 }
 
+/** A decoded entry is supplied by a host that binds its bytes to canonical authority. */
+export type WriterAdoptionFrame = { seq: number; json: string } | { seq: number; bytes: number; entry: Entry };
+function adoptionFrameBytes(frame: WriterAdoptionFrame): number {
+	return "json" in frame
+		? typeof frame.json === "string"
+			? new TextEncoder().encode(frame.json).byteLength
+			: NaN
+		: frame.bytes;
+}
+function adoptionFrameEntry(frame: WriterAdoptionFrame): Entry {
+	return "json" in frame ? (JSON.parse(frame.json) as Entry) : frame.entry;
+}
+
 export class Project {
 	readonly #store: ProjectStore;
 	readonly #writerStorage?: GraphStateStorage;
@@ -480,6 +493,46 @@ export class Project {
 		return new Project(store, { ...options, writerStorage: storage }, WRITER_REOPEN);
 	}
 
+	/** Open a host-verified historical prefix. Its state must be immutable and
+	 * scoped to canonical authority; adoption readiness describes the live writer,
+	 * not whether this individual prefix has a complete checkpoint. */
+	static openHistorical(
+		storage: GraphStateStorage,
+		logLength: number,
+		scratch: GraphStateStorage,
+		assertScope: () => void = () => {
+			storage.read("project:meta", "checkpoint");
+		},
+		readViewProvider?: ProjectOptions["readViewProvider"],
+	): Project {
+		const refuse = (): never => {
+			throw new Error("historical project is read-only");
+		};
+		const selected = (collection: string) => {
+			// Revalidate the historical scope even when accessing derived scratch.
+			assertScope();
+			return collection.startsWith("projection-scratch:") ? scratch : storage;
+		};
+		return Project.#openWriter(
+			{ append: refuse },
+			{
+				read: (collection, key) => selected(collection).read(collection, key),
+				entries: (collection) => selected(collection).entries(collection),
+				write: (collection, key, value) => {
+					if (selected(collection) !== scratch) refuse();
+					scratch.write(collection, key, value);
+				},
+				remove: (collection, key) => {
+					if (selected(collection) !== scratch) refuse();
+					scratch.remove(collection, key);
+				},
+				transaction: (body) => storage.transaction(() => scratch.transaction(body)),
+			},
+			logLength,
+			{ readViewProvider },
+		);
+	}
+
 	/**
 	 * Derive one bounded page from the host's canonical frames. The host reads
 	 * those frames from its own log and revalidates the source inside this same
@@ -490,10 +543,15 @@ export class Project {
 		input: {
 			source: WriterSource;
 			from: number;
-			frames: Iterable<{ seq: number; json: string }>;
+			frames: Iterable<WriterAdoptionFrame>;
 			maxEntries: number;
 			maxBytes: number;
+			/** The host supplies disk-backed decoded entries and verified byte counts. */
+			decodedFrames?: boolean;
 			currentSource(): WriterSource;
+			/** Select the host's derived historical revision before applying a frame.
+			 * Each selected revision receives a complete Project checkpoint. */
+			beginRevision?(logLength: number): void;
 		},
 		options: Omit<ProjectOptions, "writerStorage"> = {},
 	): { next: number; ready: boolean; entries: number; bytes: number } {
@@ -509,7 +567,7 @@ export class Project {
 			input.maxEntries > 256 ||
 			!Number.isSafeInteger(input.maxBytes) ||
 			input.maxBytes < 1 ||
-			input.maxBytes > 8_000_000
+			(input.maxBytes > 8_000_000 && input.decodedFrames !== true)
 		)
 			throw new Error("invalid writer adoption bounds or source");
 		return storage.transaction(() => {
@@ -533,19 +591,24 @@ export class Project {
 			let count = 0;
 			let bytes = 0;
 			for (const frame of input.frames) {
+				if (input.decodedFrames && "json" in frame) throw new Error("decoded adoption requires decoded frames");
+				const size = adoptionFrameBytes(frame);
 				if (
 					count >= input.maxEntries ||
 					frame.seq !== input.from + count ||
 					frame.seq >= input.source.logLength ||
-					typeof frame.json !== "string" ||
-					frame.json.length > input.maxBytes - bytes
+					!Number.isSafeInteger(size) ||
+					size < 1 ||
+					size > input.maxBytes - bytes
 				)
 					throw new Error("writer adoption page exceeds bounds or has a noncontiguous frame");
-				bytes += new TextEncoder().encode(frame.json).byteLength;
+				bytes += size;
 				if (bytes > input.maxBytes) throw new Error("writer adoption page exceeds byte bound");
-				project.#apply(JSON.parse(frame.json) as Entry);
+				input.beginRevision?.(frame.seq + 1);
+				project.#apply(adoptionFrameEntry(frame));
 				project.#stored++;
 				project.#persistMutable();
+				if (input.beginRevision) project.#writeCheckpoint();
 				count++;
 			}
 			if (count === 0) throw new Error("writer adoption page must advance");
@@ -563,9 +626,81 @@ export class Project {
 	}
 
 	/**
-	 * Apply more stored entries to a copy loaded for reading (#41, replay):
-	 * scrubbing forward applies only what's new. Never for the live project.
+	 * Extend derived historical indexes from an already checkpointed prefix.
+	 * The host supplies only new canonical frames inside its commit transaction.
 	 */
+	static extendHistoricalPage(
+		storage: GraphStateStorage,
+		input: {
+			from: number;
+			frames: Iterable<WriterAdoptionFrame>;
+			maxEntries: number;
+			maxBytes: number;
+			/** The host supplies disk-backed decoded entries and verified byte counts. */
+			decodedFrames?: boolean;
+			beginRevision(logLength: number): void;
+			/** Verify both the saved prefix and the new frames against canonical authority. */
+			validateAuthority(): void;
+		},
+	): { next: number; entries: number; bytes: number } {
+		if (
+			!Number.isSafeInteger(input.from) ||
+			input.from < 1 ||
+			!Number.isSafeInteger(input.maxEntries) ||
+			input.maxEntries < 1 ||
+			input.maxEntries > 256 ||
+			!Number.isSafeInteger(input.maxBytes) ||
+			input.maxBytes < 1 ||
+			(input.maxBytes > 8_000_000 && input.decodedFrames !== true)
+		)
+			throw new Error("invalid historical extension bounds");
+		const validate = () => {
+			const result: unknown = input.validateAuthority();
+			if (result && (typeof result === "object" || typeof result === "function") && "then" in result)
+				throw new Error("historical authority must be synchronous");
+		};
+		return storage.transaction(() => {
+			validate();
+			const project = Project.#openWriter(
+				{
+					append: () => {
+						throw new Error("history derivation cannot append canonical entries");
+					},
+				},
+				storage,
+				input.from,
+				{},
+			);
+			project.#loading = true;
+			let entries = 0,
+				bytes = 0;
+			for (const frame of input.frames) {
+				if (input.decodedFrames && "json" in frame) throw new Error("decoded adoption requires decoded frames");
+				const size = adoptionFrameBytes(frame);
+				if (
+					entries >= input.maxEntries ||
+					frame.seq !== input.from + entries ||
+					!Number.isSafeInteger(size) ||
+					size < 1 ||
+					size > input.maxBytes - bytes
+				)
+					throw new Error("historical extension exceeds bounds or is not contiguous");
+				bytes += size;
+				if (bytes > input.maxBytes) throw new Error("historical extension exceeds byte bound");
+				input.beginRevision(frame.seq + 1);
+				project.#apply(adoptionFrameEntry(frame));
+				project.#stored++;
+				project.#persistMutable();
+				project.#writeCheckpoint();
+				entries++;
+			}
+			if (!entries) throw new Error("historical extension must advance");
+			validate();
+			return { next: input.from + entries, entries, bytes };
+		});
+	}
+
+	/** Apply more entries to a replay copy. Never for the live project. */
 	catchUp(entries: Iterable<Entry>): void {
 		this.#loading = true;
 		try {
@@ -896,6 +1031,7 @@ export class Project {
 
 	/** The project's reviewers per area (#44): avcs.json's `"review": [{"paths": [...], "reviewer": "..."}]` in shared. */
 	#reviewRules(): ReviewRule[] {
+		if (["abso.json", "avcs.json"].every((path) => this.#graph.startCodeOf(path) === undefined)) return [];
 		return reviewRulesIn(projectFileIn(this.#sharedView())?.text);
 	}
 
@@ -1325,7 +1461,7 @@ export class Project {
 		space: Space,
 		changes: AtomId[],
 		pick: boolean,
-	): { collisions: Collision[]; newer: Set<AtomId>; union: Set<AtomId> } {
+	): { collisions: Collision[]; newer: ReadonlySet<AtomId>; union: ReadonlySet<AtomId> } {
 		return hostedLandCollisions(this.#landHost, space, changes, pick);
 	}
 
@@ -2043,6 +2179,12 @@ export class Project {
 	#landers?: LandHost;
 	get #landHost(): LandHost {
 		this.#landers ??= {
+			viewAt: (space, version, changes) =>
+				changes?.length
+					? this.#viewKeyed(`a ${space.name}@${version}+${changes.join(",")}`, () =>
+							unionOverlay(this.#at(space, version), changes),
+						)
+					: this.#viewAt(space, version),
 			agents: this.#agents,
 			graph: this.#graph,
 			spaces: this.#spaces,

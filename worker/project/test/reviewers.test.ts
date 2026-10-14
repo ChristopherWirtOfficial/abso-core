@@ -92,3 +92,25 @@ test("a reviewer's own change doesn't notify it, and a project without rules or 
 	plain.publish("b", "x", 2);
 	assert.equal(plain.news("c").news.length, 0);
 });
+
+test("review rules added after an absent configuration are honored and removal clears them", () => {
+	for (const name of ["abso.json", "avcs.json"]) {
+		const project = new Project(new MemoryStore());
+		project.init({ "a.txt": "one\n" }, 0);
+		project.sync("builder");
+		project.sync("reviewer");
+		project.record("builder", { "a.txt": "two\n" }, 1);
+		project.publish("builder", "No configuration", 2);
+		assert.equal(project.news("reviewer").news.length, 0);
+		project.record(
+			"builder",
+			{ [name]: JSON.stringify({ review: [{ paths: ["a.txt"], reviewer: "reviewer" }] }), "a.txt": "three\n" },
+			3,
+		);
+		project.publish("builder", "Add rules", 4);
+		assert.ok(project.news("reviewer").news.some((text) => text.includes("in your review area")));
+		project.record("builder", { [name]: null, "a.txt": "four\n" }, 5);
+		project.publish("builder", "Remove rules", 6);
+		assert.equal(project.news("reviewer").news.length, 0);
+	}
+});

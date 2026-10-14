@@ -118,3 +118,50 @@ test("typed marker namespaces isolate file identities and temporary metadata", (
 		storage.db.close();
 	}
 });
+
+test("visibility batches roll back earlier batches and retry with exact line parity", (t) => {
+	const db = new SqlState();
+	t.after(() => db.db.close());
+	const text = Array.from({ length: 35 }, (_, n) => `line ${n}\n`).join("");
+	const repo = Repo.init({ "f.txt": text });
+	const graph = new Graph({ storage: new CachedStateStorage(db) });
+	graph.add(repo.graph.atom("a0"));
+	const p = new MarkerProjection(db, graph, "f.txt", "batch-failure");
+	const initial = p.apply(p.empty(), repo.graph.atom("a0"));
+	const originalLines = p.lines(initial, "f.txt");
+	const atom = repo.edit({ edits: [{ file: "f.txt", old: text, new: "" }] });
+	graph.add(atom);
+	const rows = () => db.db.prepare("SELECT * FROM state ORDER BY collection,key").all();
+	const before = rows();
+	const original = p.sequence.updateMany.bind(p.sequence);
+	const sizes: number[] = [];
+	let fail = true;
+	t.mock.method(
+		p.sequence,
+		"updateMany",
+		(state: Parameters<typeof original>[0], operations: Parameters<typeof original>[1]) => {
+			const next = original(state, operations);
+			if (operations.every((op) => op.kind === "visibility")) {
+				sizes.push(operations.length);
+				if (fail && sizes.length === 2) throw Error("second visibility batch failure");
+			}
+			return next;
+		},
+	);
+	assert.throws(() => p.apply(initial, atom), /second visibility batch/);
+	assert.deepEqual(sizes, [16, 16]);
+	assert.deepEqual(rows(), before);
+	assert.deepEqual(p.lines(initial, "f.txt"), originalLines);
+	fail = false;
+	sizes.length = 0;
+	const next = p.apply(initial, atom);
+	assert.deepEqual(sizes, [16, 16, 3]);
+	assert.deepEqual(
+		p.lines(next, "f.txt"),
+		repo
+			.view()
+			.lines("f.txt")
+			.map((line) => line.id),
+	);
+	assert.deepEqual(p.lines(initial, "f.txt"), originalLines);
+});

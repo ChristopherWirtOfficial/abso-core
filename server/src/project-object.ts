@@ -4,8 +4,10 @@
 // R2 copies, edge cache, probes or disk-first writer.
 
 import { DurableObject } from "cloudflare:workers";
-import { type Answer, answer, type Readers } from "../../worker/project/http.ts";
+import { createHash } from "node:crypto";
+import { type Answer, answer, type Readers, readerAnswer } from "../../worker/project/http.ts";
 import type { ProjectCalls, ProjectHistory } from "../../worker/project/project-api.ts";
+import { ProjectError } from "../../worker/project/project-error.ts";
 import { BLOB_MAX, BlobStore } from "./blobs.ts";
 import { DiskFirstRuntime } from "./disk-first-runtime.ts";
 import { EngineProject, SqliteLog } from "./engine-project.ts";
@@ -163,6 +165,7 @@ export class ProjectObject extends DurableObject<Env> {
 		body: unknown,
 		how: string | undefined,
 		revision: number,
+		request?: { id: string; principal: string },
 	): Promise<Answer> {
 		const runtime = this.diskRuntime()!;
 		const validate = () => {
@@ -170,7 +173,11 @@ export class ProjectObject extends DurableObject<Env> {
 				throw Object.assign(Error("project authorization changed during call setup"), { code: "authority-changed" });
 		};
 		const progress = await this.prepareDisk(validate);
-		const known = new Set((await this.ctx.storage.get<string[]>("readers")) ?? []);
+		const legacyReaders = (await this.ctx.storage.get<string[]>("readers")) ?? [];
+		const storedReaders = progress?.ready
+			? (new SqliteWriterState(this.ctx.storage, "server-disk-v1").read("runtime", "readers") as string[] | undefined)
+			: undefined;
+		const known = new Set(storedReaders ?? legacyReaders);
 		validate();
 		let readersChanged = false;
 		const readers: Readers = {
@@ -187,25 +194,44 @@ export class ProjectObject extends DurableObject<Env> {
 			return { status: 404, body: { error: "no such project; run init first" } };
 		if (!progress?.ready && !(progress?.phase === "empty" && op === "init"))
 			return { status: 503, body: { error: "project indexes are being prepared", retryAfter: 1, progress } };
+		if (agent && op !== "reader") {
+			const refused = readerAnswer({ status: () => undefined }, op, agent, body, readers);
+			if (refused) return refused;
+		}
 		const before = new SqliteLog(this.ctx.storage).seq();
 		const action = (calls: EngineProject) => {
 			const result = answer(calls, op, agent, body, readers, how);
 			if (result.status >= 500) throw Error(`project operation failed: ${JSON.stringify(result.body)}`);
+			if (readersChanged)
+				new SqliteWriterState(this.ctx.storage, "server-disk-v1").write("runtime", "readers", readers.list());
 			return result;
 		};
 
+		const receipt = request
+			? {
+					id: `http:${createHash("sha256").update(request.principal).digest("hex")}:${request.id}`,
+					identity: {
+						project: name,
+						principal: request.principal,
+						agent: agent ?? null,
+						operation: op,
+						body: body ?? null,
+						how: how ?? null,
+					},
+				}
+			: undefined;
 		const result =
 			progress.phase === "empty"
-				? runtime.initialize(action, validate)
+				? runtime.initialize(action, validate, receipt)
 				: READ_OPS.has(op) || op.startsWith("change/")
 					? runtime.read(action, validate)
-					: runtime.write(action, validate);
+					: runtime.write(action, validate, receipt);
+
 		if (readersChanged) {
 			this.authorityRevision++;
-			await this.ctx.storage.put("readers", readers.list());
 		}
 		const log = new SqliteLog(this.ctx.storage);
-		if (log.seq() !== before) {
+		if (log.seq() !== before || (request && !READ_OPS.has(op))) {
 			this.wake();
 			await this.ctx.storage.put("name", name);
 			await this.soon(Date.now() + 100);
@@ -345,20 +371,38 @@ export class ProjectObject extends DurableObject<Env> {
 		inFeed = false,
 		how?: string,
 		key?: KeyForCall,
+		requestId?: string,
 	): Promise<Answer> {
 		const revision = this.authorityRevision;
+		let principal = "shared-token";
+		if (
+			requestId !== undefined &&
+			!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)
+		)
+			return { status: 400, body: { error: "Idempotency-Key must be a UUID" } };
 		if (key) {
 			const decided = await this.checkAgentKey(key.presented, agent, key.address);
 			if (!decided.ok) return { status: decided.status, body: { error: decided.error } };
 			const allowed = keyAllows(decided.role, { write: key.write, agent, route: key.route });
 			if (!allowed.ok) return { status: allowed.status, body: { error: allowed.error } };
 			how = decided.as;
+			principal = `key:${decided.id}`;
 		}
 		if (op === "feed" && !inFeed) return this.feed(name, body);
 		if (this.diskRuntime()) {
 			try {
-				return await this.diskCall(name, op, agent, body, how, revision);
+				return await this.diskCall(
+					name,
+					op,
+					agent,
+					body,
+					how,
+					revision,
+					requestId ? { id: requestId, principal } : undefined,
+				);
 			} catch (error) {
+				if ((error as { code?: string })?.code === "request-reused")
+					return { status: 409, body: { error: "Idempotency-Key was reused for a different request" } };
 				if ((error as { code?: string })?.code === "authority-changed")
 					return { status: 409, body: { error: "project authorization changed; retry the request", retryable: true } };
 				throw error;
@@ -499,14 +543,27 @@ export class ProjectObject extends DurableObject<Env> {
 			if (found) await this.ctx.storage.put("git:head", found.head);
 			return null;
 		}
+		// Unexpected failures leave the cursor unacknowledged for retry. Engine
+		// refusals are recorded and acknowledged so a later fixing commit can advance.
+		const ingest = (p: EngineProject) =>
+			p.ingest({ author: found.author, base: found.base, commits: found.commits }, Date.now());
+		const runtime = this.diskRuntime();
 		let result: unknown;
 		try {
-			result = this.useProject(
-				(p) => p.ingest({ author: found.author, base: found.base, commits: found.commits }, Date.now()),
-				true,
-			);
-		} catch (e) {
-			result = { error: e instanceof Error ? e.message : String(e) };
+			result = runtime
+				? runtime.write(ingest, () => {}, {
+						id: `git:${found.head}`,
+						identity: {
+							project: name,
+							head: found.head,
+							base: found.base,
+							commits: found.commits.map((commit) => commit.sha),
+						},
+					})
+				: this.useProject(ingest, true);
+		} catch (error) {
+			if (!(error instanceof ProjectError)) throw error;
+			result = { error: error.message };
 		}
 		const taken = {
 			at: new Date().toISOString(),

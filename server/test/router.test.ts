@@ -45,6 +45,23 @@ const request = (path: string, init: RequestInit & { token?: string | null } = {
 };
 
 describe("routes", () => {
+	it("forwards request identity separately from untrusted JSON body", async () => {
+		const { env, calls } = fakeEnv();
+		const id = "00000000-0000-4000-8000-000000000007";
+		const response = await handle(
+			request("/p/game/a/alice/record", {
+				method: "POST",
+				headers: { "content-type": "application/json", "Idempotency-Key": id },
+				body: JSON.stringify({ files: {}, principal: "forged" }),
+			}),
+			env,
+			ctx,
+			noIssues as never,
+		);
+		assert.equal(response.status, 200);
+		assert.equal(calls[0]!.args[7], id);
+		assert.equal(calls[0]!.args[6], undefined);
+	});
 	it("matches the project's top routes and an agent's ops", () => {
 		assert.deepEqual(PROJECT_ROUTE.exec("/p/game/status")?.slice(1, 3), ["game", "status"]);
 		assert.deepEqual(PROJECT_ROUTE.exec("/p/game/a/alice/publish")?.slice(1), [

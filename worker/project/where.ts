@@ -30,8 +30,9 @@ export interface Spot {
 
 export function where(project: Project) {
 	const graph = project.graph;
-	const shared = project.sharedView();
+	let shared: ReturnType<Project["sharedView"]> | undefined;
 	const sharedNumber = (file: string, id: LineId): number | undefined => {
+		shared ??= project.sharedView();
 		if (!shared.hasFile(file)) return undefined;
 		const i = shared.lines(file).findIndex((l) => l.id === id);
 		return i >= 0 ? i + 1 : undefined;

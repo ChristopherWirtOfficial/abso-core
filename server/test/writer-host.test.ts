@@ -72,6 +72,37 @@ test("open server adopts and records through its call adapter without full-histo
 		}).ready
 	)
 		assert.ok(++pages < 1000);
+	// Repeated anonymous views share one reader only inside their verified session.
+	const session = projection.open({ state, log: new SqliteLog(storage), root: host().root() });
+	const views = session.readViewProvider(oracle.graph);
+	const first = views.keyed!("v @0");
+	assert.equal(views.keyed!("v @0"), first);
+	assert.deepEqual(first.files(), { "a.txt": "one\ntwo\n" });
+	const seq = oracle.graph.size;
+	oracle.graph.add({
+		id: `a${seq}`,
+		seq,
+		author: "fixture",
+		message: "Advance graph",
+		time: 5,
+		inserts: [],
+		deletes: [],
+		writes: [],
+		reads: [],
+		holds: [],
+		needs: [],
+		resolves: [],
+		reasons: [],
+		deps: ["a0"],
+	});
+	assert.throws(() => first.files(), /stale/);
+	const refreshed = views.keyed!("v @0");
+	assert.notEqual(refreshed, first);
+	assert.deepEqual(refreshed.files(), { "a.txt": "one\ntwo\n" });
+	session.close();
+	assert.throws(() => refreshed.files(), /expired|closed/);
+	assert.throws(() => first.files(), /expired|closed/);
+	assert.throws(() => views.keyed!("v @0"), /expired|closed/);
 	const writer = () => new SqliteWriterHost(storage, namespace, projection, { indexProjectionAtoms: true });
 	const run = (operation: "record" | "publish", body: unknown, failReceipt = false) =>
 		writer().runCalls({
@@ -92,6 +123,9 @@ test("open server adopts and records through its call adapter without full-histo
 	assert.throws(() => run("record", { files: { "b.txt": "failed\n" } }, true), /receipt failure/);
 	assert.deepEqual(rows(), before);
 	assert.equal(run("record", { files: { "b.txt": "finished\n" } }).status, 200);
+	const beforePublish = rows();
+	assert.throws(() => run("publish", { message: "Disk first" }, true), /receipt failure/);
+	assert.deepEqual(rows(), beforePublish);
 	const published = run("publish", { message: "Disk first" });
 	assert.equal(published.status, 200);
 	assert.equal((published.body as { ok: boolean }).ok, true);

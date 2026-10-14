@@ -5,6 +5,7 @@ import { indexAcceptedProjectionAtom } from "../../src/engine/experimental/proje
 import type { GraphStateStorage } from "../../src/engine/state-source.ts";
 import { Project, type WriterSource } from "../../worker/project/project.ts";
 import type { ProjectOptions } from "../../worker/project/project-types.ts";
+import { withDecodedFrames } from "./decoded-frames.ts";
 import {
 	EngineProject,
 	logParts,
@@ -12,6 +13,7 @@ import {
 	SqliteLog,
 	type SqliteStorage,
 } from "./engine-project.ts";
+import type { SqliteHistoryHost } from "./history-host.ts";
 
 export class SqliteWriterState implements GraphStateStorage {
 	readonly #storage: SqliteStorage;
@@ -145,25 +147,39 @@ export interface WriterRoot extends WriterSource {
 
 /** Domain-separated SHA-256 chain over exact canonical UTF-8 frames and their positions. */
 export function writerFrameDigest(previous: string, seq: number, json: string): string {
-	return createHash("sha256")
+	return writerFrameChunksDigest(previous, seq, [json]);
+}
+
+/** Same canonical digest without retaining the complete frame. */
+export function writerFrameChunksDigest(previous: string, seq: number, chunks: Iterable<string>): string {
+	const hash = createHash("sha256")
 		.update("abso-writer-log-v1\n")
 		.update(JSON.stringify([previous, seq]))
-		.update("\n")
-		.update(json, "utf8")
-		.digest("hex");
+		.update("\n");
+	let carry = "";
+	for (const chunk of chunks) {
+		const text = carry + chunk;
+		const last = text.charCodeAt(text.length - 1);
+		const split = last >= 0xd800 && last <= 0xdbff;
+		carry = split ? text.slice(-1) : "";
+		hash.update(split ? text.slice(0, -1) : text, "utf8");
+	}
+	if (carry) hash.update(carry, "utf8");
+	return hash.digest("hex");
 }
 
 export function advanceWriterRoot(log: SqliteLog, previous: WriterRoot, source: WriterSource): WriterRoot {
 	let digest = previous.digest;
 	if (source.logLength < previous.logLength) throw new Error("writer root cannot move backwards");
 	for (let seq = previous.logLength; seq < source.logLength; seq++)
-		digest = writerFrameDigest(digest, seq, log.boundedFrame(seq, 8_000_000));
+		digest = writerFrameChunksDigest(digest, seq, log.frameChunks(seq));
 	return { format: 1, ...source, digest };
 }
 
 /** Inactive host for explicit adoption and synchronous fenced writer operations. */
 export interface WriterProjectionSession {
 	readonly readViewProvider: NonNullable<ProjectOptions["readViewProvider"]>;
+	historicalReadViewProvider?(state: GraphStateStorage): NonNullable<ProjectOptions["readViewProvider"]>;
 	commit(project: Project, root: WriterRoot): void;
 	/** Cleanup is inside the canonical transaction. Any failure aborts roots and receipt too. */
 	close(): void;
@@ -176,21 +192,25 @@ export interface WriterProjectionHost {
 
 export class SqliteWriterHost {
 	readonly #storage: SqliteStorage;
+	readonly #namespace: string;
 	readonly #state: SqliteWriterState;
 	readonly #log: SqliteLog;
 	readonly #projection?: WriterProjectionHost;
 	readonly #indexProjectionAtoms: boolean;
+	readonly #history?: SqliteHistoryHost;
 	constructor(
 		storage: SqliteStorage,
 		namespace: string,
 		projection?: WriterProjectionHost,
-		options: { indexProjectionAtoms?: boolean } = {},
+		options: { indexProjectionAtoms?: boolean; history?: SqliteHistoryHost } = {},
 	) {
 		this.#storage = storage;
+		this.#namespace = namespace;
 		this.#state = new SqliteWriterState(storage, namespace);
 		this.#log = new SqliteLog(storage);
 		this.#projection = projection;
 		this.#indexProjectionAtoms = options.indexProjectionAtoms ?? false;
+		this.#history = options.history;
 	}
 	#indexOptions(adopting = false) {
 		const mode = this.#state.read("host", "projection-atom-index-mode");
@@ -246,7 +266,6 @@ export class SqliteWriterHost {
 				input.maxEntries > 256 ||
 				!Number.isSafeInteger(input.maxBytes) ||
 				input.maxBytes < 1 ||
-				input.maxBytes > 8_000_000 ||
 				!(input.digest === "" || /^[a-f0-9]{64}$/.test(input.digest))
 			)
 				throw new Error("invalid bounded adoption request");
@@ -288,30 +307,29 @@ export class SqliteWriterHost {
 			)
 				throw new Error("writer adoption root cursor is stale");
 			let digest = previous?.digest ?? "";
-			const frames = function* () {
-				let bytes = 0;
-				for (let seq = from; seq < source.logLength && seq < from + limits.maxEntries; seq++) {
-					// Each frame is bounded before reading; the core also checks the
-					// cumulative byte count before applying a frame.
-					const json = log.boundedFrame(seq, limits.maxBytes);
-					const next = new TextEncoder().encode(json).byteLength;
-					if (bytes + next > limits.maxBytes && bytes > 0) return;
-					bytes += next;
-					digest = writerFrameDigest(digest, seq, json);
-					yield { seq, json };
-				}
-			};
-			const result = Project.adoptWriterPage(
-				this.#state,
-				{
-					source,
-					from,
-					frames: frames(),
-					...limits,
-					currentSource: () => this.source(),
+			const decoded = withDecodedFrames(
+				this.#storage,
+				`${this.#namespace}:decoded`,
+				log,
+				{ from, to: source.logLength, ...limits, digest },
+				(frames) => {
+					const result = Project.adoptWriterPage(
+						this.#state,
+						{
+							source,
+							from,
+							frames,
+							...limits,
+							decodedFrames: true,
+							currentSource: () => this.source(),
+						},
+						indexOptions,
+					);
+					return result;
 				},
-				indexOptions,
 			);
+			const result = decoded.result;
+			digest = decoded.digest;
 			SqliteWriterHost.#sync(validateAuthority());
 			this.#state.write("host", "adoption-root", { source, next: result.next, digest });
 			if (result.ready) {
@@ -351,7 +369,25 @@ export class SqliteWriterHost {
 					readViewProvider: projection?.readViewProvider,
 					entryAt: (index) => this.#log.since(index, 1)[0]!,
 				});
-				const result = input.operation(new EngineProject(project, (from, limit) => this.#log.since(from, limit)));
+				const root = this.root();
+				const result = input.operation(
+					new EngineProject(
+						project,
+						(from, limit) => this.#log.since(from, limit),
+						undefined,
+						this.#history
+							? (at, operation) =>
+									this.#history!.read(
+										root,
+										() => this.root(),
+										input.validateAuthority,
+										at,
+										operation,
+										projection?.historicalReadViewProvider,
+									)
+							: undefined,
+					),
+				);
 				SqliteWriterHost.#sync(result);
 				SqliteWriterHost.#sync(input.validateAuthority());
 				if (!SqliteWriterHost.#same(source, this.source())) throw new Error("reader source changed");
@@ -374,7 +410,15 @@ export class SqliteWriterHost {
 		return this.run({
 			...input,
 			operation: (project) => {
-				const calls = new EngineProject(project, (from, limit) => this.#log.since(from, limit), this.#log);
+				const root = this.root();
+				const calls = new EngineProject(
+					project,
+					(from, limit) => this.#log.since(from, limit),
+					this.#log,
+					this.#history
+						? (at, operation) => this.#history!.read(root, () => this.root(), input.validateAuthority, at, operation)
+						: undefined,
+				);
 				calls.setCheckerReady(input.checkerReady);
 				return input.operation(calls);
 			},
@@ -413,6 +457,7 @@ export class SqliteWriterHost {
 					const committedRoot = advanceWriterRoot(this.#log, root, committed);
 					this.#state.write("host", "canonical-root", committedRoot);
 					SqliteWriterHost.#sync(projection?.commit(project, committedRoot));
+					this.#history?.advance(this.#log, root, committedRoot, () => this.root(), input.validateAuthority);
 					SqliteWriterHost.#sync(input.commitReceipt(result, committed));
 					return result;
 				} finally {

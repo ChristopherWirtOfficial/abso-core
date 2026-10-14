@@ -20,7 +20,7 @@ export interface SequenceState {
 	readonly next: number;
 }
 export type SequenceOperation =
-	| { kind: "insert"; rank: number; text: string }
+	| { kind: "insert"; rank: number; text: string; hidden?: boolean }
 	| { kind: "visibility"; id: number; delta: number }
 	| { kind: "move"; from: number; length: number; to: number };
 const safe = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
@@ -132,6 +132,11 @@ export class ProjectionSequence {
 		return file;
 	}
 	update(state: SequenceState, operation: SequenceOperation): SequenceState {
+		return this.updateMany(state, [operation]);
+	}
+	/** A small bounded group shares changed AVL nodes and one locator flush. */
+	updateMany(state: SequenceState, operations: readonly SequenceOperation[]): SequenceState {
+		if (operations.length < 1 || operations.length > 16) throw Error("invalid sequence operation batch");
 		this.#state(state);
 		return this.storage.transaction(() => {
 			let map = state.map;
@@ -192,114 +197,117 @@ export class ProjectionSequence {
 			};
 			let root = state.root,
 				next = state.next;
-			if (operation.kind === "insert") {
-				const { rank, text } = operation;
-				if (!Number.isInteger(rank) || rank < 0 || rank > count(root) || next >= 2 ** 32) throw Error("invalid insert");
-				const added = next++;
-				const insert = (id: Page, at: number, p: Page): number => {
-					if (id === null)
-						return put({
-							id: added,
-							parent: p,
-							left: null,
-							right: null,
-							text,
-							deletions: 0,
-							height: 1,
-							count: 1,
-							visible: 1,
-							fileStarts: text.startsWith("root:") ? 1 : 0,
-						});
-					const node = get(id),
-						leftCount = count(node.left);
-					if (at <= leftCount) save({ ...node, left: insert(node.left, at, id) });
-					else save({ ...node, right: insert(node.right, at - leftCount - 1, id) });
-					return balance(id);
-				};
-				root = insert(root, rank, null);
-				parent(root, null);
-			} else if (operation.kind === "move") {
-				const { from, length, to } = operation;
-				const total = count(root);
-				if (
-					![from, length, to].every(Number.isSafeInteger) ||
-					from < 0 ||
-					length < 0 ||
-					from + length > total ||
-					to < 0 ||
-					to > total - length
-				)
-					throw Error("invalid move range");
-				// Join two AVL trees around one existing stable marker.
-				const join = (left: Page, pivot: number, right: Page): number => {
-					if (height(left) > height(right) + 1) {
-						const node = get(left!);
-						save({ ...node, right: join(node.right, pivot, right) });
-						const result = balance(left!);
-						parent(result, null);
-						return result;
-					}
-					if (height(right) > height(left) + 1) {
-						const node = get(right!);
-						save({ ...node, left: join(left, pivot, node.left) });
-						const result = balance(right!);
-						parent(result, null);
-						return result;
-					}
-					return save({ ...get(pivot), left, right, parent: null });
-				};
-				const split = (id: Page, at: number): [Page, Page] => {
-					if (id === null) return [null, null];
-					const node = get(id),
-						size = count(node.left);
-					if (at <= size) {
-						const [left, middle] = split(node.left, at);
-						const right = join(middle, id, node.right);
+			for (const operation of operations) {
+				if (operation.kind === "insert") {
+					const { rank, text } = operation;
+					if (!Number.isInteger(rank) || rank < 0 || rank > count(root) || next >= 2 ** 32)
+						throw Error("invalid insert");
+					const added = next++;
+					const insert = (id: Page, at: number, p: Page): number => {
+						if (id === null)
+							return put({
+								id: added,
+								parent: p,
+								left: null,
+								right: null,
+								text,
+								deletions: operation.hidden ? 1 : 0,
+								height: 1,
+								count: 1,
+								visible: operation.hidden ? 0 : 1,
+								fileStarts: text.startsWith("root:") ? 1 : 0,
+							});
+						const node = get(id),
+							leftCount = count(node.left);
+						if (at <= leftCount) save({ ...node, left: insert(node.left, at, id) });
+						else save({ ...node, right: insert(node.right, at - leftCount - 1, id) });
+						return balance(id);
+					};
+					root = insert(root, rank, null);
+					parent(root, null);
+				} else if (operation.kind === "move") {
+					const { from, length, to } = operation;
+					const total = count(root);
+					if (
+						![from, length, to].every(Number.isSafeInteger) ||
+						from < 0 ||
+						length < 0 ||
+						from + length > total ||
+						to < 0 ||
+						to > total - length
+					)
+						throw Error("invalid move range");
+					// Join two AVL trees around one existing stable marker.
+					const join = (left: Page, pivot: number, right: Page): number => {
+						if (height(left) > height(right) + 1) {
+							const node = get(left!);
+							save({ ...node, right: join(node.right, pivot, right) });
+							const result = balance(left!);
+							parent(result, null);
+							return result;
+						}
+						if (height(right) > height(left) + 1) {
+							const node = get(right!);
+							save({ ...node, left: join(left, pivot, node.left) });
+							const result = balance(right!);
+							parent(result, null);
+							return result;
+						}
+						return save({ ...get(pivot), left, right, parent: null });
+					};
+					const split = (id: Page, at: number): [Page, Page] => {
+						if (id === null) return [null, null];
+						const node = get(id),
+							size = count(node.left);
+						if (at <= size) {
+							const [left, middle] = split(node.left, at);
+							const right = join(middle, id, node.right);
+							parent(left, null);
+							parent(right, null);
+							return [left, right];
+						}
+						const [middle, right] = split(node.right, at - size - 1);
+						const left = join(node.left, id, middle);
 						parent(left, null);
 						parent(right, null);
 						return [left, right];
+					};
+					const merge = (left: Page, right: Page): Page => {
+						if (left === null) {
+							parent(right, null);
+							return right;
+						}
+						if (right === null) {
+							parent(left, null);
+							return left;
+						}
+						const [pivot, rest] = split(right, 1);
+						return join(left, pivot!, rest);
+					};
+					if (length && from !== to) {
+						const [left, tail] = split(root, from);
+						const [moved, right] = split(tail, length);
+						const remaining = merge(left, right);
+						const [before, after] = split(remaining, to);
+						root = merge(merge(before, moved), after);
+						parent(root, null);
 					}
-					const [middle, right] = split(node.right, at - size - 1);
-					const left = join(node.left, id, middle);
-					parent(left, null);
-					parent(right, null);
-					return [left, right];
-				};
-				const merge = (left: Page, right: Page): Page => {
-					if (left === null) {
-						parent(right, null);
-						return right;
+				} else if (operation.kind === "visibility") {
+					let node = get(operation.id);
+					if (
+						!node ||
+						!Number.isInteger(operation.delta) ||
+						Math.abs(operation.delta) !== 1 ||
+						node.deletions + operation.delta < 0
+					)
+						throw Error("invalid visibility");
+					save({ ...node, deletions: node.deletions + operation.delta });
+					while (node.parent !== null) {
+						node = get(node.parent);
+						save(node);
 					}
-					if (right === null) {
-						parent(left, null);
-						return left;
-					}
-					const [pivot, rest] = split(right, 1);
-					return join(left, pivot!, rest);
-				};
-				if (length && from !== to) {
-					const [left, tail] = split(root, from);
-					const [moved, right] = split(tail, length);
-					const remaining = merge(left, right);
-					const [before, after] = split(remaining, to);
-					root = merge(merge(before, moved), after);
-					parent(root, null);
-				}
-			} else if (operation.kind === "visibility") {
-				let node = get(operation.id);
-				if (
-					!node ||
-					!Number.isInteger(operation.delta) ||
-					Math.abs(operation.delta) !== 1 ||
-					node.deletions + operation.delta < 0
-				)
-					throw Error("invalid visibility");
-				save({ ...node, deletions: node.deletions + operation.delta });
-				while (node.parent !== null) {
-					node = get(node.parent);
-					save(node);
-				}
-			} else throw Error("unknown operation");
+				} else throw Error("unknown operation");
+			}
 			// Keep locator staging bounded even if a valid split/merge changes more
 			// than one batch. The enclosing transaction commits all batches together.
 			let batch: Array<readonly [number, SequenceNode]> = [];
