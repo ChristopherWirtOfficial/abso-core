@@ -2,7 +2,15 @@
 // first used for #56, abso hosts abso). Each commit on the first-parent line
 // of --ref becomes a version of shared, oldest first: the first by `avcs
 // init`, each later one by a publish of that commit's tree, with the commit's
-// message and a last line naming the commit, its author and its time.
+// message and a last line naming the commit, its author and its time. When
+// the repository's issues are on the web (origin on GitHub or GitLab, or
+// --issues <url>), a line after it says where, so "#39" in the message, or
+// in the lines it wrote, names that tracker's issue, not the project's:
+//
+//   git 4e1a7c2b9f03, Ada Lovelace, 2026-10-06T20:36:43-05:00
+//   Issues: https://github.com/owner/repo/issues
+//
+// abso why and abso blame read these lines (client/src/git-origin.ts).
 // --last-only imports the last commit alone.
 //
 // Before anything is created, the last commit is checked: abso stores text
@@ -14,7 +22,9 @@
 // What a first cut leaves for later (#58): every version's agent is the
 // importing agent and its time is the import's (the commit's author and time
 // are in the message); merges come in as their first parent's line; a run
-// that stops partway goes on with --after <sha> in the same --dir.
+// that stops partway goes on with --after <sha> in the same --dir. Version 0
+// is made by init, which says "Start the project", so the first commit's own
+// message and hash aren't on it: they're printed when the import starts.
 //
 // CI counts each imported version as seen as soon as it lands, so it never
 // checks or bisects the history; it checks what is published after the
@@ -22,7 +32,7 @@
 //
 //   node client/scripts/import-git.ts --project <name> [--ref origin/main]
 //     [--server <url>] [--agent import] [--dir <empty folder>]
-//     [--last-only] [--check-only] [--after <sha>]
+//     [--last-only] [--check-only] [--after <sha>] [--issues <url>]
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
@@ -31,6 +41,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { open } from "../src/commands.ts";
 import { loadIgnore } from "../src/folder.ts";
+import { issuesOf } from "../src/git-origin.ts";
 import { main } from "../src/main.ts";
 
 const { values } = parseArgs({
@@ -43,6 +54,7 @@ const { values } = parseArgs({
 		"last-only": { type: "boolean", default: false },
 		"check-only": { type: "boolean", default: false },
 		after: { type: "string" },
+		issues: { type: "string" },
 	},
 });
 const checkOnly = values["check-only"] === true;
@@ -94,12 +106,18 @@ if (checkOnly) {
 	process.exit(0);
 }
 
+// Where "#N" in the history points: --issues, else origin's issues on GitHub or GitLab.
+if (values.issues !== undefined && !/^https?:\/\/\S+$/.test(values.issues))
+	fail(`--issues is a web address, like https://github.com/owner/repo/issues (got ${JSON.stringify(values.issues)})`);
+const tracker = values.issues ?? issuesOf(origin());
+
 const env = { cwd: dir, env: process.env, write: () => {} };
 let skipped = 0;
 for (let i = start; i < line.length; i++) {
 	const sha = line[i]!;
 	extract(sha, dir);
-	const message = `${git(["log", "-1", "--format=%B", sha]).trim()}\n\ngit ${sha.slice(0, 12)}, ${git(["log", "-1", "--format=%an, %aI", sha]).trim()}`;
+	const message = `${git(["log", "-1", "--format=%B", sha]).trim()}\n\ngit ${sha.slice(0, 12)}, ${git(["log", "-1", "--format=%an, %aI", sha]).trim()}${tracker ? `\nIssues: ${tracker}` : ""}`;
+	if (i === 0) console.log(`Version 0 is commit ${sha.slice(0, 12)}: ${message.split("\n")[0]}`);
 	const subject = message.split("\n")[0]!.slice(0, 72);
 	// The first commit makes the project; --as-is adds no starting .absoignore or avcs.json git never had.
 	const argv =
@@ -177,6 +195,12 @@ function git(args: string[]): string {
 	const r = spawnSync("git", args, { encoding: "utf8", maxBuffer: 1 << 26 });
 	if (r.status !== 0) fail(`git ${args.join(" ")}: ${r.stderr.trim()}`);
 	return r.stdout;
+}
+
+/** origin's address, or "" when there's no origin. */
+function origin(): string {
+	const r = spawnSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" });
+	return r.status === 0 ? r.stdout.trim() : "";
 }
 
 function fail(message: string): never {

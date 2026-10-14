@@ -496,8 +496,12 @@ export class EngineProject implements ProjectCalls, ProjectHistory {
 			...(folder !== undefined ? { folder } : {}),
 		});
 	}
-	why(file: string, line: number, draft?: string, agent?: string) {
-		return why(this.project, file, line, { ...(draft ? { draft } : {}), ...(agent ? { agent } : {}) });
+	why(file: string, line: number, draft?: string, agent?: string, version?: number) {
+		return why(this.project, file, line, {
+			...(draft ? { draft } : {}),
+			...(agent ? { agent } : {}),
+			...(version !== undefined ? { version } : {}),
+		});
 	}
 	where() {
 		return where(this.project);

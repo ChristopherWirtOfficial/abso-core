@@ -732,10 +732,10 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		run: runBlame,
 	},
 	why: {
-		flags: { draft: "string", mine: "boolean" },
-		usage: "abso why <file>:<line> [--draft <name> | --mine]",
+		flags: { draft: "string", mine: "boolean", at: "string", all: "boolean" },
+		usage: "abso why <file>:<line> [--at <version>] [--all] [--draft <name> | --mine]",
 		about:
-			"Why one line of shared (or of a named draft, or your own view) is the way it is: its change, its push, its reasons, and any collision it settled.",
+			"Why one line of shared (or of a named draft, or your own view) is the way it is: the newest change to what it does, its push, its reasons, any collision it settled, and the line's earlier changes, newest first. Changes that only touched formatting (whitespace, line wrapping, quotes, trailing commas) are skipped, and why says which; --all shows them too. A line imported from git names its commit, and #N in it names the old repository's issue when abso.json's \"gitIssues\" says where those are. --at <version> reads the line as shared (or the draft) had it then, as blame --version does.",
 		run: runWhy,
 	},
 	drop: {

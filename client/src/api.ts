@@ -925,8 +925,8 @@ export class Api {
 		return this.json("POST", this.agentPath("restore"), files === null ? { all: true } : { files });
 	}
 
-	why(file: string, line: number, view: View = {}): Promise<WhyAnswer> {
-		return this.json("GET", `/why?${query({ file, line, ...view })}`);
+	why(file: string, line: number, view: View = {}, version?: number): Promise<WhyAnswer> {
+		return this.json("GET", `/why?${query({ file, line, version, ...view })}`);
 	}
 
 	where(): Promise<WhereAnswer> {

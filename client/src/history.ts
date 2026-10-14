@@ -8,7 +8,8 @@ import { globTest } from "./at.ts";
 import type { Env, Output } from "./commands.ts";
 import { findRoot, readConfig } from "./config.ts";
 import { relativeTo } from "./folder.ts";
-import { byWhom } from "./history-answers.ts";
+import { type GitOrigin, gitOrigin, issueLinks } from "./git-origin.ts";
+import { byWhom, type TrailStep } from "./history-answers.ts";
 
 function open(env: Env): { root: string; api: Api; agent: string } {
 	const root = findRoot(env.cwd);
@@ -50,6 +51,26 @@ function published(p: Publish | null): string {
 	return p === null ? "not pushed" : `version ${p.version} by ${byWhom(p)} (${when(p.time)}): "${p.message}"`;
 }
 
+/** published, with an imported push's git lines taken off its message (gitLines says them). */
+function pushed(p: Publish | null, issues: string | undefined): string {
+	const origin = p ? gitOrigin(p, issues) : undefined;
+	return p && origin ? published({ ...p, message: origin.message }) : published(p);
+}
+
+function gitLines(o: GitOrigin): string[] {
+	return [`  From git: commit ${o.commit}${o.author ? ` by ${o.author}` : ""}${o.time ? `, ${o.time}` : ""}.`];
+}
+
+/** A trail step in a few words: its version (or that it isn't pushed), who, and the first line of why. */
+function stepName(s: TrailStep, long = false): string {
+	const subject = (s.publish ? (gitOrigin(s.publish)?.message ?? s.publish.message) : s.message).split("\n")[0]!;
+	const where = s.publish === null ? "not pushed" : `version ${s.publish.version}`;
+	const who = s.publish ? byWhom(s.publish) : s.author;
+	return long
+		? `${where} by ${who} (${when(s.publish?.time ?? s.time)}): "${subject}"`
+		: `${where} (${who}, "${subject}")`;
+}
+
 export async function runBlame(args: Parsed, env: Env): Promise<Output> {
 	if (args.positionals.length !== 1)
 		throw new UsageError("blame takes one file: abso blame <file> [--from <n>] [--to <n>]");
@@ -72,7 +93,11 @@ export async function runBlame(args: Parsed, env: Env): Promise<Output> {
 	for (const a of b.atoms) {
 		if (a.publish === null) continue;
 		const own = a.message && a.message !== a.publish.message ? ` (the change itself: "${a.message}")` : "";
-		const line = `  v${a.publish.version} by ${byWhom(a.publish)}, ${when(a.publish.time)}: ${a.publish.message}${own}`;
+		const origin = gitOrigin(a.publish);
+		const message = origin
+			? `${origin.message.split("\n")[0]} (from git commit ${origin.commit.slice(0, 12)}${origin.author ? ` by ${origin.author}` : ""})`
+			: a.publish.message;
+		const line = `  v${a.publish.version} by ${byWhom(a.publish)}, ${when(a.publish.time)}: ${message}${own}`;
 		if (!versions.has(a.publish.version) || own) versions.set(a.publish.version, line);
 	}
 	const whose =
@@ -112,11 +137,54 @@ export async function runWhy(args: Parsed, env: Env): Promise<Output> {
 		throw new UsageError("why takes a file and a line: abso why <file>:<line>");
 	const { root, api, agent } = open(env);
 	const file = fileArg(root, env.cwd, typed);
-	const w = await api.why(file, lineNumber(raw, "the line")!, viewOf(args, agent));
+	const rawAt = str(args, "at");
+	if (rawAt !== undefined && !/^\d+$/.test(rawAt))
+		throw new UsageError(`--at is a version number (got ${JSON.stringify(rawAt)})`);
+	const at = rawAt === undefined ? undefined : Number(rawAt);
+	const view = viewOf(args, agent);
+	if (at !== undefined && "agent" in view)
+		throw new UsageError("--mine reads your view as it is now; it takes no --at");
+	const w = await api.why(file, lineNumber(raw, "the line")!, view, at);
+	if (at !== undefined && w.version !== at)
+		throw new UsageError(`this server doesn't read why at a version yet; abso blame ${w.file} --version ${at} does`);
+	// The line's changes (abso-core issue 20): the newest one that changed what it does leads, past formatting-only ones.
+	const all = bool(args, "all");
+	const trail = w.trail ?? [];
+	const lead = (all ? trail[0] : trail.find((s) => !s.formatting)) ?? trail[0];
+	const leadAt = lead === undefined ? 0 : trail.indexOf(lead);
+	const skipped = trail.slice(0, leadAt);
+	const earlier = trail.slice(leadAt + 1).filter((s) => all || !s.formatting);
+	const origin = lead?.publish ? gitOrigin(lead.publish, w.gitIssues) : undefined;
 	const lines = [
-		`${w.file} line ${w.line}: ${w.text}`,
-		`Written by ${w.change.author} (${when(w.change.time)}), pushed in ${published(w.publish)}.`,
-		...(w.change.message ? [`The change says: "${w.change.message}"`] : []),
+		`${w.file} line ${w.line}${at !== undefined ? ` at version ${at}` : ""}: ${w.text}`,
+		...(lead === undefined || leadAt === 0
+			? [`Written by ${w.change.author} (${when(w.change.time)}), pushed in ${pushed(w.publish, w.gitIssues)}.`]
+			: [
+					`Written by ${lead.author} (${when(lead.time)}), pushed in ${pushed(lead.publish, w.gitIssues)}.`,
+					`  It read: ${lead.text.trim()}`,
+				]),
+		...(origin ? gitLines(origin) : []),
+		...issueLinks(`${w.text}\n${origin?.message ?? ""}`, origin?.issues).map((l) => `  ${l}`),
+		...(skipped.length > 0
+			? [
+					`Skipped ${skipped.length} formatting change${skipped.length === 1 ? "" : "s"} since: ${skipped.map((s) => stepName(s)).join("; ")}. abso why --all shows ${skipped.length === 1 ? "it" : "them"}.`,
+				]
+			: []),
+		...(earlier.length > 0
+			? [
+					"Earlier changes, newest first:",
+					...earlier.flatMap((s, i) => {
+						const newer = i === 0 ? lead! : earlier[i - 1]!;
+						const o = s.publish ? gitOrigin(s.publish, w.gitIssues) : undefined;
+						return [
+							`  ${stepName(s, true)}${s.formatting ? " (formatting only)" : ""}${o ? `, from git commit ${o.commit.slice(0, 12)}${o.author ? ` by ${o.author}` : ""}` : ""}`,
+							...(s.text !== newer.text ? [`    It read: ${s.text.trim()}`] : []),
+						];
+					}),
+				]
+			: []),
+		...(w.trailMore ? ["  (it goes back further than why follows)"] : []),
+		...(w.change.message && leadAt === 0 ? [`The change says: "${w.change.message}"`] : []),
 		...(w.settled.length > 0
 			? [
 					w.settledBy

@@ -102,7 +102,7 @@ export interface ProjectCalls {
 export interface ProjectHistory {
 	/** draft: a named draft's view (at version); agent: an agent's view now, its unpublished changes included. */
 	blame(file: string, from?: number, to?: number, version?: number, draft?: string, agent?: string): unknown;
-	why(file: string, line: number, draft?: string, agent?: string): unknown;
+	why(file: string, line: number, draft?: string, agent?: string, version?: number): unknown;
 	/** Who wrote a folder: its lines counted by author (#41, F33). */
 	folderBlame(folder: string, version?: number, draft?: string, agent?: string): unknown;
 	/** One folder's entries with each one's last change (#41, F2, F34). */

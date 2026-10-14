@@ -316,7 +316,7 @@ export function answer(
 				return { status: 200, body: history.blame(q.file, num(q.from), num(q.to), num(q.version), draft, who) };
 			const line = num(q.line);
 			if (!line || !Number.isInteger(line)) return fail(400, "why needs ?line=<number>");
-			return { status: 200, body: history.why(q.file, line, draft, who) };
+			return { status: 200, body: history.why(q.file, line, draft, who, num(q.version)) };
 		}
 		if (op === "announce" && agent === undefined) {
 			// The sender comes from the route, like every other agent op, not from

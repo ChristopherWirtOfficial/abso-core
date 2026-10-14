@@ -2,11 +2,14 @@
 // A line's id names the atom that inserted it, so blame is a lookup per line:
 // that change's author and message, and the publish that brought it into
 // shared, with its message. Why adds the change's reasons, what it settled,
-// and the reasons other changes give that point at it.
+// and the reasons other changes give that point at it, and the line's
+// earlier changes (trail.ts).
 import { type Atom, type AtomId, type LineId, type ReadView, View } from "../../src/engine/index.ts";
 import { blocksIn, isMarkerLine } from "./markers.ts";
 import { pathKey } from "./pathkey.ts";
 import type { Project } from "./project.ts";
+import { projectFileIn } from "./project-helpers.ts";
+import { trail } from "./trail.ts";
 
 export interface BlameLine {
 	n: number;
@@ -225,11 +228,14 @@ export function why(project: Project, asked: string, n: number, where: BlameWher
 		settled.length > 0
 			? heldPush(project, settle, file, Math.max(0, ...settled.map((s) => s.publish?.time ?? 0)))
 			: undefined;
+	const gitIssues = gitIssuesOf(project.sharedView());
 	return {
 		file,
 		line: n,
+		version: where.agent !== undefined ? null : (where.version ?? project.lastVersion(where.draft ?? null)),
 		text: line.text,
 		id: line.id,
+		...(gitIssues !== undefined ? { gitIssues } : {}),
 		change: {
 			atom: atom.id,
 			author: atom.author,
@@ -245,7 +251,63 @@ export function why(project: Project, asked: string, n: number, where: BlameWher
 		...(kept ? { settledBy: { atom: kept.id, author: kept.author, publish: publishOf(project, kept.id) } } : {}),
 		...(held ? { held } : {}),
 		builtOn,
+		...lineTrail(project, view, file, line.id),
 	};
+}
+
+/**
+ * The line's changes, newest first (abso-core issue 20), its own change
+ * first: each change that rewrote it, with the line's text after it, and
+ * whether it only changed formatting. Several changes in one push count as
+ * one, formatting only if all of them were.
+ */
+function lineTrail(project: Project, view: ReadView, file: string, line: LineId) {
+	const graph = project.graph;
+	const { steps, more } = trail(graph, view, file, line);
+	const out: {
+		atom: AtomId;
+		author: string;
+		message: string;
+		time: number;
+		text: string;
+		formatting: boolean;
+		publish: Publish | null;
+	}[] = [];
+	for (const s of steps) {
+		const a = graph.atom(s.atom);
+		const publish = publishOf(project, a.id);
+		const prev = out[out.length - 1];
+		if (prev && samePublish(prev.publish, publish) && (publish !== null || prev.author === a.author)) {
+			prev.formatting &&= s.formatting;
+			continue;
+		}
+		out.push({
+			atom: a.id,
+			author: a.author,
+			message: a.message,
+			time: a.time,
+			text: s.text,
+			formatting: s.formatting,
+			publish,
+		});
+	}
+	return { trail: out, ...(more ? { trailMore: true as const } : {}) };
+}
+
+/** Where "#N" in history imported from git points (abso.json's "gitIssues"), when shared's project file says. */
+function gitIssuesOf(view: ReadView): string | undefined {
+	const file = projectFileIn(view);
+	if (!file) return undefined;
+	try {
+		const url = (JSON.parse(file.text) as { gitIssues?: unknown }).gitIssues;
+		return typeof url === "string" ? url : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function samePublish(a: Publish | null, b: Publish | null): boolean {
+	return a === null || b === null ? a === b : a.draft === b.draft && a.version === b.version;
 }
 
 /**

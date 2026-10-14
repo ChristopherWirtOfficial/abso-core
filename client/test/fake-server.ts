@@ -434,7 +434,7 @@ export async function startFake(port = 0, token = "fake-token"): Promise<Fake> {
 					return send(res, 200, blame(hosted.project, q.file, num(q.from), num(q.to), num(q.version), view));
 				const line = num(q.line);
 				if (!line || !Number.isInteger(line)) return send(res, 400, { error: "why needs ?line=<number>" });
-				return send(res, 200, why(hosted.project, q.file, line, view));
+				return send(res, 200, why(hosted.project, q.file, line, { ...view, version: num(q.version) }));
 			} catch (e) {
 				const code = (e as { code?: string }).code;
 				return send(res, code === "bad-request" ? 400 : 500, { error: e instanceof Error ? e.message : String(e) });

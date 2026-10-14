@@ -58,7 +58,8 @@ export function projectFileOf(files: Readonly<Record<string, unknown>>): ReturnT
  * What's wrong with a project file (abso.json or avcs.json), or undefined:
  * it must be a JSON object, and the keys abso reads must have their types:
  * "whole" a list of globs, "queue" true or false, "review" a list of
- * {paths, reviewer}, and CI's "setup", "build", "check" and "out" strings.
+ * {paths, reviewer}, CI's "setup", "build", "check" and "out" strings, and
+ * "gitIssues" (where "#N" in history imported from git points) a web address.
  */
 export function configProblem(text: string): string | undefined {
 	let config: unknown;
@@ -86,6 +87,8 @@ export function configProblem(text: string): string | undefined {
 			});
 		if (!ok) return `has "review" that isn't a list of {"paths": [globs], "reviewer": "<agent>"}`;
 	}
+	if (c.gitIssues !== undefined && (typeof c.gitIssues !== "string" || !/^https?:\/\/\S+$/.test(c.gitIssues)))
+		return `has "gitIssues" that isn't a web address (like "https://github.com/owner/repo/issues")`;
 	for (const key of ["setup", "build", "check", "out"])
 		if (c[key] !== undefined && typeof c[key] !== "string") return `has "${key}" that isn't a string`;
 	return undefined;

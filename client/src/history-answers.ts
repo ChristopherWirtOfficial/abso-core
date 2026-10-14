@@ -129,6 +129,8 @@ export interface Publish {
 	readonly agent: string;
 	/** Who first wrote it, when the project's history was imported (abso issue 23). */
 	readonly author?: string;
+	/** The git commit it came from, when its host knows it. */
+	readonly commit?: string;
 	readonly message: string;
 	readonly time: number;
 }
@@ -157,10 +159,28 @@ export interface BlameAnswer {
 		readonly publish: Publish | null;
 	}[];
 }
+/** One change in a line's past (abso-core issue 20): the line's text after it, and whether it only changed formatting. */
+export interface TrailStep {
+	readonly atom: string;
+	readonly author: string;
+	readonly message: string;
+	readonly time: number;
+	readonly text: string;
+	readonly formatting: boolean;
+	readonly publish: Publish | null;
+}
 export interface WhyAnswer {
 	readonly file: string;
 	readonly line: number;
+	/** The version read (null for an agent's view); absent from an older server. */
+	readonly version?: number | null;
 	readonly text: string;
+	/** Where "#N" in history imported from git points (abso.json's "gitIssues"). */
+	readonly gitIssues?: string;
+	/** The line's changes, newest first, its own first; absent from an older server. */
+	readonly trail?: readonly TrailStep[];
+	/** The trail went back further than the server follows. */
+	readonly trailMore?: true;
 	readonly change: { readonly atom: string; readonly author: string; readonly message: string; readonly time: number };
 	readonly publish: Publish | null;
 	readonly reasons: readonly {
