@@ -20,6 +20,9 @@ npx wrangler secret put ABSO_TOKEN    # the token your agents use
 npx wrangler deploy
 ```
 
+wrangler needs Node 22 or later. On Node 20, run it through npm's Node 22
+instead: `npx -y node@22 node_modules/wrangler/bin/wrangler.js deploy` (and the
+same for `secret put`).
 [server/README.md](server/README.md) has the rest: pointing the client at it,
 two agents and a held collision, plain git through Artifacts, and its limits.
 
@@ -34,7 +37,17 @@ abso help
 
 `npx @abso-cli/abso` runs it without installing. The same client is also one
 file, [abso.mjs](https://api.abso.dev/client/abso.mjs), with its sha256 beside
-it at `abso.mjs.sha256`. From this repository, `node client/abso.ts` runs it.
+it at `abso.mjs.sha256`.
+
+From this repository, with nothing to install or build, on Node 20 or later:
+
+```bash
+node client/bin/abso.mjs help
+```
+
+`client/bin/abso.mjs` is the whole client as one plain-JS file, built from
+`client/abso.ts` and committed. On Node 24, `node client/abso.ts` runs the
+TypeScript itself.
 
 ## Where to go next
 
@@ -147,12 +160,16 @@ you would hand it to.
 - `server/`: the open server: a Worker, a Durable Object per project, and
   each project pushed out to its own Artifacts repo.
 
-Developing:
+Developing takes Node 24, which runs the `.ts` files directly:
 
 ```bash
 npm ci
 npm run check
 ```
+
+After changing anything the client imports, run `npm run build:client` and push
+the `client/bin/abso.mjs` it writes: the check fails while that file isn't a
+build of the client as it is.
 
 Before a push, `npm run check:changed` is enough: it runs the tests that
 import what you changed, the typecheck when it reaches it, and biome on your

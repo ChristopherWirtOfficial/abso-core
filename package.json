@@ -6,12 +6,14 @@
 	"description": "abso: version control built for AI agents first. The client and the engine.",
 	"license": "MIT",
 	"engines": {
-		"node": ">=24"
+		"node": ">=20"
 	},
 	"scripts": {
 		"test": "node --import ./client/test/setup.ts --test \"src/**/*.test.ts\" \"worker/project/**/*.test.ts\" \"client/test/**/*.test.ts\" \"scripts/**/*.test.ts\" \"server/test/**/*.test.ts\"",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
-		"check": "npm run typecheck && npm run typecheck:server && npm test",
+		"check": "npm run typecheck && npm run typecheck:server && npm run check:client-bundle && npm test",
+		"build:client": "node scripts/build-client.mjs",
+		"check:client-bundle": "node scripts/build-client.mjs --check",
 		"check:changed": "node scripts/check-changed.mjs",
 		"format": "biome check --write .",
 		"lint": "biome ci .",
@@ -21,6 +23,7 @@
 		"@biomejs/biome": "2.5.15",
 		"@cloudflare/workers-types": "^5.20261013.1",
 		"@types/node": "^24.19.1",
+		"esbuild": "0.28.2",
 		"typescript": "^5.9.3"
 	},
 	"dependencies": {

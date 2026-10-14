@@ -11,6 +11,18 @@ this folder, so the folder can be shipped as it is.
 node client/abso.ts help
 ```
 
+On Node 20 or later, run `client/bin/abso.mjs` instead: the same client built
+into one plain-JS file, committed, so a fresh clone needs no install or build.
+
+```bash
+node client/bin/abso.mjs help
+```
+
+Node 20 can't run the `.ts` files (it has no type stripping). After changing
+anything the client imports, `npm run build:client` rebuilds `bin/abso.mjs`;
+push it with the change. The project's check (`npm run check:client-bundle`)
+fails while the file isn't a build of the client as it is.
+
 ### Running it from a git checkout
 
 `client/launch.mjs` runs the client from a git checkout of abso and keeps the
@@ -86,7 +98,7 @@ abso init ./regex --server https://<worker> --project regex --agent lead
 abso join regex --agent backtracker --server https://<worker> --dir ./backtracker
 ```
 
-Here `abso` means `node <repo>/client/abso.ts`, or `node abso.mjs` for the one-file client.
+Here `abso` means `node <repo>/client/bin/abso.mjs` (Node 20 or later), `node <repo>/client/abso.ts` (Node 24), or `node abso.mjs` for the one-file client.
 
 ## Working
 

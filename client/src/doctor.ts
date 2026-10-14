@@ -8,7 +8,10 @@ import { builtCopy } from "./client-version.ts";
 import { type Config, credentialLabel, findRoot, readConfig } from "./config.ts";
 import { sameServer } from "./server-choice.ts";
 
-/** The lowest Node major each kind of copy runs on: the npm package is built for 20, a checkout runs its .ts as is. */
+/**
+ * The lowest Node major each kind of copy runs on: a built one (the npm package, or a checkout's client/bin/abso.mjs)
+ * is built for 20; a checkout's client/abso.ts runs its .ts as is, which takes Node's type stripping.
+ */
 export function nodeNeeded(built: boolean): number {
 	return built ? 20 : 24;
 }
@@ -23,7 +26,13 @@ export interface Probe {
 }
 
 export function realProbe(): Probe {
-	return { fetcher: fetch, now: Date.now(), node: process.versions.node, built: builtCopy() };
+	// Bundled, this module is client/bin/abso.mjs (or the npm package's file); from client/abso.ts, it is this .ts.
+	return {
+		fetcher: fetch,
+		now: Date.now(),
+		node: process.versions.node,
+		built: builtCopy() || !import.meta.url.endsWith(".ts"),
+	};
 }
 
 /** This folder's settings, or why they can't be read; undefined outside a folder. */

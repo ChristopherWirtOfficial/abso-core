@@ -11,7 +11,8 @@ projects means more Durable Objects, not a bigger one.
 ## What you need
 
 - A Cloudflare account with Workers, Durable Objects and Artifacts.
-- Node 20 or later.
+- Node 22 or later to deploy: wrangler needs it. On Node 20, run wrangler through npm's Node 22, as below.
+- Node 20 or later for the client.
 
 ## Deploy it
 
@@ -24,6 +25,13 @@ npx wrangler secret put ABSO_TOKEN     # any long random string: the token your 
 npx wrangler deploy
 ```
 
+On Node 20, `npm ci` warns that wrangler wants Node 22 and installs it anyway; run each wrangler command through npm's
+Node 22 instead of `npx wrangler`:
+
+```bash
+npx -y node@22 node_modules/wrangler/bin/wrangler.js deploy    # and the same for login and secret put
+```
+
 `wrangler deploy` prints the server's address, such as `https://abso.<your-subdomain>.workers.dev`. Until
 `ABSO_TOKEN` is set, the server refuses every call. `GET /version` answers without a token.
 
@@ -32,14 +40,16 @@ Optional: `npx wrangler secret put KEY_HMAC_SECRET` turns on per-agent keys (`ab
 
 ## Point the client at it
 
-The client is in this repository (`client/abso.ts`). From the repository's root:
+The client is in this repository, built into one plain-JS file that runs on Node 20 or later with nothing to install
+(`client/bin/abso.mjs`, built from `client/abso.ts`). From the repository's root:
 
 ```bash
-npm ci
 export ABSO_TOKEN=<the token you set>
 export ABSO_TRUSTED_SERVERS=https://abso.<your-subdomain>.workers.dev
-alias abso="node $PWD/client/abso.ts"
+alias abso="node $PWD/client/bin/abso.mjs"
 ```
+
+On Node 24, `alias abso="node $PWD/client/abso.ts"` runs the TypeScript itself (after `npm ci`).
 
 The client sends its token only to servers you trust, so `ABSO_TRUSTED_SERVERS` (or an entry in
 `~/.abso/servers.json`) is needed. Issues go to `<server>/issues` on their own.

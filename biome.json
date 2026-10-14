@@ -14,7 +14,8 @@
 			"!**/dist",
 			"!**/.wrangler",
 			"!**/worker-configuration.d.ts",
-			"!**/package-lock.json"
+			"!**/package-lock.json",
+			"!client/bin/abso.mjs"
 		]
 	},
 	"formatter": {
