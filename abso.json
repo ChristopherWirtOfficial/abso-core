@@ -1,5 +1,5 @@
 {
 	"setup": "npm ci --no-audit --no-fund",
 	"check": "npx biome ci . && npm run check",
-	"whole": ["package-lock.json", "client/bin/abso.mjs"]
+	"whole": ["package-lock.json"]
 }

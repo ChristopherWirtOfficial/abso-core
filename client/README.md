@@ -11,17 +11,17 @@ this folder, so the folder can be shipped as it is.
 node client/abso.ts help
 ```
 
-On Node 20 or later, run `client/bin/abso.mjs` instead: the same client built
-into one plain-JS file, committed, so a fresh clone needs no install or build.
+Node 20 can't run the `.ts` files (it has no type stripping). On Node 20 or
+later, build the client into one plain-JS file and run that:
 
 ```bash
+npm ci
+npm run build
 node client/bin/abso.mjs help
 ```
 
-Node 20 can't run the `.ts` files (it has no type stripping). After changing
-anything the client imports, `npm run build:client` rebuilds `bin/abso.mjs`;
-push it with the change. The project's check (`npm run check:client-bundle`)
-fails while the file isn't a build of the client as it is.
+`client/bin/` isn't committed; build again after pulling. The npm package
+(`npm run pack:npm -- <version>`) ships the same build.
 
 ### Running it from a git checkout
 

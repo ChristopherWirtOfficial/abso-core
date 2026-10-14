@@ -2,17 +2,15 @@
 // as one plain-JS file for Node 20 or later. Node 20 can't run the .ts files themselves (it has no type
 // stripping), so this file is how a checkout runs on it:
 //
+//   npm ci && npm run build
 //   node client/bin/abso.mjs help
 //
-//   npm run build:client           rebuilds it; run it after changing the client and push the result.
-//   npm run check:client-bundle    fails when the file isn't what a build of this folder gives (the check runs it).
-//
-// The file is committed, so a fresh clone runs it with no install and no build. It sits one folder under
-// client/, so the client's own folder (client-version.ts) is still client/. The build is deterministic:
-// paths in it are relative to the repo, so it comes out the same on every machine.
+// The file isn't committed (.gitignore leaves client/bin/ out); build it again after pulling. It sits one
+// folder under client/, so the client's own folder (client-version.ts) is still client/. scripts/pack-npm.mjs
+// puts the same build in the npm package.
 //
 // Plain JS on purpose: it runs before anything is built.
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,8 +18,8 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = "client/bin/abso.mjs";
 
-/** The bundle's text, built in memory. */
-export function buildClient() {
+/** The bundle's text, built in memory. `banner` adds lines at its top (the npm package stamps its version). */
+export function buildClient(banner = []) {
 	const esbuild = createRequire(import.meta.url)("esbuild");
 	const result = esbuild.buildSync({
 		absWorkingDir: root,
@@ -37,9 +35,10 @@ export function buildClient() {
 		// can't do without a real require.
 		banner: {
 			js: [
-				"// Built from client/abso.ts by scripts/build-client.mjs (npm run build:client). Don't edit it by hand.",
+				"// Built from client/abso.ts by scripts/build-client.mjs (npm run build). Don't edit it by hand.",
 				'import { createRequire as __absoCreateRequire } from "node:module";',
 				"const require = __absoCreateRequire(import.meta.url);",
+				...banner,
 			].join("\n"),
 		},
 	});
@@ -53,17 +52,7 @@ export function buildClient() {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	const path = join(root, OUT);
-	const text = buildClient();
-	if (process.argv.includes("--check")) {
-		let have = "";
-		try {
-			have = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
-		} catch {}
-		if (have !== text) {
-			process.stderr.write(
-				`${OUT} is not a build of this folder's client: run npm run build:client and push the file it writes.\n`,
-			);
-			process.exit(1);
-		}
-	} else writeFileSync(path, text);
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, buildClient());
+	process.stdout.write(`Built ${OUT}: node ${OUT} help\n`);
 }

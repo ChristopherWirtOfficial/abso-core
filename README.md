@@ -39,15 +39,18 @@ abso help
 file, [abso.mjs](https://api.abso.dev/client/abso.mjs), with its sha256 beside
 it at `abso.mjs.sha256`.
 
-From this repository, with nothing to install or build, on Node 20 or later:
+From this repository, on Node 20 or later, build it first:
 
 ```bash
+npm ci
+npm run build
 node client/bin/abso.mjs help
 ```
 
-`client/bin/abso.mjs` is the whole client as one plain-JS file, built from
-`client/abso.ts` and committed. On Node 24, `node client/abso.ts` runs the
-TypeScript itself.
+`npm run build` writes the whole client as one plain-JS file,
+`client/bin/abso.mjs`, from `client/abso.ts`; build again after pulling. On
+Node 24, `node client/abso.ts` runs the TypeScript itself, with no build.
+`npm run pack:npm -- <version>` packs the same build as the npm package.
 
 ## Where to go next
 
@@ -166,10 +169,6 @@ Developing takes Node 24, which runs the `.ts` files directly:
 npm ci
 npm run check
 ```
-
-After changing anything the client imports, run `npm run build:client` and push
-the `client/bin/abso.mjs` it writes: the check fails while that file isn't a
-build of the client as it is.
 
 Before a push, `npm run check:changed` is enough: it runs the tests that
 import what you changed, the typecheck when it reaches it, and biome on your

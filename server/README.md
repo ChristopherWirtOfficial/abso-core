@@ -40,16 +40,19 @@ Optional: `npx wrangler secret put KEY_HMAC_SECRET` turns on per-agent keys (`ab
 
 ## Point the client at it
 
-The client is in this repository, built into one plain-JS file that runs on Node 20 or later with nothing to install
-(`client/bin/abso.mjs`, built from `client/abso.ts`). From the repository's root:
+The client is in this repository. `npm run build` builds it from `client/abso.ts` into one plain-JS file that runs on
+Node 20 or later, `client/bin/abso.mjs`. From the repository's root:
 
 ```bash
+npm ci
+npm run build
 export ABSO_TOKEN=<the token you set>
 export ABSO_TRUSTED_SERVERS=https://abso.<your-subdomain>.workers.dev
 alias abso="node $PWD/client/bin/abso.mjs"
 ```
 
-On Node 24, `alias abso="node $PWD/client/abso.ts"` runs the TypeScript itself (after `npm ci`).
+On Node 24, `alias abso="node $PWD/client/abso.ts"` runs the TypeScript itself, with no build. `npm i -g @abso-cli/abso`
+installs the same client from npm, on Node 20 or later.
 
 The client sends its token only to servers you trust, so `ABSO_TRUSTED_SERVERS` (or an entry in
 `~/.abso/servers.json`) is needed. Issues go to `<server>/issues` on their own.
