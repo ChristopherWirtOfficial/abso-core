@@ -109,6 +109,7 @@ export async function pushedSince(
 		maxPackBytes: number;
 		maxObjectBytes: number;
 		maxDecodedBytes?: number;
+		maxBinaryBytes?: number;
 		http?: HttpClient;
 		retainFileChunks?: RetainFileChunks;
 	},
@@ -165,6 +166,7 @@ export async function pushedSince(
 				cache,
 				intake,
 				disk?.retainFileChunks,
+				disk?.maxBinaryBytes,
 			)),
 		});
 	return {
@@ -192,6 +194,7 @@ export async function treeText(
 	cache: object = {},
 	intake?: GitDiskIntake,
 	retainFileChunks?: RetainFileChunks,
+	maxBinaryBytes?: number,
 ): Promise<{
 	files: Record<string, string>;
 	modes: FileModes;
@@ -231,6 +234,12 @@ export async function treeText(
 				if (valid) {
 					retainFileChunks(files, path, gitBlobText(stored), blobOid);
 					modes[path] = { exec: mode === EXEC, link: null };
+					return true;
+				}
+				if (storeBlob && maxBinaryBytes !== undefined && stored.byteLength > maxBinaryBytes) {
+					tooBig.add(path);
+					const kept = oldBlob(path);
+					if (kept) blobs[path] = kept;
 					return true;
 				}
 			}

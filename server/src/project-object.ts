@@ -577,6 +577,7 @@ export class ProjectObject extends DurableObject<Env> {
 						maxPackBytes: GIT_PACK_MAX_BYTES,
 						maxObjectBytes: GIT_OBJECT_MAX_BYTES,
 						maxDecodedBytes: GIT_DECODED_MAX_BYTES,
+						maxBinaryBytes: BLOB_MAX,
 						retainFileChunks: (files, path, chunks, oid) => trees.retainChunks(files, path, chunks, oid),
 					}
 				: undefined,

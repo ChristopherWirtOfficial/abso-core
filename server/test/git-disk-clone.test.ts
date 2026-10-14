@@ -15,13 +15,14 @@ const packet = (text: string | Uint8Array) => {
 	return Buffer.concat([Buffer.from((body.length + 4).toString(16).padStart(4, "0")), body]);
 };
 
-for (const mode of ["success", "limit", "fatal", "server-intake", "text-intake"])
+for (const mode of ["success", "limit", "fatal", "server-intake", "text-intake", "binary-limit"])
 	test(`actual disk clone handles ${mode}`, async (t) => {
 		const rejectPack = mode === "limit";
 		const source = new MemoryFS(),
 			dir = "/repo";
 		await git.init({ fs: source, dir, defaultBranch: "main" });
 		const blob = mode === "text-intake" ? Buffer.from("x".repeat(16383) + "🚀é中".repeat(20000)) : randomBytes(400000);
+		if (mode === "binary-limit") blob[0] = 255;
 		const blobOid = await git.writeBlob({ fs: source, dir, blob });
 		const tree = await git.writeTree({
 			fs: source,
@@ -127,12 +128,12 @@ for (const mode of ["success", "limit", "fatal", "server-intake", "text-intake"]
 			return write(path, ...args);
 		};
 		try {
-			if (mode === "server-intake" || mode === "text-intake") {
+			if (mode === "server-intake" || mode === "text-intake" || mode === "binary-limit") {
 				const trees = new GitIntakeTrees(storage);
-				if (mode === "text-intake") {
+				if (mode === "text-intake" || mode === "binary-limit") {
 					const original = GitDiskIntake.prototype.read;
 					t.mock.method(GitDiskIntake.prototype, "read", function (this: GitDiskIntake, oid: string) {
-						if (oid === blobOid) throw Error("whole text blob read forbidden");
+						if (oid === blobOid) throw Error("whole blob read forbidden");
 						return original.call(this, oid);
 					});
 				}
@@ -148,15 +149,17 @@ for (const mode of ["success", "limit", "fatal", "server-intake", "text-intake"]
 					"fixture",
 					undefined,
 					async (bytes) => {
+						assert.notEqual(mode, "binary-limit", "oversized binary must not reach the store");
 						assert.deepEqual(Buffer.from(bytes), blob);
 						return "fixture-blob";
 					},
-					undefined,
+					mode === "binary-limit" ? () => "previous-blob" : undefined,
 					undefined,
 					{
 						storage,
 						maxPackBytes: 2000000,
 						maxObjectBytes: 1000000,
+						maxBinaryBytes: mode === "binary-limit" ? 100000 : undefined,
 						http,
 						retainFileChunks: (files, path, chunks, oid) => trees.retainChunks(files, path, chunks, oid),
 					},
@@ -164,7 +167,10 @@ for (const mode of ["success", "limit", "fatal", "server-intake", "text-intake"]
 				assert.equal(found!.base, 0);
 				assert.equal(found!.commits.length, 1);
 				if (mode === "text-intake") assert.equal(found!.commits[0]!.files["large.bin"], blob.toString("utf8"));
-				else assert.equal(found!.commits[0]!.blobs["large.bin"], "fixture-blob");
+				else if (mode === "binary-limit") {
+					assert.equal(found!.commits[0]!.blobs["large.bin"], "previous-blob");
+					assert.deepEqual(found!.tooBig, ["large.bin"]);
+				} else assert.equal(found!.commits[0]!.blobs["large.bin"], "fixture-blob");
 				trees.dispose();
 				for (const table of ["git_pack_spool", "git_pack_resolve", "git_object_meta", "git_object_bytes"])
 					assert.equal(storage.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!.n, 0);
