@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { parseArgs } from "../src/args.ts";
 import {
+	boxCreateProject,
 	boxPublic,
 	boxText,
 	forgetBox,
@@ -417,5 +418,43 @@ test("join with no --agent takes the box's name, skips names this box holds, and
 			["/box/agent-key", "snow-3"],
 		],
 		"snow is this box's already: never minted again, which would replace its key",
+	);
+});
+
+test("abso init from a box (abso 663): one key for every try, waiting out a pending create; abso box says all projects", async () => {
+	const record = { server: SERVER, id: "b_1", credential: CREDENTIAL, grant, expiresAt: Date.now() + 86_400_000 };
+	const seen: { path: string; key: string | null; auth: string | null; body: string }[] = [];
+	let calls = 0;
+	const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
+		const headers = new Headers(init?.headers);
+		seen.push({
+			path: new URL(String(url)).pathname,
+			key: headers.get("idempotency-key"),
+			auth: headers.get("authorization"),
+			body: String(init?.body),
+		});
+		calls++;
+		const body =
+			calls < 3
+				? { operation: { id: "op", state: "pending" } }
+				: { project: "made", id: "proj_1", visibility: "private" };
+		return new Response(JSON.stringify(body), { status: calls < 3 ? 202 : 200 });
+	}) as typeof fetch;
+	const made = await boxCreateProject(
+		record,
+		{ name: "made", files: [{ path: "a.txt", text: "hi\n" }] },
+		"33333333-3333-4333-8333-333333333333",
+		fetcher,
+		async () => {},
+	);
+	assert.equal(made.id, "proj_1");
+	assert.equal(seen.length, 3);
+	assert.ok(seen.every((s) => s.path === "/box/projects" && s.key === "33333333-3333-4333-8333-333333333333"));
+	assert.ok(seen.every((s) => s.auth === `Box ${CREDENTIAL}`));
+	assert.deepEqual(JSON.parse(seen[0]!.body), { name: "made", files: [{ path: "a.txt", text: "hi\n" }] });
+	const all = { ...record, grant: { projects: [], scopes: [{ kind: "member-all", role: "writer" }] } };
+	assert.match(
+		boxText(all, SERVER),
+		/Projects: all of yours, now and later \(writer at most\)\. abso init makes a new one/,
 	);
 });

@@ -1,11 +1,20 @@
 // abso init and abso join: start a project from a folder, or join one into a folder.
 
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { Api, ApiError } from "./api.ts";
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { writeKnownBlobs } from "./blobs.ts";
-import { defaultAgentName, mintFreeName, mintKey, readBox } from "./box.ts";
+import {
+	type BoxRecord,
+	boxCreateProject,
+	defaultAgentName,
+	mintFreeName,
+	mintKey,
+	type NewProject,
+	readBox,
+} from "./box.ts";
 import { STARTING_ABSOIGNORE } from "./check-ignore.ts";
 import { CLIENT_DIR } from "./client-version.ts";
 import { type Env, type Output, plural } from "./command-env.ts";
@@ -16,7 +25,7 @@ import { fromEnv } from "./env-names.ts";
 import { clearKnown, loadIgnore, readFolder, writeKnown } from "./folder.ts";
 import { modInstalled } from "./install.ts";
 import { type FullMode, foldModes, writeKnownModes } from "./modes.ts";
-import { siteOf } from "./orgs.ts";
+import { initInOrg, siteOf } from "./orgs.ts";
 import { projectFileName, readProjectFile, startingProjectFileText, writeStartingProjectFile } from "./project-file.ts";
 import { refusedText } from "./safety.ts";
 import { chooseServer, serverFlag } from "./server-choice.ts";
@@ -48,6 +57,15 @@ export async function runInit(args: Parsed, env: Env): Promise<Output> {
 	if (findRoot(root) === root) throw new UsageError(`${root} already has .abso/config.json`);
 	const project = str(args, "project");
 	if (!project) throw new UsageError("give the project a name with --project <name>");
+	if (bool(args, "public") && bool(args, "private")) throw new UsageError("--public or --private, not both");
+	// A box signed in here, and no token for this server: the project is made as the person who approved the box,
+	// the way the website makes one (abso 663).
+	const server = serverFrom(args, env);
+	const box = readBox(server);
+	if (box && !tokenFor(server, env.env) && !fromEnv(env.env, "KEY_FILE"))
+		return initFromBox(args, env, root, project, server, box);
+	const org = str(args, "org");
+	if (org !== undefined) return initInOrg(org, server);
 	const config = makeSettings(args, env, project);
 	const asIs = bool(args, "as-is");
 	const absoignore = join(root, ".absoignore");
@@ -92,6 +110,106 @@ export async function runInit(args: Parsed, env: Env): Promise<Output> {
 			files: files.size,
 			root,
 			agent: config.agent,
+			wroteAbsoignore: wroteIgnore,
+			wroteProjectFile: typeof wroteProject === "string" ? null : wroteProject,
+			leftOut,
+		},
+	};
+}
+
+/** The most a new project's folder may be from a box: the server takes a body up to 25 MB, base64 and JSON included. */
+const BOX_INIT_MAX = 24 * 1024 * 1024;
+/** The Idempotency-Key of an abso init that didn't finish, so running it again makes the same project (abso 663). */
+const INIT_KEY = "init-key";
+
+/**
+ * abso init from a signed-in box (abso 663): the server makes the project as the person who approved the box, the way the
+ * website's New project does (owner, visibility, address), with the folder as its first version. This folder then
+ * joins it like abso join, with its own key from the box, so it works at once with no new approval.
+ */
+async function initFromBox(
+	args: Parsed,
+	env: Env,
+	root: string,
+	project: string,
+	server: string,
+	box: BoxRecord,
+): Promise<Output> {
+	if (!NAME.test(project))
+		throw new UsageError(
+			`project names are letters, digits, dot, dash and underscore (got ${JSON.stringify(project)})`,
+		);
+	const named = str(args, "agent");
+	if (named !== undefined) agentFrom(args);
+	const asIs = bool(args, "as-is");
+	const absoignore = join(root, ".absoignore");
+	const wroteIgnore = !asIs && !existsSync(absoignore) && !existsSync(join(root, ".avcsignore"));
+	if (wroteIgnore) writeFileSync(absoignore, STARTING_ABSOIGNORE);
+	const wroteProject = asIs ? "exists" : writeStartingProjectFile(root);
+	const { files, blobs, leftOut } = readFolder(root, loadIgnore(root));
+	const listed: NonNullable<NewProject["files"]>[number][] = [
+		...[...files].map(([path, text]) => ({ path, text })),
+		...[...blobs].map(([path, b]) => ({ path, base64: Buffer.from(b.bytes).toString("base64") })),
+	];
+	const org = str(args, "org");
+	const body: NewProject = {
+		name: project,
+		...(org === undefined ? {} : { owner: org }),
+		...(bool(args, "public")
+			? { visibility: "public" as const }
+			: bool(args, "private")
+				? { visibility: "private" as const }
+				: {}),
+		...(listed.length > 0 ? { files: listed } : {}),
+	};
+	if (JSON.stringify(body).length > BOX_INIT_MAX)
+		throw new UsageError(
+			`${root} is over 24 MB to send. Make ${project} with abso init on a smaller folder (or on the website), then copy the rest in and push.`,
+		);
+	// One key per folder until it finishes: running the same abso init again is the same project, never a second.
+	const keyPath = join(stateDir(root), INIT_KEY);
+	let key = existsSync(keyPath) ? readFileSync(keyPath, "utf8").trim() : "";
+	if (!/^[0-9a-f-]{36}$/.test(key)) {
+		key = randomUUID();
+		mkdirSync(stateDir(root), { recursive: true });
+		writeFileSync(keyPath, key);
+	}
+	const made = await boxCreateProject(box, body, key);
+	const visibility = typeof made.visibility === "string" ? made.visibility : "private";
+	const minted =
+		named !== undefined
+			? { ...(await mintKey(box, project, named)), agent: named }
+			: await mintFreeName(box, project, defaultAgentName());
+	const config = { server, project, agent: minted.agent };
+	writeConfig(root, config);
+	clearKnown(root);
+	installKey(root, JSON.stringify({ key: minted.key, id: minted.id }));
+	rmSync(keyPath, { force: true });
+	const synced = await syncFolder(root, new Api(readConfig(root, env.env)), true);
+	const owner = org ?? "you";
+	return {
+		text: [
+			`Created project ${project} (${visibility}, owned by ${owner}) at version ${synced.version} from ${plural(listed.length, "file")} in ${root}.`,
+			...leftOutText(leftOut),
+			...(wroteIgnore
+				? ["Wrote a starting .absoignore (Claude Code state and operating system files); edit it like .gitignore."]
+				: []),
+			...startingProjectFileText(wroteProject),
+			`This folder is agent ${minted.agent}, with its own key, ${minted.id}, made from this box's sign-in. Settings are in .abso/config.json.`,
+			...refusedText(synced.refused),
+			...(synced.written.length > 0 ? [`Wrote ${plural(synced.written.length, "file")} from shared.`] : []),
+			hookHint(env.env),
+		].join("\n"),
+		json: {
+			project,
+			id: made.id ?? null,
+			owner: made.owner ?? null,
+			visibility,
+			version: synced.version,
+			files: listed.length,
+			root,
+			agent: minted.agent,
+			key_id: minted.id,
 			wroteAbsoignore: wroteIgnore,
 			wroteProjectFile: typeof wroteProject === "string" ? null : wroteProject,
 			leftOut,

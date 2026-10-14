@@ -21,6 +21,13 @@ import { homeFile, homeWritePath, OLD_STATE_DIR, STATE_DIR } from "./state-dir.t
  */
 export interface Grant {
 	readonly projects: readonly { readonly project: string; readonly role: string }[];
+	/** Version 2 grants (abso 663): member-all is every project of the approver's, now and later, at most this role. */
+	readonly scopes?: readonly { readonly kind: string; readonly role: string }[];
+}
+
+/** The role a box has in all its approver's projects, now and later, or null when its grant is a list (abso 663). */
+export function allProjectsRole(grant: Grant): string | null {
+	return grant.scopes?.find((scope) => scope.kind === "member-all")?.role ?? null;
 }
 
 /** Requested access is a suggestion for the person approving, never an authorization. */
@@ -154,6 +161,7 @@ async function call(
 	body: unknown,
 	credential: string | undefined,
 	fetcher: typeof fetch,
+	headers: Readonly<Record<string, string>> = {},
 ): Promise<Answer> {
 	const secrets = credential ? [credential] : [];
 	let response: Response;
@@ -162,6 +170,7 @@ async function call(
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
+				...headers,
 				...(credential ? { authorization: `Box ${credential}` } : {}),
 			},
 			body: JSON.stringify(body),
@@ -316,6 +325,60 @@ export async function mintKey(
 	return { key, id };
 }
 
+/** What a new project from this box starts with (abso 663): the website's own create, as the person who approved the box. */
+export interface NewProject {
+	readonly name: string;
+	readonly owner?: string;
+	readonly visibility?: "public" | "private";
+	readonly files?: readonly (
+		| { readonly path: string; readonly text: string }
+		| { readonly path: string; readonly base64: string }
+	)[];
+}
+
+/**
+ * Makes a project as the person who approved this box (abso init, abso 663). One key for every try, so a retry after
+ * a lost answer or a pending one is the same project, never a second.
+ */
+export async function boxCreateProject(
+	record: BoxRecord,
+	project: NewProject,
+	key: string,
+	fetcher: typeof fetch = fetch,
+	sleep: (ms: number) => Promise<void> = (ms) => new Promise((done) => setTimeout(done, ms)),
+): Promise<Record<string, unknown>> {
+	for (let attempt = 1; ; attempt++) {
+		const a = await call(record.server, "/box/projects", project, record.credential, fetcher, {
+			"Idempotency-Key": key,
+		});
+		const pending = (a.body.operation as { state?: unknown } | undefined)?.state === "pending";
+		if (!pending) return a.body;
+		if (attempt >= 10)
+			throw new UsageError(
+				`${originOf(record.server)} is still making ${project.name}. Run the same abso init again in a minute: it picks up where this left off.`,
+			);
+		await sleep(1000 * attempt);
+	}
+}
+
+/** Makes an organization as the person who approved this box (abso org new, abso 663). */
+export async function boxCreateOrg(
+	record: BoxRecord,
+	name: string,
+	displayName: string | undefined,
+	fetcher: typeof fetch = fetch,
+): Promise<Record<string, unknown>> {
+	return (
+		await call(
+			record.server,
+			"/box/orgs",
+			{ name, ...(displayName === undefined ? {} : { displayName }) },
+			record.credential,
+			fetcher,
+		)
+	).body;
+}
+
 /** The agent name abso join takes when none is given: the box's name, lower-cased. */
 export function defaultAgentName(): string {
 	return boxName().toLowerCase();
@@ -375,9 +438,12 @@ export function boxText(record: BoxRecord | undefined, server: string, now = Dat
 	if (!record) return `This box isn't signed in to ${originOf(server)}. abso login signs it in.`;
 	const g = record.grant;
 	const expired = record.expiresAt <= now;
+	const all = allProjectsRole(g);
 	return [
 		`Signed in to ${record.server} as box ${record.id}${expired ? ", but the sign-in has expired. abso login renews it." : "."}`,
-		`Projects: ${g.projects.map((p) => `${p.project} (${p.role})`).join(", ")}.`,
+		all === null
+			? `Projects: ${g.projects.map((p) => `${p.project} (${p.role})`).join(", ")}.`
+			: `Projects: all of yours, now and later (${all} at most). abso init makes a new one; abso org new makes an organization.`,
 		`${expired ? "Expired" : "Expires"} ${day(record.expiresAt)} UTC.`,
 	].join("\n");
 }

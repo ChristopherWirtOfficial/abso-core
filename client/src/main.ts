@@ -46,7 +46,7 @@ import { runBlame, runWhere, runWho, runWhy } from "./history.ts";
 import { runAck, runAnswer, runAsk, runIssue, runIssues, runReply, runSearch, runWaiting } from "./issues.ts";
 import { adminToken, issuedPublic, keyList, keyListText, keyNew, keyRevoke } from "./key-admin.ts";
 import { browserSkip, openInBrowser } from "./open-browser.ts";
-import { initInOrg, runOrg, runOrgs } from "./orgs.ts";
+import { runOrg, runOrgs } from "./orgs.ts";
 import { runUnqueue } from "./queue.ts";
 import { runNote, runNotes, runReview } from "./review.ts";
 import {
@@ -97,14 +97,19 @@ async function runKeyInstall(args: Parsed, env: Env): Promise<Output> {
 
 const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	init: {
-		flags: { server: "string", project: "string", agent: "string", "as-is": "boolean", org: "string" },
-		usage: "abso init [folder] --project <name> --agent <name> [--as-is] [--org <org>]",
-		about:
-			"Create a project on the server from a folder's text files The folder becomes that agent's folder. It writes a starting .absoignore, and, when the folder has no avcs.json and package.json gives a check or a build to guess, an avcs.json (setup, check, build and out): what the server's CI runs on each new version of shared. Without one, CI runs what it can guess itself, or nothing. --as-is writes neither: the folder goes up exactly as it is (an import). --org <org> makes it an organization's project: for now that is done on the website, and abso says where.",
-		run: (args, env) => {
-			const org = str(args, "org");
-			return org === undefined ? runInit(args, env) : initInOrg(org, boxServer(args, env));
+		flags: {
+			server: "string",
+			project: "string",
+			agent: "string",
+			"as-is": "boolean",
+			org: "string",
+			public: "boolean",
+			private: "boolean",
 		},
+		usage: "abso init [folder] --project <name> [--agent <name>] [--as-is] [--org <org>] [--public|--private]",
+		about:
+			"Create a project on the server from a folder's text files The folder becomes that agent's folder. It writes a starting .absoignore, and, when the folder has no avcs.json and package.json gives a check or a build to guess, an avcs.json (setup, check, build and out): what the server's CI runs on each new version of shared. Without one, CI runs what it can guess itself, or nothing. --as-is writes neither: the folder goes up exactly as it is (an import). On a server this box is signed in to (abso login, approving all your projects), the project is made as you, the way the website's New project makes it: you own it, it's private unless you say --public, and the folder joins it at once with its own key (--agent names it; else the box's name). --org <org> makes it that organization's project. Elsewhere it needs --agent and the server's token.",
+		run: (args, env) => runInit(args, env),
 	},
 	key: {
 		flags: {
@@ -278,7 +283,7 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		usage:
 			"abso org <name> [--invite <person>|link [--as owner] | --role <person>=owner|member | --remove <person> | --leave | --members read|write | --projects-by members|owners] | abso org new <name> [--name <shown name>]",
 		about:
-			"An organization: its projects, people, open invites and settings, as the person who approved this box's sign-in sees them (people and settings only to members). One change at a time. Changes and abso org new are made on the website for now, and abso says where.",
+			"An organization: its projects, people, open invites and settings, as the person who approved this box's sign-in sees them (people and settings only to members). One change at a time. abso org new makes one as that person, from a box approved for all their projects; other changes are made on the website, and abso says where.",
 		run: (args, env) => runOrg(args, boxServer(args, env)),
 	},
 	skill: {

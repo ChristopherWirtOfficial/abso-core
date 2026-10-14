@@ -1,11 +1,12 @@
 // Organizations from the CLI: abso orgs and abso org <name>. They read as the
-// person who approved this box's sign-in (abso login). Changing an org (new,
-// invite, role, remove, leave, settings) and making a project in one are done on
-// the website for now: a box sits where agents run, and its sign-in was given
-// for project work, so the server takes only reads from it.
+// person who approved this box's sign-in (abso login). abso org new makes one, and
+// abso init --org makes a project in one, from a box approved for all its
+// person's projects (abso 663). Changing an org (invite, role, remove, leave,
+// settings) stays on the website: a box sits where agents run, so the server takes
+// no other org change from it.
 
-import { type Parsed, UsageError } from "./args.ts";
-import { type Answer, boxGet, originOf, readBox } from "./box.ts";
+import { type Parsed, str, UsageError } from "./args.ts";
+import { type Answer, boxCreateOrg, boxGet, originOf, readBox } from "./box.ts";
 import type { Output } from "./commands.ts";
 
 /** The website for an API server: api.<site> serves <site>; any other server serves its own pages. */
@@ -30,7 +31,7 @@ const CHANGES: readonly { flag: string; tab: string }[] = [
 ];
 
 const WEBSITE_ONLY =
-	"Organizations are changed on the website for now; from the CLI they can only be read, as the person who approved this box's sign-in";
+	"Organizations are changed on the website; from the CLI they can be read, and made with abso org new, as the person who approved this box's sign-in";
 
 /** Where the box's sign-in is read from and how the server is reached; tests pass their own. */
 export interface OrgIo {
@@ -114,7 +115,18 @@ export async function runOrg(args: Parsed, server: string, io: OrgIo = {}): Prom
 	const asked = CHANGES.filter((c) => args.flags.has(c.flag));
 	if (first === "new") {
 		if (second === undefined || more.length > 0) throw new UsageError('abso org new <name> [--name "<shown name>"]');
-		throw new UsageError(`${WEBSITE_ONLY}. Make ${second} at ${siteOf(server)}/orgs/new.`);
+		if (asked.length > 0) throw new UsageError("abso org new takes --name only");
+		const record = io.home === undefined ? readBox(server) : readBox(server, io.home);
+		if (!record)
+			throw new UsageError(
+				`this box isn't signed in to ${originOf(server)}. abso login signs it in; approve all your projects to make organizations from here`,
+			);
+		const made = await boxCreateOrg(record, second, str(args, "name"), io.fetch);
+		const name = typeof made.name === "string" ? made.name : second;
+		return {
+			text: `Made the organization ${name}; you own it. Its page: ${siteOf(server)}/${name}. abso init --org ${name} --project <name> makes a project in it.`,
+			json: { org: made },
+		};
 	}
 	if (first === undefined || second !== undefined)
 		throw new UsageError("abso org <name> [one change], or abso org new <name>");
@@ -166,9 +178,9 @@ export async function runOrg(args: Parsed, server: string, io: OrgIo = {}): Prom
 	return { text: lines.join("\n"), json: { org } };
 }
 
-/** abso init --org: making a project in an org is a website step for now. */
+/** abso init --org with no box signed in to the server: an org's project is made as the person who approved one (abso 663). */
 export function initInOrg(org: string, server: string): never {
 	throw new UsageError(
-		`projects in an organization are made on the website for now: New project at ${siteOf(server)}, with ${org} as its owner.`,
+		`this box isn't signed in to ${originOf(server)}, and a project in ${org} is made as a signed-in person. abso login, approving all your projects, then abso init --org ${org} again; or New project at ${siteOf(server)}.`,
 	);
 }

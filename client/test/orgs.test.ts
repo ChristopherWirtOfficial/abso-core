@@ -31,13 +31,14 @@ function signedIn(): string {
 
 /** A stand-in server: answers from `routes` by path, and keeps what was asked. */
 function server(routes: Record<string, { status: number; body: unknown }>) {
-	const asked: { url: string; method: string; auth: string | null }[] = [];
+	const asked: { url: string; method: string; auth: string | null; body?: string }[] = [];
 	const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
 		const u = new URL(String(url));
 		asked.push({
 			url: String(url),
 			method: init?.method ?? "GET",
 			auth: new Headers(init?.headers).get("authorization"),
+			...(typeof init?.body === "string" ? { body: init.body } : {}),
 		});
 		const r = routes[u.pathname] ?? { status: 404, body: { error: "no such route" } };
 		return new Response(JSON.stringify(r.body), { status: r.status });
@@ -156,11 +157,13 @@ describe("abso org <name>", () => {
 			[["acme-labs", "--leave"], /--leave is on acme-labs's People tab/],
 			[["acme-labs", "--members", "read"], /--members is on acme-labs's Settings tab/],
 			[["acme-labs", "--projects-by", "owners"], /--projects-by is on acme-labs's Settings tab/],
-			[["new", "acme-labs", "--name", "Acme Labs"], /Make acme-labs at https:\/\/example\.dev\/orgs\/new\./],
 		];
 		for (const [line, said] of cases) {
 			await assert.rejects(runOrg(args(line), SERVER, { home, fetch: s.fetcher }), said, line.join(" "));
-			await assert.rejects(runOrg(args(line), SERVER, { home, fetch: s.fetcher }), /changed on the website for now/);
+			await assert.rejects(
+				runOrg(args(line), SERVER, { home, fetch: s.fetcher }),
+				/Organizations are changed on the website/,
+			);
 		}
 		assert.deepEqual(s.asked, []);
 	});
@@ -188,11 +191,49 @@ describe("the website for a server", () => {
 	});
 });
 
-describe("abso init --org", () => {
-	it("says the project is made on the website for now, with the org as its owner", () => {
+describe("abso org new (abso 663)", () => {
+	it("makes the org as the box's person, sending the box's sign-in and the shown name", async () => {
+		const home = signedIn();
+		const s = server({ "/box/orgs": { status: 200, body: { name: "acme-labs", displayName: "Acme Labs" } } });
+		const out = await runOrg(args(["new", "acme-labs", "--name", "Acme Labs"]), SERVER, { home, fetch: s.fetcher });
+		assert.match(
+			out.text,
+			/Made the organization acme-labs; you own it\. Its page: https:\/\/example\.dev\/acme-labs\./,
+		);
+		assert.equal(s.asked.length, 1);
+		assert.equal(s.asked[0]?.method, "POST");
+		assert.equal(s.asked[0]?.auth, `Box ${CREDENTIAL}`);
+		assert.deepEqual(JSON.parse(s.asked[0]?.body ?? "{}"), { name: "acme-labs", displayName: "Acme Labs" });
+	});
+	it("says what the server says when the box's grant is a list, and never shows the credential", async () => {
+		const home = signedIn();
+		const s = server({
+			"/box/orgs": { status: 403, body: { error: "only a box approved for all your projects makes organizations" } },
+		});
+		await assert.rejects(
+			runOrg(args(["new", "acme-labs"]), SERVER, { home, fetch: s.fetcher }),
+			(e: Error) =>
+				/refused \(403\): only a box approved for all your projects/.test(e.message) && !e.message.includes(CREDENTIAL),
+		);
+	});
+	it("needs a box signed in, and no other change flag", async () => {
+		const empty = mkdtempSync(join(tmpdir(), "abso-orgs-"));
+		await assert.rejects(
+			runOrg(args(["new", "acme-labs"]), SERVER, { home: empty, fetch: server({}).fetcher }),
+			/abso login signs it in/,
+		);
+		await assert.rejects(
+			runOrg(args(["new", "acme-labs", "--leave"]), SERVER, { home: signedIn(), fetch: server({}).fetcher }),
+			/takes --name only/,
+		);
+	});
+});
+
+describe("abso init --org with no box signed in", () => {
+	it("says to sign in, or where the website makes it", () => {
 		assert.throws(
 			() => initInOrg("acme-labs", SERVER),
-			/made on the website for now: New project at https:\/\/example\.dev, with acme-labs as its owner/,
+			/isn't signed in to https:\/\/api\.example\.dev.*abso init --org acme-labs again; or New project at https:\/\/example\.dev\./,
 		);
 	});
 });
