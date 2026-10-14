@@ -16,6 +16,7 @@ export interface RestoreHost {
 	view(set: ReadonlySet<AtomId>): ReadView;
 	agentSet(agent: AgentState): Set<AtomId>;
 	agentView(agent: AgentState): ReadView;
+	agentViewWithout?(agent: AgentState, excluded: ReadonlySet<AtomId>): ReadView;
 	recordFile(
 		agent: AgentState,
 		view: ReadView,
@@ -64,9 +65,15 @@ export function restore(
 	// Whatever is still changed in a target goes back with a new change.
 	const now = host.draft(agent);
 	const without = new Set(now);
-	const original = host.view(new Set([...host.agentSet(agent)].filter((id) => !without.has(id))));
+	const originalAgent = { ...agent, mine: [...agent.mine] };
+	const originalView = () =>
+		host.agentViewWithout
+			? host.agentViewWithout(originalAgent, without)
+			: host.view(new Set([...host.agentSet(originalAgent)].filter((id) => !without.has(id))));
 	for (const path of [...targets].toSorted()) {
 		if (!touched.has(path)) continue;
+		// A previous file may have mutated the graph. Reopen the same base view.
+		const original = originalView();
 		const was = original.attrs(path);
 		host.recordFile(
 			agent,

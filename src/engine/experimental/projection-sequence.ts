@@ -143,7 +143,21 @@ export class ProjectionSequence {
 			// One operation changes an AVL path plus rotation neighbors, not history.
 			// Keep only those decoded records and persist each final record once.
 			const changed = new Map<number, SequenceNode>();
-			const get = (id: number): SequenceNode => changed.get(id) ?? this.get(map, id);
+			// The immutable input map is fixed for this batch. Cache only its bounded reads;
+			// changed nodes always take precedence and the cache never survives a transaction.
+			const original = new Map<number, SequenceNode>();
+			let originalBytes = 0;
+			const get = (id: number): SequenceNode => {
+				const found = changed.get(id) ?? original.get(id);
+				if (found) return found;
+				const node = this.get(map, id);
+				const bytes = 192 + node.text.length * 2;
+				if (original.size < 256 && originalBytes + bytes <= 65536) {
+					original.set(id, node);
+					originalBytes += bytes;
+				}
+				return node;
+			};
 			const put = (node: SequenceNode): number => {
 				changed.set(node.id, node);
 				return node.id;

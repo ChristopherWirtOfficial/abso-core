@@ -89,7 +89,7 @@ export function mergeIdentical(
 		}
 	}
 	if ([...involved].some((f) => shown.has(f))) return [];
-	const baseView = host.view(oldBase);
+	const baseView = host.viewAt(host.spaceOf(agent), oldVersion);
 	const theirs = host.viewAt(host.spaceOf(agent), agent.base);
 	const textOf = (v: ReadView, path: string): string | null => (v.hasFile(path) ? v.text(path) : null);
 	const merged = new Map<string, { text: string | null; mode: Mode; hunks?: Hunk[] }>();

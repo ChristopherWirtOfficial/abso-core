@@ -1837,6 +1837,10 @@ export class Project {
 			needInit: () => this.#needInit(),
 			draft: (agent) => this.#draft(agent as AgentState),
 			agentView: (agent) => this.#agentView(agent as AgentState),
+			agentViewWithout: (agent, excluded) => {
+				const state = agent as AgentState;
+				return this.#agentView({ ...state, mine: state.mine.filter((id) => !excluded.has(id)) });
+			},
 			view: (set) => this.#view(set),
 			touchedFiles: (ids, views) => this.#touchedFiles(ids, views),
 		};
@@ -2093,6 +2097,18 @@ export class Project {
 			graph: this.#graph,
 			checkerReady: () => this.checkerReady,
 			sharedView: () => this.#sharedView(),
+			sharedOverlay: (atoms) =>
+				this.#viewKeyed(`a @${last(this.#shared)}+${atoms.join(",")}`, () =>
+					unionOverlay(this.#setOf(this.#shared), atoms),
+				),
+			sharedAgentOverlay: (agent, atoms) => {
+				const current = this.#setOf(this.#shared);
+				const added = new Set([...atoms, ...agent.mine]);
+				// Retain old-base atoms absent from current shared, without copying shared history.
+				if (agent.base !== last(this.#shared))
+					for (const id of this.#at(this.#spaceOf(agent), agent.base)) if (!current.has(id)) added.add(id);
+				return this.#viewKeyed(`a @${last(this.#shared)}+${[...added].join(",")}`, () => unionOverlay(current, added));
+			},
 			queued: () => this.#queue,
 			queuedId: () => this.#queuedId,
 			checkingHas: (id) => this.#checking.has(id),
@@ -2248,6 +2264,8 @@ export class Project {
 			view: (set) => this.#view(set),
 			agentSet: (agent) => this.#agentSet(agent),
 			agentView: (agent) => this.#agentView(agent),
+			agentViewWithout: (agent, excluded) =>
+				this.#agentView({ ...agent, mine: agent.mine.filter((id) => !excluded.has(id)) }),
 			recordFile: (agent, view, path, text, time, meta, entries, mode, blob, hunks) =>
 				this.#recordFile(agent, view, path, text, time, meta, entries, mode, blob, hunks),
 			flush: (entries) => this.#flush(entries),
@@ -2278,6 +2296,12 @@ export class Project {
 			agent: (name, entries) => this.#agent(name, entries),
 			spaceOf: (agent) => this.#spaceOf(agent),
 			agentView: (agent) => this.#agentView(agent),
+			captureAgentView: (agent) => {
+				const key = this.#agentViewKey(agent);
+				const original = this.#agentView(agent);
+				// Projected readers reopen the immutable key; only the in-memory fallback uses the original set.
+				return () => this.#viewKeyed(key, () => original.set);
+			},
 			at: (space, version) => this.#at(space, version),
 			draft: (agent) => this.#draft(agent),
 			strandedFiles: (draft, set) => this.#strandedFiles(draft, set),

@@ -2,6 +2,7 @@
 // Writes go through QueueHost; today the host is Project.
 
 import { type AtomId, buildAtom, type Graph, type ReadView } from "../../src/engine/index.ts";
+import { unionOverlay } from "../../src/engine/state-source.ts";
 import type { Pair } from "./collisions.ts";
 import { definedTwice } from "./definitions.ts";
 import { heldMessage, keptOf, lostLines } from "./markers.ts";
@@ -28,6 +29,8 @@ export interface QueueHost {
 	readonly graph: Graph;
 	checkerReady(): boolean;
 	sharedView(): ReadView;
+	sharedOverlay?(atoms: readonly AtomId[]): ReadView;
+	sharedAgentOverlay?(agent: AgentState, atoms: readonly AtomId[]): ReadView;
 	queued(): readonly QueuedPublish[];
 	queuedId(): number;
 	checkingHas(id: number): boolean;
@@ -117,11 +120,13 @@ export function enqueue(
 	const ahead = queuedAtoms(host, agent.name);
 	const now = host.setOf(space);
 	if (ahead.size > 0) {
-		const landed = new Set([...now, ...ahead]);
-		const theirsView = host.view(landed);
-		const yoursView = host.view(new Set([...landed, ...host.agentSet(agent)]));
+		const landed = unionOverlay(now, ahead);
+		const theirsView = host.sharedOverlay ? host.sharedOverlay([...ahead]) : host.view(landed);
+		const yoursView = host.sharedAgentOverlay
+			? host.sharedAgentOverlay(agent, [...ahead])
+			: host.view(unionOverlay(landed, host.agentSet(agent)));
 		const queuedBy = (id: AtomId) => host.queued().find((q) => q.changes.includes(id));
-		const collisions: Collision[] = host.pairs(changes, ahead, new Set([...landed, ...changes])).map((p) => {
+		const collisions: Collision[] = host.pairs(changes, ahead, unionOverlay(landed, changes)).map((p) => {
 			const c = host.describe(p, host.agentView(agent), theirsView, agent.space);
 			const q = queuedBy(p.theirs);
 			return q ? { ...c, theirs: { ...c.theirs, agent: q.agent, message: q.message, queued: q.id } } : c;
@@ -231,7 +236,10 @@ export function queueCandidate(
 } {
 	host.needInit();
 	const items = host.queued().slice(0, Math.max(0, n));
-	const view = host.view(new Set([...host.setOf(host.shared()), ...items.flatMap((q) => q.changes)]));
+	const changes = items.flatMap((q) => q.changes);
+	const view = host.sharedOverlay
+		? host.sharedOverlay(changes)
+		: host.view(unionOverlay(host.setOf(host.shared()), changes));
 	const files = view.files();
 	const modes = modesOf(view);
 	const blobs = view.blobs();
@@ -250,8 +258,9 @@ export function queueLand(host: QueueHost, n: number, time: number): { versions:
 		for (const q of host.queued().slice(0, Math.max(0, n))) {
 			const agent = host.agentOf(q.agent);
 			const space = host.shared();
-			const union = new Set([...host.setOf(space), ...q.changes]);
-			const tie = buildAtom(host.view(union), {
+			const union = unionOverlay(host.setOf(space), q.changes);
+			const view = host.sharedOverlay ? host.sharedOverlay(q.changes) : host.view(union);
+			const tie = buildAtom(view, {
 				author: q.agent,
 				message: q.message,
 				time,

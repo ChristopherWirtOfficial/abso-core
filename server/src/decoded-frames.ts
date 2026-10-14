@@ -2,6 +2,7 @@ import { CachedStateStorage } from "../../src/engine/state-source.ts";
 import type { WriterAdoptionFrame } from "../../worker/project/project.ts";
 import type { Entry } from "../../worker/project/project-types.ts";
 import type { SqliteLog, SqliteStorage } from "./engine-project.ts";
+import { smallFrameJson } from "./small-frame-json.ts";
 import { StoredJson, storeJson } from "./stored-json.ts";
 import { storedJsonView } from "./stored-json-view.ts";
 import { SqliteWriterState, writerFrameChunksDigest } from "./writer-host.ts";
@@ -26,7 +27,7 @@ export function withDecodedFrames<T>(
 	return storage.transactionSync(() => {
 		SqliteWriterState.initialize(storage);
 		const state = new SqliteWriterState(storage, namespace);
-		// Temporary nodes are immutable after parsing; cap retained reads for the whole page.
+		// Bound cached reads across all disk-backed frames in this page.
 		const reads = new CachedStateStorage(state, 64 * 1024, 256);
 		if (
 			storage.sql.exec("SELECT 1 AS present FROM writer_state WHERE namespace = ? LIMIT 1", namespace).toArray().length
@@ -44,9 +45,13 @@ export function withDecodedFrames<T>(
 					throw Error("decoded frame exceeds page byte bound");
 				}
 				digest = writerFrameChunksDigest(digest, seq, log.frameChunks(seq));
-				storeJson(state, String(seq), log.frameChunks(seq));
 				bytes += size;
-				yield { seq, bytes: size, entry: storedJsonView(new StoredJson(reads, String(seq))) as Entry };
+				if (size <= 4096) {
+					yield { seq, bytes: size, entry: smallFrameJson(log.frameChunks(seq)) as Entry };
+				} else {
+					storeJson(state, String(seq), log.frameChunks(seq));
+					yield { seq, bytes: size, entry: storedJsonView(new StoredJson(reads, String(seq))) as Entry };
+				}
 			}
 		};
 		try {

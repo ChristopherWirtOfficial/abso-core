@@ -285,8 +285,13 @@ test("ProjectObject disk-first calls survive cold objects without replay", async
 		throw Error("empty test repository");
 	});
 	let pushed = 0;
+	let failPush = true;
 	let remoteFiles: MemoryFS | undefined;
 	t.mock.method(git, "push", async (options: Parameters<typeof git.push>[0]) => {
+		if (failPush) {
+			failPush = false;
+			throw Error("injected Artifacts transport failure");
+		}
 		const oid = await git.resolveRef({ fs: options.fs, dir: options.dir, ref: "main" });
 		const commit = await git.readCommit({ fs: options.fs, dir: options.dir, oid });
 		assert.match(commit.commit.message, /abso-version: 2/);
@@ -304,8 +309,17 @@ test("ProjectObject disk-first calls survive cold objects without replay", async
 		}),
 	};
 	const bound = () => new ProjectObject(context as never, { ABSO_DISK_FIRST: "on", ARTIFACTS: artifacts } as never);
+	// Deliver the pending alarm: the fake storage must clear it as the host does.
+	alarm = null;
+	await bound().alarm();
+	assert.equal(pushed, 0);
+	assert.equal(values.get("pushed"), undefined, "failed transport must not acknowledge a push");
+	assert.match(JSON.stringify(values.get("pushError")), /injected Artifacts transport failure/);
+	assert.deepEqual(rows(), stable, "failed remote transport leaves canonical state unchanged");
+	assert.ok(alarm !== null && alarm > Date.now(), "failed transport schedules a retry");
 	await bound().alarm();
 	assert.equal(pushed, 1);
+	assert.equal(values.get("pushError"), undefined, "cold retry clears the transport error");
 	assert.equal((await bound().out()).pushed?.version, 2);
 	assert.deepEqual(rows(), stable, "pushing shared does not mutate canonical project state");
 	await bound().alarm();

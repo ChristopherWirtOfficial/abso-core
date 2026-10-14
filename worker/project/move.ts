@@ -73,8 +73,9 @@ export function move(
 	const lines = view.lines(from).length;
 	const mode: Mode = { exec: attrs.exec, link: attrs.link };
 	if (lines > 0 && attrs.blob === null) {
+		const text = view.text(from);
 		host.addDraft(agent, view, { edits: [], move: { file: from, start: 0, end: lines, to, at: 0 } }, time, {}, entries);
-		host.recordFile(agent, host.agentView(agent), to, view.text(from), time, {}, entries, mode);
+		host.recordFile(agent, host.agentView(agent), to, text, time, {}, entries, mode);
 	} else {
 		// A binary or empty file has no lines to carry: the new name takes its blob and modes.
 		host.recordFile(agent, host.agentView(agent), to, "", time, {}, entries, mode, attrs.blob ?? undefined);

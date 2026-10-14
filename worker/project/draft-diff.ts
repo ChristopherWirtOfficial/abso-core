@@ -18,6 +18,7 @@ export interface DraftDiffHost {
 	needInit(): void;
 	draft(agent: Agent): AtomId[];
 	agentView(agent: Agent): ReadView;
+	agentViewWithout?(agent: Agent, excluded: ReadonlySet<AtomId>): ReadView;
 	view(set: ReadonlySet<AtomId>): ReadView;
 	touchedFiles(ids: Iterable<AtomId>, views: readonly ReadView[]): Set<string>;
 }
@@ -35,7 +36,9 @@ export function diffOfAgent(host: DraftDiffHost, agent: Agent): DiffAnswer {
 	const draft = host.draft(agent);
 	const after = host.agentView(agent);
 	const without = new Set(draft);
-	const before = host.view(new Set([...after.set].filter((id) => !without.has(id))));
+	const before = host.agentViewWithout
+		? host.agentViewWithout(agent, without)
+		: host.view(new Set([...after.set].filter((id) => !without.has(id))));
 	const files = host.touchedFiles(draft, [before, after]);
 	return {
 		draft: agent.space === SHARED ? null : agent.space,

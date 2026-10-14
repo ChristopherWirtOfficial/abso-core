@@ -3,7 +3,6 @@ import { View } from "../../src/engine/index.ts";
 // SyncHost; today the host is Project.
 
 import type { AtomId, Graph, ReadView } from "../../src/engine/index.ts";
-import { outlastsSync } from "./news.ts";
 import { ProjectError } from "./project-error.ts";
 import type { AgentState, Entry, MergedLine, SyncAnswer } from "./project-types.ts";
 import { last, SHARED, type Space } from "./spaces.ts";
@@ -15,6 +14,7 @@ export interface SyncHost {
 	agent(name: string, entries: Entry[]): AgentState;
 	spaceOf(agent: AgentState): Space;
 	agentView(agent: AgentState): ReadView;
+	captureAgentView?(agent: AgentState): () => ReadView;
 	at(space: Space, version: number): ReadonlySet<AtomId>;
 	draft(agent: AgentState): AtomId[];
 	strandedFiles(draft: readonly AtomId[], set: ReadonlySet<AtomId>): string[];
@@ -51,6 +51,7 @@ export function sync(host: SyncHost, agentName: string, options: { label?: strin
 			throw new ProjectError("bad-request", `no version of shared has the label ${JSON.stringify(options.label)}`);
 		target = versions[versions.length - 1]!;
 	}
+	const reopenBefore = agent.synced ? host.captureAgentView?.(agent) : undefined;
 	const before = agent.synced ? host.agentView(agent) : new View(host.graph, []);
 	const set = host.at(space, target);
 	const stranded = host.strandedFiles(host.draft(agent), set);
@@ -80,14 +81,17 @@ export function sync(host: SyncHost, agentName: string, options: { label?: strin
 	entries.push({ type: "sync", agent: agent.name, version: target });
 	host.apply(entries[entries.length - 1]!);
 	// News about versions the agent has now synced past is moot: the sync answer lists what's still open (#37).
-	if (agent.news.some((t) => !outlastsSync(t))) {
+	if (agent.news.some((t) => !t.startsWith("Announcement from "))) {
 		const heard: Entry = { type: "heard", agent: agent.name, stale: true };
 		entries.push(heard);
 		host.apply(heard);
 	}
 	const merged = host.mergeIdentical(agent, before, oldBase, oldVersion, Date.now(), entries);
 	// full (#37, a partial join): every file in the view, as for a first sync, whatever the folder had.
-	const answer = host.changesSince(agent, options.full ? new View(host.graph, []) : before);
+	const answer = host.changesSince(
+		agent,
+		options.full ? new View(host.graph, []) : reopenBefore ? reopenBefore() : before,
+	);
 	host.flush(entries);
 	return merged.length > 0 ? { ...answer, merged } : answer;
 }

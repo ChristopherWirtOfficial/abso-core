@@ -175,9 +175,21 @@ export class ProjectionReader implements ReadView {
 	fileOf(line: string): string {
 		this.#assertLive();
 		if (line.startsWith("^")) return line.slice(1);
-		const marker = this.#adapter.markers.get(this.#state.locator, this.graph.lineN(line) + 1);
-		if (marker?.kind !== "line") throw Error("missing projected line");
-		return this.#adapter.sequence.fileAt(this.#state.sequence, marker.enter);
+		let current = line;
+		while (!current.startsWith("^")) {
+			const n = this.graph.lineN(current);
+			if (n < 0) throw Error("unknown projected line");
+			const marker = this.#adapter.markers.get(this.#state.locator, n + 1);
+			if (marker?.kind === "line") return this.#adapter.sequence.fileAt(this.#state.sequence, marker.enter);
+			// A line written outside this view has no marker. Follow canonical ancestry
+			// until it reaches a line whose placement this view actually contains.
+			if (marker || this.#adapter.members.get(this.#state.membership, this.graph.writerSeqOf(n))?.present)
+				throw Error("missing projected line");
+			const parent = this.graph.lineParent(current);
+			if (parent === undefined) throw Error("missing projected line parent");
+			current = parent;
+		}
+		return current.slice(1);
 	}
 	text(path: string): string {
 		this.#assertLive();

@@ -251,18 +251,22 @@ export function compare(
 	host.checkVersion(space, to);
 	const a = host.at(space, from);
 	const b = host.at(space, to);
+	const before = host.viewAt(space, from);
+	const after = host.viewAt(space, to);
 	const files = new Set<string>();
 	for (const [x, y] of [
 		[a, b],
 		[b, a],
 	] as const) {
 		for (const file of host.touchedFiles(
-			[...x].filter((id) => !y.has(id)),
-			[host.view(a), host.view(b)],
+			(function* () {
+				for (const id of x) if (!y.has(id)) yield id;
+			})(),
+			[before, after],
 		))
 			files.add(file);
 	}
-	return { from, to, files: changesBetween(host.view(a), host.view(b), files) };
+	return { from, to, files: changesBetween(before, after, files) };
 }
 
 /** A version of shared (or of a named draft) as a ReadView, for reading lines (blame at a version). */

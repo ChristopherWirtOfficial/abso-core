@@ -47,3 +47,28 @@ test("typed sequence preserves ordering, moves, old roots and rollback", () => {
 		storage.db.close();
 	}
 });
+
+test("sequence batches match individual updates and retry after rollback", () => {
+	const storage = new SqlState();
+	try {
+		const sequence = new ProjectionSequence(storage, "batch-cache");
+		let state = sequence.empty();
+		for (let i = 0; i < 48; i++) state = sequence.update(state, { kind: "insert", rank: i, text: String(i) });
+		const before = state;
+		const operations = Array.from({ length: 16 }, (_, i) => ({ kind: "visibility" as const, id: i, delta: 1 }));
+		const rows = () => JSON.stringify(storage.db.prepare("SELECT * FROM state ORDER BY collection,key").all());
+		const original = rows();
+		storage.failWrite = storage.writes + 3;
+		assert.throws(() => sequence.updateMany(before, operations), /injected/);
+		assert.equal(rows(), original);
+		storage.failWrite = Infinity;
+		const batch = sequence.updateMany(before, operations);
+		let individual = before;
+		for (const operation of operations) individual = sequence.update(individual, operation);
+		assert.deepEqual([...sequence.values(batch)], [...sequence.values(individual)]);
+		assert.equal([...sequence.values(before)].length, 48);
+		assert.equal([...sequence.values(batch)].length, 32);
+	} finally {
+		storage.db.close();
+	}
+});
