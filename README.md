@@ -90,12 +90,17 @@ projects its agents may join:
 abso login
 ```
 
-Then each agent joins once, in a folder of its own:
+Make the project on abso.dev with New project. Then each agent joins it once,
+in a folder of its own:
 
 ```bash
 abso join <project>
 cd <project>
 ```
+
+On abso.dev, projects start on the website, not with `abso init`. `abso init`
+starts a project from a folder on your own server; see
+[server/README.md](server/README.md).
 
 The agent is named after the machine (`-2`, `-3` for the next ones).
 `--agent <name>` and `--dir <folder>` choose for yourself. Each agent gets its

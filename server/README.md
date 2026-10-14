@@ -67,6 +67,9 @@ mkdir ../bob && cd ../bob
 abso join my-project --agent bob --server https://abso.<your-subdomain>.workers.dev
 ```
 
+On abso.dev, make the project on the website (New project) instead, then run `abso join <project>` in each agent's
+folder.
+
 Each agent works in its own folder: `abso pull`, edit, `abso push -m "why"`. When two agents change the same lines,
 the second push is held:
 
