@@ -10,6 +10,13 @@ export function smallFrameJson(chunks: Iterable<string>): unknown {
 	// Count UTF-8 after joining so a surrogate pair split across chunks counts once.
 	if (new TextEncoder().encode(text).byteLength > 4096) throw Error("small canonical frame exceeds bound");
 	// Preserve depth, key and scalar limits; the fast path must not change acceptance.
-	for (const event of jsonEvents([text])) void event;
-	return JSON.parse(text);
+	for (const event of jsonEvents([text], { finiteNumbers: true })) void event;
+	const freeze = (value: unknown): unknown => {
+		if (value !== null && typeof value === "object") {
+			for (const child of Object.values(value)) freeze(child);
+			Object.freeze(value);
+		}
+		return value;
+	};
+	return freeze(JSON.parse(text));
 }

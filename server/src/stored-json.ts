@@ -3,10 +3,15 @@ import { StoredText } from "../../src/engine/stored-text.ts";
 import { type JsonEvent, jsonEvents } from "./json-events.ts";
 
 /** Temporary decoded JSON on disk. A root is published only after complete parsing. */
-export function storeJson(storage: GraphStateStorage, namespace: string, chunks: Iterable<string>): number {
+export function storeJson(
+	storage: GraphStateStorage,
+	namespace: string,
+	chunks: Iterable<string>,
+	options: { finiteNumbers?: boolean } = {},
+): number {
 	return storage.transaction(() => {
 		if (storage.read(namespace, "root") !== undefined) throw Error("decoded JSON already exists");
-		const events = jsonEvents(chunks);
+		const events = jsonEvents(chunks, options);
 		let nextId = 0;
 		const take = (): JsonEvent => {
 			const event = events.next();

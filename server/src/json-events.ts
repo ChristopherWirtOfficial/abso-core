@@ -6,7 +6,10 @@ export type JsonEvent =
 	| { kind: "value"; value: number | boolean | null };
 
 /** Structural JSON decoding. Retains nesting and one bounded string fragment, not a decoded tree. */
-export function* jsonEvents(chunks: Iterable<string>): IterableIterator<JsonEvent> {
+export function* jsonEvents(
+	chunks: Iterable<string>,
+	options: { finiteNumbers?: boolean } = {},
+): IterableIterator<JsonEvent> {
 	const cursor = new JsonChunkCursor(chunks);
 	const whitespace = () => {
 		while (cursor.peek() !== undefined && /[ \t\n\r]/.test(cursor.peek()!)) cursor.take();
@@ -61,7 +64,9 @@ export function* jsonEvents(chunks: Iterable<string>): IterableIterator<JsonEven
 			yield { kind: "value", value: token === "null" ? null : token === "true" };
 		} else {
 			if (!/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$/.test(token)) throw Error("invalid JSON scalar");
-			yield { kind: "value", value: Number(token) };
+			const number = Number(token);
+			if (options.finiteNumbers && !Number.isFinite(number)) throw Error("non-finite JSON number");
+			yield { kind: "value", value: number };
 		}
 	}
 	try {

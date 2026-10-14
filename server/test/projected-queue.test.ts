@@ -76,6 +76,13 @@ test("disk runtime builds and lands a queued candidate", (t) => {
 		() => {},
 	);
 	assert.deepEqual(landed.versions, [{ id: 1, version: 1 }]);
+	const empty = runtime().read(
+		(c) => (c as unknown as { project: Project }).project.queueCandidate(4),
+		() => {},
+	);
+	assert.deepEqual(empty.ids, []);
+	assert.deepEqual(empty.files, candidate.files);
+	assert.equal(empty.tree, candidate.tree);
 	assert.equal(
 		runtime().read(
 			(c) => c.shared().files["a.txt"],

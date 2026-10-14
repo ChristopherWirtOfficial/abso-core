@@ -237,9 +237,12 @@ export function queueCandidate(
 	host.needInit();
 	const items = host.queued().slice(0, Math.max(0, n));
 	const changes = items.flatMap((q) => q.changes);
-	const view = host.sharedOverlay
-		? host.sharedOverlay(changes)
-		: host.view(unionOverlay(host.setOf(host.shared()), changes));
+	const view =
+		changes.length === 0
+			? host.sharedView()
+			: host.sharedOverlay
+				? host.sharedOverlay(changes)
+				: host.view(unionOverlay(host.setOf(host.shared()), changes));
 	const files = view.files();
 	const modes = modesOf(view);
 	const blobs = view.blobs();

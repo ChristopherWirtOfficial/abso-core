@@ -141,7 +141,9 @@ export class PathIndex {
 			return running;
 		};
 		for (let v = index.upTo + 1; v <= last(space); v++) {
-			if (space.name === SHARED && !this.#keptFiles(space, v)) {
+			// Persistent graphs use the indexed version reader; a raw View would
+			// rebuild move scratch state and copy historical membership during a read.
+			if (space.name === SHARED && !this.#deps.graph.hasOrderedChildren && !this.#keptFiles(space, v)) {
 				if (v > 0 && !views.has(v - 1)) views.set(v - 1, new View(this.#deps.graph, new Set(setAt(v - 1))));
 				views.set(v, new View(this.#deps.graph, new Set(setAt(v))));
 			}

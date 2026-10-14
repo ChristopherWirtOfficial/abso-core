@@ -49,7 +49,7 @@ export function withDecodedFrames<T>(
 				if (size <= 4096) {
 					yield { seq, bytes: size, entry: smallFrameJson(log.frameChunks(seq)) as Entry };
 				} else {
-					storeJson(state, String(seq), log.frameChunks(seq));
+					storeJson(state, String(seq), log.frameChunks(seq), { finiteNumbers: true });
 					yield { seq, bytes: size, entry: storedJsonView(new StoredJson(reads, String(seq))) as Entry };
 				}
 			}
