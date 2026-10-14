@@ -157,6 +157,8 @@ export interface ProjectHistory {
 	fileAt(path: string, version: number, draft: string | null, agent?: string): unknown;
 	/** Every file that differs between two versions (#27). */
 	compare(from: number, to: number, draft: string | null, agent?: string): unknown;
+	/** Version `version` of shared without the versions in `versions` (without.ts). */
+	without(version: number, versions: readonly number[]): unknown;
 	/** One version: who, why, and each file before and after (#27). */
 	show(version: number, draft: string | null, agent?: string): unknown;
 	/** What an agent's unpublished changes do, file by file (#27). */

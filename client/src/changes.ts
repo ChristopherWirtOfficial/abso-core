@@ -28,6 +28,7 @@ import { fileArg, when } from "./history.ts";
 import { byWhom } from "./history-answers.ts";
 import { applyMode, PLAIN, readKnownModes, writeKnownModes } from "./modes.ts";
 import { refusedText, screenAnswer } from "./safety.ts";
+import { refusalText, withoutArg, withoutHeading } from "./without.ts";
 
 /** The space to read: --draft (where "shared" means shared), else the one this agent is in (shared, in a folder with no agent). */
 function space(args: Parsed, agent: string): Where {
@@ -425,6 +426,49 @@ export async function runLog(args: Parsed, env: Env): Promise<Output> {
 	return { text: lines.join("\n"), json: { ...answer } };
 }
 
+/** abso show <version>[:<file>] --without <versions>: what differs with them left out, or that file then. */
+async function showWithout(
+	api: Api,
+	root: string,
+	cwd: string,
+	word: string,
+	where: Where,
+	leave: readonly number[],
+): Promise<Output> {
+	if ("draft" in where && where.draft !== null) throw new UsageError("--without reads shared, not a named draft");
+	const colon = word.indexOf(":");
+	const v = version(colon >= 0 ? word.slice(0, colon) : word);
+	const path = colon >= 0 ? fileArg(root, cwd, word.slice(colon + 1)) : undefined;
+	const answer = await api.without(v, leave);
+	if (!answer.ok)
+		return {
+			exit: EXIT.refused,
+			text: refusalText(answer, (vs) => `abso show ${word} --without ${vs.join(",")}`),
+			json: { ...answer },
+		};
+	if (path !== undefined) {
+		const file = answer.files.find((f) => f.path === path);
+		if (file === undefined) {
+			const same = await api.fileAt(path, v, { draft: null });
+			if (same.text !== null) return { text: same.text, json: { ...same, without: answer.without } };
+		} else if (file.after !== null) return { text: file.after, json: { ...file, without: answer.without } };
+		return {
+			exit: EXIT.error,
+			text: `${path} isn't in version ${v} of shared without them.`,
+			json: { path, version: v, without: answer.without },
+		};
+	}
+	const changed = pairRenames(answer.files);
+	const d = diffs(changed);
+	const lines = [
+		...withoutHeading(answer),
+		changed.length === 0 ? `No file differs from version ${v}.` : `Compared with version ${v}: ${totals(changed)}.`,
+		`The files hash to ${answer.tree}; the same ask gives the same hash. Shared doesn't change.`,
+		...d.text,
+	];
+	return { text: lines.join("\n"), json: { ...answer, files: d.json } };
+}
+
 export async function runShow(args: Parsed, env: Env): Promise<Output> {
 	if (args.positionals.length !== 1)
 		throw new UsageError("show takes one version: abso show <version> or abso show <version>:<file>");
@@ -432,6 +476,8 @@ export async function runShow(args: Parsed, env: Env): Promise<Output> {
 	const word = args.positionals[0]!;
 	const colon = word.indexOf(":");
 	const where = space(args, config.agent);
+	const leave = withoutArg(args);
+	if (leave !== undefined) return showWithout(api, root, env.cwd, word, where, leave);
 
 	if (colon >= 0) {
 		const v = version(word.slice(0, colon));

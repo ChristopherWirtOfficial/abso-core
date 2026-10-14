@@ -73,6 +73,28 @@ export type DropAnswer =
 				readonly files: readonly string[];
 			}[];
 	  };
+/** A version of shared without some earlier ones (abso show --without, abso export --without). */
+export type WithoutAnswer =
+	| {
+			readonly ok: true;
+			readonly version: number;
+			readonly without: readonly VersionRef[];
+			/** Every file that differs from the version: before, in it; after, without the others. */
+			readonly files: readonly FileChange[];
+			/** One hash of every file without them: the same ask always gives the same one. */
+			readonly tree: string;
+	  }
+	| {
+			readonly ok: false;
+			readonly version: number;
+			readonly without: readonly VersionRef[];
+			/** Versions it keeps that build on one it leaves out, each with what it builds on and where. */
+			readonly dependents: readonly (VersionRef & {
+				readonly needs: readonly { readonly version: number; readonly files: readonly string[] }[];
+			})[];
+			/** What to leave out for it to work: the versions asked, and every one that builds on them. */
+			readonly suggestion: readonly number[];
+	  };
 export type PluckAnswer =
 	| { readonly ok: true; readonly version: number; readonly changes: number; readonly plucked: readonly unknown[] }
 	| { readonly ok: false; readonly needs?: readonly VersionRef[]; readonly collisions?: readonly Collision[] };

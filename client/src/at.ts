@@ -25,19 +25,20 @@ export interface Snapshot {
 	readonly modes: Map<string, FullMode>;
 }
 
-/** Each file as it is on one side of a change (`before`), applied to the snapshot. */
-function applyBefore(s: Snapshot, changes: readonly FileChange[]): void {
+/** Each file as it is on one side of a change (`before` unless said), applied to the snapshot. */
+export function applySide(s: Snapshot, changes: readonly FileChange[], side: "before" | "after" = "before"): void {
 	for (const f of changes) {
 		if (isLocalOnly(f.path)) continue;
-		const blob = f.blob?.before ?? null;
+		const blob = f.blob?.[side] ?? null;
+		const text = f[side];
 		if (blob !== null) s.files.set(f.path, { blob });
-		else if (f.before !== null) s.files.set(f.path, { text: f.before });
+		else if (text !== null) s.files.set(f.path, { text });
 		else {
 			s.files.delete(f.path);
 			s.modes.delete(f.path);
 			continue;
 		}
-		if (f.mode) s.modes.set(f.path, { exec: f.mode.before.exec === true, link: f.mode.before.link ?? null });
+		if (f.mode) s.modes.set(f.path, { exec: f.mode[side].exec === true, link: f.mode[side].link ?? null });
 	}
 }
 
@@ -56,9 +57,9 @@ export async function snapshotAt(root: string, api: Api, version: number): Promi
 	for (const [rel, sha] of readKnownBlobs(root)) s.files.set(rel, { blob: sha });
 	for (const [rel, mode] of readKnownModes(root)) if (s.files.has(rel)) s.modes.set(rel, mode);
 	// Its base: the draft's changes taken back out.
-	applyBefore(s, diff.files);
+	applySide(s, diff.files);
 	// Version N: what differs from the base, as it was at N.
-	if (version !== diff.base) applyBefore(s, (await api.compare(version, diff.base, where)).files);
+	if (version !== diff.base) applySide(s, (await api.compare(version, diff.base, where)).files);
 	return s;
 }
 

@@ -49,6 +49,7 @@ const READ_OPS = new Set([
 	"file",
 	"files",
 	"compare",
+	"without",
 	"where",
 	"feed",
 	"drafts",

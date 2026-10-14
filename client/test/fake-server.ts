@@ -271,7 +271,7 @@ export async function startFake(port = 0, token = "fake-token"): Promise<Fake> {
 			return;
 		}
 		const m =
-			/^\/p\/([^/]+)\/(init|status|queue|change\/\d+|changes|notes|ci\/revoke|ci|blame|why|where|labels|files|diff|log|show|file|compare|a\/([^/]+)\/(edit|record|publish|sync|run|draft|land|draft-sync|diff|restore|announce|news|starting|reader|drop|pluck|amend|label|files|unqueue|note|note-close|move))$/.exec(
+			/^\/p\/([^/]+)\/(init|status|queue|change\/\d+|changes|notes|ci\/revoke|ci|blame|why|where|labels|files|diff|log|show|file|compare|without|a\/([^/]+)\/(edit|record|publish|sync|run|draft|land|draft-sync|diff|restore|announce|news|starting|reader|drop|pluck|amend|label|files|unqueue|note|note-close|move))$/.exec(
 				url.pathname,
 			);
 		if (!m) return send(res, 404, { error: "no such route; see docs/v2-slice1.md" });
@@ -435,6 +435,20 @@ export async function startFake(port = 0, token = "fake-token"): Promise<Fake> {
 				const line = num(q.line);
 				if (!line || !Number.isInteger(line)) return send(res, 400, { error: "why needs ?line=<number>" });
 				return send(res, 200, why(hosted.project, q.file, line, view));
+			} catch (e) {
+				const code = (e as { code?: string }).code;
+				return send(res, code === "bad-request" ? 400 : 500, { error: e instanceof Error ? e.message : String(e) });
+			}
+		}
+		if (op === "without") {
+			// GET ?version=<n>&versions=<n,n>, as worker/project/http.ts routes it.
+			const q = Object.fromEntries(url.searchParams) as Record<string, string | undefined>;
+			try {
+				return send(
+					res,
+					200,
+					hosted.project.without(Number(q.version), (q.versions ?? "").split(",").filter(Boolean).map(Number)),
+				);
 			} catch (e) {
 				const code = (e as { code?: string }).code;
 				return send(res, code === "bad-request" ? 400 : 500, { error: e instanceof Error ? e.message : String(e) });

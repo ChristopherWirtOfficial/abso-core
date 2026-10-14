@@ -655,10 +655,10 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		run: runRestore,
 	},
 	export: {
-		flags: { version: "string", keep: "string" },
-		usage: "abso export <dir> [--version <N>] [--keep <glob>]",
+		flags: { version: "string", keep: "string", without: "string" },
+		usage: "abso export <dir> [--version <N>] [--without <version,...>] [--keep <glob>]",
 		about:
-			"Write one pushed version of this folder's space (the newest unless --version) into a folder of its own, for a build that doesn't move. The folder must be empty, an earlier export (which it replaces, keeping node_modules and what --keep names), or one .absoignore leaves out; .avcs-export.json there names the version.",
+			"Write one pushed version of this folder's space (the newest unless --version) into a folder of its own, for a build that doesn't move. The folder must be empty, an earlier export (which it replaces, keeping node_modules and what --keep names), or one .absoignore leaves out; .avcs-export.json there names the version. --without 37,38 writes the version of shared with those earlier versions left out, and names them there too; shared doesn't change, and it is refused, naming the chain, when a version it keeps builds on one left out.",
 		run: runExport,
 	},
 	files: {
@@ -677,9 +677,10 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		run: runLog,
 	},
 	show: {
-		flags: { draft: "string" },
-		usage: "abso show <version> | abso show <version>:<file> [--draft <name>]",
-		about: "One version: who pushed it, why, and its diff. With :<file>, that file's text as it was then.",
+		flags: { draft: "string", without: "string" },
+		usage: "abso show <version> | abso show <version>:<file> [--draft <name>] [--without <version,...>]",
+		about:
+			"One version: who pushed it, why, and its diff. With :<file>, that file's text as it was then. --without 37,38 shows the version of shared with those earlier versions left out: what differs, and with :<file> that file. Shared doesn't change. Refused, naming the chain, when a version it keeps builds on one left out.",
 		run: runShow,
 	},
 	announce: {

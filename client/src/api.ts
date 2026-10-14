@@ -50,6 +50,7 @@ import type {
 	Where,
 	WhereAnswer,
 	WhyAnswer,
+	WithoutAnswer,
 } from "./history-answers.ts";
 import type {
 	Ask,
@@ -876,6 +877,11 @@ export class Api {
 
 	compare(from: number, to: number, where: Where): Promise<{ from: number; to: number; files: readonly FileChange[] }> {
 		return this.json("GET", `/compare?${query({ from, to, ...where })}`);
+	}
+
+	/** Version `version` of shared with `versions` left out, or the refusal naming what builds on them. */
+	without(version: number, versions: readonly number[]): Promise<WithoutAnswer> {
+		return this.json("GET", `/without?${query({ version, versions: versions.join(",") })}`);
 	}
 
 	/** A message to the project's other agents (or those named), delivered once as news. */

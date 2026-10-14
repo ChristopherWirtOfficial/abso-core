@@ -522,6 +522,9 @@ export class EngineProject implements ProjectCalls, ProjectHistory {
 	compare(from: number, to: number, draft: string | null, agent?: string) {
 		return this.project.compare(from, to, { draft, ...(agent ? { agent } : {}) });
 	}
+	without(version: number, versions: readonly number[]) {
+		return this.project.without(version, versions);
+	}
 	show(version: number, draft: string | null, agent?: string) {
 		return this.project.show(version, { draft, ...(agent ? { agent } : {}) });
 	}

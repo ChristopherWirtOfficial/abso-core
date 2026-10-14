@@ -350,6 +350,17 @@ export function answer(
 			const limit = q.limit !== undefined && Number.isInteger(Number(q.limit)) ? Number(q.limit) : undefined;
 			return { status: 200, body: history.refusals(q.agent || undefined, limit) };
 		}
+		if (op === "without") {
+			// GET ?version=<n>&versions=<n,n>: version n of shared with those versions left out (without.ts).
+			const q = (body ?? {}) as Record<string, string | undefined>;
+			const history = project as ProjectCalls & Partial<ProjectHistory>;
+			if (!history.without) return fail(501, "without needs the engine");
+			const version = q.version !== undefined && /^\d+$/.test(q.version) ? Number(q.version) : undefined;
+			const versions = (q.versions ?? "").split(",").filter((s) => s.trim() !== "");
+			if (version === undefined || versions.length === 0 || versions.some((s) => !/^\s*\d+\s*$/.test(s)))
+				return fail(400, "without needs ?version=<number>&versions=<number,number>");
+			return { status: 200, body: history.without(version, versions.map(Number)) };
+		}
 		if (op === "log" || op === "show" || op === "file" || op === "compare") {
 			// GETs: ?draft=<name> (shared when absent); log ?limit, ?path; show ?version; file ?path, ?version; compare ?from, ?to.
 			const q = (body ?? {}) as Record<string, string | undefined>;

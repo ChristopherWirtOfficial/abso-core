@@ -14,11 +14,12 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeF
 import { dirname, join, resolve } from "node:path";
 import type { Where } from "./api.ts";
 import { type Parsed, str, UsageError } from "./args.ts";
-import { globTest, snapshotAt, snapshotEntries } from "./at.ts";
-import { type Env, type Output, open, plural } from "./commands.ts";
+import { applySide, globTest, snapshotAt, snapshotEntries } from "./at.ts";
+import { type Env, EXIT, type Output, open, plural } from "./commands.ts";
 import { ignoredHere } from "./fetch.ts";
 import { loadIgnore, relativeTo } from "./folder.ts";
 import { type Refused, unsafePath } from "./safety.ts";
+import { refusalText, versionsText, withoutArg } from "./without.ts";
 
 /** The file an export leaves in its folder: what it holds, and the sign that the folder is one export may replace. */
 export const EXPORT_STAMP = ".abso-export";
@@ -81,8 +82,11 @@ export async function runExport(args: Parsed, env: Env): Promise<Output> {
 	const rawVersion = str(args, "version");
 	if (rawVersion !== undefined && !/^\d+$/.test(rawVersion))
 		throw new UsageError(`--version is a version number (got ${JSON.stringify(rawVersion)})`);
+	const leave = withoutArg(args);
 	const diff = await api.diff();
 	const where: Where = { draft: diff.draft };
+	if (leave !== undefined && diff.draft !== null)
+		throw new UsageError(`--without reads shared, and this folder is on draft ${diff.draft}`);
 	// The listing names the version (the newest by default) and every file it holds; a server from before it answers 404.
 	const listing = await api
 		.filesAt(diff.draft, rawVersion === undefined ? undefined : Number(rawVersion))
@@ -106,6 +110,18 @@ export async function runExport(args: Parsed, env: Env): Promise<Output> {
 				});
 		}
 	}
+	// Without some versions: the server says what differs from this version, as it is without them.
+	const without = leave === undefined ? undefined : await api.without(version, leave);
+	if (without !== undefined && !without.ok)
+		return {
+			exit: EXIT.refused,
+			text: refusalText(
+				without,
+				(vs) => `abso export ${args.positionals[0]} --version ${version} --without ${vs.join(",")}`,
+			),
+			json: { ...without },
+		};
+	if (without !== undefined) applySide(snap, without.files, "after");
 	const entries = await snapshotEntries(api, snap);
 	// Built before anything is removed, so a failed export leaves an earlier one whole.
 	const keepGlob = str(args, "keep");
@@ -135,13 +151,14 @@ export async function runExport(args: Parsed, env: Env): Promise<Output> {
 		project: config.project,
 		space: diff.draft ?? "shared",
 		version,
+		...(without !== undefined ? { without: without.without.map((w) => w.version), tree: without.tree } : {}),
 		files: written,
 		exportedAt: new Date().toISOString(),
 	};
 	writeFileSync(join(target, EXPORT_STAMP), `${JSON.stringify(stamp)}\n`);
 	return {
 		text: [
-			`Exported version ${version} of ${space} to ${target}: ${plural(written, "file")}. ${EXPORT_STAMP} there names the version; abso export to the same folder replaces it.`,
+			`Exported version ${version} of ${space}${without !== undefined ? ` without ${versionsText(without.without.map((w) => w.version))}` : ""} to ${target}: ${plural(written, "file")}. ${EXPORT_STAMP} there names the version; abso export to the same folder replaces it.`,
 			...(kept.length > 0 ? [`Kept from the earlier export: ${kept.join(", ")}.`] : []),
 			...(skipped.length > 0
 				? [`Not exported (${skipped.length}):`, ...skipped.map((s) => `  ${s.path}: ${s.why}`)]

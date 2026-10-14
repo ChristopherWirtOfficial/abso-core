@@ -202,6 +202,7 @@ import {
 	wholeRules as hostedWholeRules,
 	type WholeHost,
 } from "./whole-files.ts";
+import { without as hostedWithout, type WithoutHost } from "./without.ts";
 import { WriterAgents } from "./writer-agents.ts";
 
 export { MemoryStore } from "./memory-store.ts";
@@ -1796,6 +1797,21 @@ export class Project {
 	/** Every file that differs between two versions of shared (or a named draft) (version-log.ts). */
 	compare(...args: Tail<Parameters<typeof versionCompare>>): ReturnType<typeof versionCompare> {
 		return versionCompare(this.#logHost, ...args);
+	}
+
+	/** A version of shared without some earlier versions, or the refusal naming what builds on them (without.ts). */
+	without(version: number, versions: readonly number[]): ReturnType<typeof hostedWithout> {
+		const host: WithoutHost = {
+			graph: this.#graph,
+			shared: () => this.#shared,
+			needInit: () => this.#needInit(),
+			checkVersion: (space, v) => this.#checkVersion(space, v),
+			viewAt: (space, v) => this.#viewAt(space, v),
+			at: (space, v) => this.#at(space, v),
+			closed: (set) => this.#closed(set),
+			touchedFiles: (ids, views) => this.#touchedFiles(ids, views),
+		};
+		return hostedWithout(host, version, versions);
 	}
 
 	/** A version of shared (or of a named draft) as a ReadView (version-log.ts). */

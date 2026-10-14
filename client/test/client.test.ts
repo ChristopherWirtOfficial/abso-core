@@ -824,6 +824,46 @@ describe("drop, pluck, amend, labels and follow (#10, #27)", () => {
 		);
 	});
 
+	it("shows and exports a version without earlier ones, refuses one a kept version builds on, and leaves shared alone", async () => {
+		const { name, folders } = await project({ "a.txt": "a\n", "b.txt": "b\n" }, "alice", "bob");
+		const [alice, bob] = [folders.alice!, folders.bob!];
+		write(alice, { "a.txt": "a, changed\n" });
+		assert.equal((await avcs(alice, "push", "-m", "change a")).exit, 0);
+		write(alice, { "b.txt": "b, changed\n" });
+		assert.equal((await avcs(alice, "push", "-m", "change b")).exit, 0);
+		write(alice, { "a.txt": "a, changed again\n" });
+		assert.equal((await avcs(alice, "push", "-m", "change a again")).exit, 0);
+		const before = shared(name);
+
+		const shown = await text(bob, "show", "2", "--without", "1");
+		assert.equal(shown.exit, 0, shown.stderr);
+		assert.match(
+			shown.stdout,
+			/^Version 2 of shared without version 1:\n {2}version 1 by alice: change a\nCompared with version 2: 1 file, 1 line added, 1 removed\.\nThe files hash to [0-9a-f]{64}; the same ask gives the same hash\. Shared doesn't change\./,
+		);
+		assert.match(shown.stdout, /-a, changed\n\+a\n/);
+		assert.equal((await text(bob, "show", "2:a.txt", "--without", "1")).stdout, "a\n");
+		assert.equal((await text(bob, "show", "2:b.txt", "--without", "1")).stdout, "b, changed\n");
+
+		const refused = await text(bob, "show", "3", "--without", "1");
+		assert.equal(refused.exit, 2);
+		assert.equal(
+			refused.stdout,
+			"Version 3 of shared can't leave out version 1: versions it keeps build on it.\n  version 3 by alice: change a again\n    builds on version 1 (a.txt)\nLeaving those out too works: abso show 3 --without 1,3\n",
+		);
+		const out = join(temp(), "without");
+		const blocked = await avcs(bob, "export", out, "--version", "3", "--without", "1");
+		assert.equal(blocked.exit, 2);
+		assert.deepEqual(blocked.json.suggestion, [1, 3]);
+		const exported = await avcs(bob, "export", out, "--version", "3", "--without", "1,3");
+		assert.equal(exported.exit, 0, exported.out);
+		assert.deepEqual(exported.json.without, [1, 3]);
+		assert.equal(readFileSync(join(out, "a.txt"), "utf8"), "a\n");
+		assert.equal(readFileSync(join(out, "b.txt"), "utf8"), "b, changed\n");
+		assert.deepEqual(shared(name), before, "shared doesn't change");
+		assert.equal((await text(bob, "show", "3", "--without", "x")).exit, 1);
+	});
+
 	it("refuses a push that builds on lines a drop took out, plainly, with exit 2", async () => {
 		const { folders } = await project({ "a.txt": "one\ntwo\n" }, "alice", "bob");
 		const [alice, bob] = [folders.alice!, folders.bob!];

@@ -53,6 +53,7 @@ const QUERY_READS = new Set([
 	"file",
 	"files",
 	"compare",
+	"without",
 	"where",
 	"feed",
 	"drafts",
