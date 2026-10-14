@@ -179,21 +179,16 @@ export async function commitShared(
 	// Each file goes into the tree as a blob with its mode (#27): 100755 for exec, 120000 for a link, whose blob is
 	// its target.
 	const enc = new TextEncoder();
-	for (const path of Object.keys(shared.files)) {
-		const mode = shared.modes?.[path];
-		const link = typeof mode?.link === "string" ? mode.link : null;
-		const bytes = enc.encode(link ?? shared.files[path]!);
-		await put(path, bytes, link !== null ? "120000" : mode?.exec ? "100755" : "100644", await blobOid(bytes));
-	}
 	const agent = shared.last?.agent ?? "abso";
 	const author = { name: agent, email: `${agent}@abso.invalid` };
 	const committer = { name: "abso", email: "abso@abso.invalid" };
 	const say = (p: string) => `${shared.last?.message ?? "Start the project"}${p}\n\nabso-version: ${shared.version}\n`;
 	let parent = head;
-	// A part holds what's written so far, and the last push's entries for the binary files not reached yet.
+	// A part holds what's written so far and preserves old entries for files not reached yet.
 	const commitNow = async (message: string) => {
 		const files = new Map(now);
-		for (const [path, f] of old.files) if (!files.has(path) && path in blobs) files.set(path, f);
+		for (const [path, f] of old.files)
+			if (!files.has(path) && (path in blobs || path in shared.files)) files.set(path, f);
 		const tree = await writeTrees(fs, dir, files, old.trees, changed);
 		parent = await git.commit({
 			cache,
@@ -208,12 +203,24 @@ export async function commitShared(
 		});
 		return parent;
 	};
-	// Binary files (#27) aren't in files: their bytes come from the blob store.
-	// Artifacts refuses a push much over 20 MB, so when the new blobs add up
+	// Artifacts refuses a push much over 20 MB, so when new text or binary blobs add up
 	// to more than PUSH_BATCH, the earlier ones go in commits of their own
 	// first. Every part carries abso-version, so intake never takes them in.
 	let pending = 0;
 	let parts = 0;
+	for (const path of Object.keys(shared.files)) {
+		const mode = shared.modes?.[path];
+		const link = typeof mode?.link === "string" ? mode.link : null;
+		const bytes = enc.encode(link ?? shared.files[path]!);
+		const oid = await blobOid(bytes);
+		const fresh = old.files.get(path)?.oid !== oid;
+		if (fresh && pending > 0 && pending + bytes.byteLength > PUSH_BATCH) {
+			await part(await commitNow(say(` (part ${++parts})`)));
+			pending = 0;
+		}
+		if (fresh) pending += bytes.byteLength;
+		await put(path, bytes, link !== null ? "120000" : mode?.exec ? "100755" : "100644", oid);
+	}
 	for (const [path, sha] of Object.entries(blobs)) {
 		const bytes = readBlob(sha);
 		if (!bytes) throw new Error(`${path}: blob ${sha} is missing from the project's store`);

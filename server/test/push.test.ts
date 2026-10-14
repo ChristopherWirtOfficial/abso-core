@@ -28,6 +28,43 @@ describe("repo names", () => {
 });
 
 describe("commitShared", () => {
+	it("batches changed text and preserves pending old files in intermediate commits", async () => {
+		const fs = new MemoryFS(),
+			dir = "/repo";
+		await git.init({ fs, dir, defaultBranch: "main" });
+		const first = await commitShared(
+			fs,
+			dir,
+			null,
+			{ version: 0, files: { "a.txt": "old a", "b.txt": "old b", "gone.txt": "delete" } },
+			() => null,
+		);
+		const parts: string[] = [];
+		const body = "x".repeat(9 * 1024 * 1024);
+		const next = await commitShared(
+			fs,
+			dir,
+			first.commit,
+			{ version: 1, files: { "a.txt": body, "b.txt": body + "b" } },
+			() => null,
+			async (commit) => {
+				parts.push(commit);
+				assert.equal(
+					new TextDecoder().decode((await git.readBlob({ fs, dir, oid: commit, filepath: "b.txt" })).blob),
+					"old b",
+				);
+				assert.equal((await git.readBlob({ fs, dir, oid: commit, filepath: "a.txt" })).blob.length, body.length);
+				await assert.rejects(() => git.readBlob({ fs, dir, oid: commit, filepath: "gone.txt" }));
+			},
+		);
+		assert.equal(parts.length, 1);
+		assert.deepEqual((await git.readCommit({ fs, dir, oid: next.commit })).commit.parent, parts);
+		assert.equal(
+			new TextDecoder().decode((await git.readBlob({ fs, dir, oid: next.commit, filepath: "b.txt" })).blob),
+			body + "b",
+		);
+		assert.equal(absoVersion((await git.readCommit({ fs, dir, oid: parts[0]! })).commit.message), 1);
+	});
 	it("reads one lazy file at a time and does not read symlink placeholder text", async (t) => {
 		const fs = new MemoryFS();
 		const dir = "/repo";
