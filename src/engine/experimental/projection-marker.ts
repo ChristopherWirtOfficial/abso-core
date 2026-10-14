@@ -1,4 +1,5 @@
 import type { Graph } from "../graph.ts";
+import { equalJsonValues } from "../json-value-chunks.ts";
 import { orderedChildKey } from "../ordered-index.ts";
 import { resolveScratchMoves } from "../relocation-scratch.ts";
 import type { GraphStateStorage } from "../state-source.ts";
@@ -112,7 +113,7 @@ export class ExperimentalMarkerProjection {
 	}
 	apply(previous: MarkerState, atom: Atom): MarkerState {
 		this.assertContext(previous);
-		if (JSON.stringify(this.graph.atom(atom.id)) !== JSON.stringify(atom)) throw Error("canonical atom mismatch");
+		if (!equalJsonValues(this.graph.atom(atom.id), atom)) throw Error("canonical atom mismatch");
 		if (this.members.get(previous.membership, atom.seq)?.present) return previous;
 		for (const id of atom.deps)
 			if (!this.members.get(previous.membership, this.graph.atom(id).seq)?.present) throw Error("missing dependency");
@@ -187,7 +188,7 @@ export class ExperimentalMarkerProjection {
 	}
 	removeAtom(previous: MarkerState, atom: Atom): MarkerState {
 		this.assertContext(previous);
-		if (JSON.stringify(this.graph.atom(atom.id)) !== JSON.stringify(atom)) throw Error("canonical atom mismatch");
+		if (!equalJsonValues(this.graph.atom(atom.id), atom)) throw Error("canonical atom mismatch");
 		if (!this.members.get(previous.membership, atom.seq)?.present) return previous;
 		if (required(this.members.get(previous.membership, atom.seq)).dependents)
 			throw Error("included dependent prevents removal");

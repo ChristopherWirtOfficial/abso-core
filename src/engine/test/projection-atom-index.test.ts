@@ -11,6 +11,21 @@ import { Graph } from "../graph.ts";
 import { Repo } from "./helpers.ts";
 import { SqlState } from "./storage-helper.ts";
 
+test("accepted atom indexing preserves the original digest without serializing the whole atom", (t) => {
+	const db = new SqlState();
+	t.after(() => db.db.close());
+	const repo = Repo.init({ "a.txt": `${"x".repeat(16383)}\ud83d\ude80\n${"\u0000".repeat(20000)}\n` });
+	const atom = repo.graph.atom("a0");
+	const expected = createHash("sha256").update(JSON.stringify(atom)).digest("hex");
+	const stringify = JSON.stringify;
+	t.mock.method(JSON, "stringify", (...args: Parameters<typeof JSON.stringify>) => {
+		assert.notEqual(args[0], atom, "indexing must not rematerialize the full atom JSON");
+		return stringify(...args);
+	});
+	indexAcceptedProjectionAtom(atom, ["a.txt"], db);
+	assert.equal(new ProjectionAtomIndex(db).openAccepted("a0").digest, expected);
+});
+
 test("projection atom descriptors exclude inserted text and read one indexed item", () => {
 	const db = new SqlState();
 	try {

@@ -55,14 +55,6 @@ export class ProjectionLocator<T> {
 			if (!/^[0-9a-f]$/.test(digit) || !safe(child) || child === id) throw Error("invalid locator child");
 		return row as unknown as Branch;
 	}
-	#write(node: Node): number {
-		const next = this.#storage.read(this.#collection, "next") ?? 0;
-		if (!safe(next) || !Number.isSafeInteger(next + 1)) throw Error("invalid locator allocation");
-		if (this.#storage.read(this.#collection, String(next)) !== undefined) throw Error("locator allocation collision");
-		this.#storage.write(this.#collection, String(next), node);
-		this.#storage.write(this.#collection, "next", next + 1);
-		return next;
-	}
 	/** Update each touched branch once, retaining at most 256 decoded values. */
 	setMany(root: Page, values: ReadonlyArray<readonly [number, T]>): Page {
 		page(root);
@@ -149,31 +141,8 @@ export class ProjectionLocator<T> {
 	}
 
 	set(root: Page, id: number, value: T): number {
-		page(root);
-		const key = keyOf(id),
-			checked = structuredClone(this.#decode(structuredClone(value)));
-		return this.#storage.transaction(() => {
-			const visit = (current: Page, parent?: string, digit?: string, depth = 0): number => {
-				if (depth > 8) throw Error("invalid locator depth");
-				if (current === null) return this.#write({ format: 1, kind: "leaf", prefix: key, value: checked });
-				const node = this.#read(current, parent, digit);
-				let common = 0;
-				while (common < node.prefix.length && node.prefix[common] === key[common]) common++;
-				if (common < node.prefix.length) {
-					const leaf = this.#write({ format: 1, kind: "leaf", prefix: key, value: checked });
-					return this.#write({
-						format: 1,
-						kind: "branch",
-						prefix: key.slice(0, common),
-						children: { [node.prefix[common]!]: current, [key[common]!]: leaf },
-					});
-				}
-				if (node.kind === "leaf") return this.#write({ format: 1, kind: "leaf", prefix: key, value: checked });
-				const nextDigit = key[common]!;
-				const child = visit(node.children[nextDigit] ?? null, node.prefix, nextDigit, depth + 1);
-				return this.#write({ ...node, children: { ...node.children, [nextDigit]: child } });
-			};
-			return visit(root);
-		});
+		// A nonempty batch always produces a root. Share its single allocation-counter
+		// commit instead of rewriting that counter for every copied path node.
+		return this.setMany(root, [[id, value]])!;
 	}
 }

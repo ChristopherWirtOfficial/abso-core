@@ -6,6 +6,28 @@ import { CachedStateStorage } from "../state-source.ts";
 import { Repo } from "./helpers.ts";
 import { SqlState } from "./storage-helper.ts";
 
+test("projection apply and removal compare atom contents without whole-atom JSON", (t) => {
+	const storage = new SqlState();
+	t.after(() => storage.db.close());
+	const repo = Repo.init({ "f.txt": `${"x".repeat(40000)}\n` });
+	const atom = repo.graph.atom("a0");
+	const projection = new MarkerProjection(storage, repo.graph, "f.txt", "streamed-comparison");
+	const stringify = JSON.stringify;
+	t.mock.method(JSON, "stringify", (...args: Parameters<typeof JSON.stringify>) => {
+		assert.notEqual(args[0], atom, "projection validation must not serialize the full atom");
+		return stringify(...args);
+	});
+	const state = projection.apply(projection.empty(), atom);
+	const before = storage.writes;
+	const altered = { ...atom, message: "forged" };
+	assert.throws(() => projection.apply(state, altered), /canonical atom mismatch/);
+	assert.throws(() => projection.removeAtom(state, altered), /canonical atom mismatch/);
+	assert.equal(storage.writes, before);
+	const removed = projection.removeAtom(state, atom);
+	assert.deepEqual(projection.lines(removed, "f.txt"), []);
+	assert.equal(projection.lines(state, "f.txt").length, 1);
+});
+
 test("typed marker projection matches mixed multi-file edits and reverse removals", () => {
 	const db = new SqlState();
 	try {

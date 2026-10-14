@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { jsonValueChunks } from "../json-value-chunks.ts";
 import type { GraphStateStorage } from "../state-source.ts";
 import type { Atom, AttrSet, Relocation } from "../types.ts";
 
@@ -173,6 +174,8 @@ export class ProjectionAtomDescriptor {
 
 /** Opt-in persistent Graph callback: indexes the just-accepted canonical atom. */
 export function indexAcceptedProjectionAtom(atom: Atom, files: readonly string[], storage: GraphStateStorage): void {
-	const digest = createHash("sha256").update(JSON.stringify(atom)).digest("hex");
+	const hash = createHash("sha256");
+	for (const chunk of jsonValueChunks(atom)) hash.update(chunk);
+	const digest = hash.digest("hex");
 	new ProjectionAtomIndex(storage).put(atom, digest, files);
 }

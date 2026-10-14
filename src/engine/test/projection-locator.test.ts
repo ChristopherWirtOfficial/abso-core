@@ -114,6 +114,7 @@ test("multi-key locator updates match sequential sparse edits and retain previou
 		let seed = 12345;
 		const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
 		const keys = [0, 0xffffffff, 1, 16, 255, 256, ...Array.from({ length: 60 }, random)];
+		const expected = new Map<number, number>();
 		for (let round = 0; round < 8; round++) {
 			const edits: [number, number][] = Array.from({ length: 64 }, (_, i) => [
 				keys[random() % keys.length]!,
@@ -122,8 +123,15 @@ test("multi-key locator updates match sequential sparse edits and retain previou
 			const prior: number | null = left;
 			const oldEntries: (readonly [number, number])[] = [...batched.entries(prior)];
 			left = batched.setMany(left, edits);
-			for (const [key, value] of edits) right = sequential.set(right, key, value);
+			for (const [key, value] of edits) {
+				right = sequential.set(right, key, value);
+				expected.set(key, value);
+			}
 			assert.deepEqual([...batched.entries(left)], [...sequential.entries(right)]);
+			assert.deepEqual(
+				[...batched.entries(left)],
+				[...expected].sort(([a], [b]) => a - b),
+			);
 			assert.deepEqual([...batched.entries(prior)], oldEntries);
 		}
 	} finally {
