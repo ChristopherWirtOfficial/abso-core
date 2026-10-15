@@ -69,14 +69,31 @@ test("a passing batch lands whole, each push its own version, in one check", asy
 	assert.deepEqual(project.queueChecking(0), []);
 });
 
-test("a batch is capped; the rest waits for the next round", async () => {
+test("a batch is everything waiting, with no cap (Christopher, Oct 14): ten land on one check", async () => {
 	const project = setup();
 	for (const a of AGENTS) queue(project, a, "1");
-	const r = await queueRound(project, checker(), { cap: 8 });
-	assert.equal(r.kind === "landed" && r.versions.length, 8);
+	const c = checker();
+	const r = await queueRound(project, c);
+	assert.equal(r.kind === "landed" && r.versions.length, AGENTS.length);
+	assert.deepEqual(
+		c.runs.map((x) => x.ids.length),
+		[AGENTS.length],
+	);
+	assert.deepEqual(project.queue().items, []);
+});
+
+test("a failing batch past the old cap of 8 still halves to the push that fails, and the rest waits", async () => {
+	const project = setup();
+	for (const [i, a] of AGENTS.entries()) queue(project, a, i === 8 ? '"BAD"' : "1");
+	const c = checker();
+	const r = await queueRound(project, c);
+	assert.equal(c.runs[0]!.ids.length, AGENTS.length, "the first check is the whole queue");
+	assert.ok(r.kind === "pulled");
+	assert.deepEqual(r.pulled, [9]);
+	assert.equal(r.versions.length, 8, "the eight before it land");
 	assert.deepEqual(
 		project.queue().items.map((q) => q.id),
-		[9, 10],
+		[10],
 	);
 });
 

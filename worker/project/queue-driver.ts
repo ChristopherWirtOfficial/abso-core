@@ -4,7 +4,7 @@
 // is behind an interface (a CI runner on the server, a function in tests),
 // so this file holds only the rules agreed on #39:
 //
-// - A batch is everything waiting, in order, up to `cap` (8).
+// - A batch is everything waiting, in order (Christopher, Oct 14: no cap; it was 8).
 // - Pass: every publish in the batch lands, each as its own version.
 // - Fail: halve prefixes to find the passing prefix and the first publish
 //   that fails on top of it. That failing prefix is run once more; only a
@@ -45,8 +45,6 @@ export interface QueueEngine {
 }
 
 export interface RoundOptions {
-	/** The most publishes in one batch. */
-	readonly cap?: number;
 	/** Whether shared's newest version fails the check now. */
 	readonly sharedRed?: boolean;
 	readonly now?: () => number;
@@ -92,7 +90,7 @@ export async function queueRound(
 	const waiting = engine.queue().items.length;
 	if (waiting === 0) return { kind: "idle" };
 	const now = options.now ?? Date.now;
-	const n = Math.min(Math.max(1, options.cap ?? 8), waiting);
+	const n = waiting;
 	let checks = 0;
 	let output: string | undefined;
 	/** The tree each prefix was checked as: a land or a pull goes ahead only on that same tree. */
