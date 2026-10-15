@@ -2,7 +2,7 @@
 // (pathLife), and where lines went (follow). They read through HistoryHost, the one seam the derived tables
 // (abso issues 48 and 79) plug into: today the host is the project in memory.
 
-import type { Graph, LineId, ReadView } from "../../src/engine/index.ts";
+import type { AtomId, Graph, LineId, ReadView } from "../../src/engine/index.ts";
 import { pathKey } from "./pathkey.ts";
 import { checkReadPath, differs, type LastChange, ProjectError, utf8Bytes } from "./project.ts";
 import { last, SHARED, type Space } from "./spaces.ts";
@@ -121,6 +121,16 @@ export function tree(
 		return e;
 	};
 	const paths = (agent ? undefined : h.keptPaths?.(space, version)) ?? view.paths();
+	// Each atom's author once (abso Capacity): on a stored writer, graph.atom reads and parses the whole atom, and
+	// most lines share a few big atoms.
+	const authors = new Map<AtomId, string>();
+	const authorOf = (id: AtomId): string => {
+		const known = authors.get(id);
+		if (known !== undefined) return known;
+		const author = graph.atom(id).author;
+		authors.set(id, author);
+		return author;
+	};
 	for (const path of paths) {
 		const e = entryOf(path);
 		if (!e) continue;
@@ -131,7 +141,7 @@ export function tree(
 		if (options.authors) {
 			const counts = (e.authors ??= new Map());
 			for (const l of view.lines(path)) {
-				const author = graph.atom(l.atom).author;
+				const author = authorOf(l.atom);
 				counts.set(author, (counts.get(author) ?? 0) + 1);
 			}
 			const blob = view.attrs(path).blob;

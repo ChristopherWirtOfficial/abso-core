@@ -69,6 +69,8 @@ interface FileState {
 	readonly deletedBy: ReadonlyMap<number, readonly number[]>;
 	/** Its visible lines' text, when laid out from the file's packed history: null for a line too long to pack. */
 	readonly visText?: readonly (string | null)[];
+	/** Its visible lines' writers' seqs, when laid out from the file's packed history. */
+	readonly visWriter?: Int32Array;
 	/** Positions by n, built the first time they're asked for. */
 	seqIndex?: Map<number, number>;
 	visIndex?: Map<number, number>;
@@ -645,7 +647,18 @@ export class View {
 		const files = new Set<number>([-1 - start, ...(this.#movedInFrom().get(path) ?? [])]);
 		const children = new Map<number, Child[]>();
 		const texts = new Map<number, string | null>();
+		const writers = new Map<number, number>();
 		const deleters = new Map<number, number[]>();
+		// Each atom's lamport once per layout: most lines share a few atoms, and a stored graph reads it from a page.
+		const lamports = new Map<number, number>();
+		const lamportOf = (seq: number): number => {
+			let lamport = lamports.get(seq);
+			if (lamport === undefined) {
+				lamport = graph.lamportOfSeq(seq);
+				lamports.set(seq, lamport);
+			}
+			return lamport;
+		};
 		for (const file of files) {
 			const lineTexts = graph.packedTexts(file);
 			for (const [n, parent, seq, k, replaces] of graph.packedLines(file)) {
@@ -653,16 +666,17 @@ export class View {
 				if (!this.#has(seq)) continue;
 				const moved = relocs?.get(n);
 				let at = parent;
-				let child: Child = { n, replaces, lamport: graph.lamportOfSeq(seq), seq, k };
+				let child: Child = { n, replaces, lamport: lamportOf(seq), seq, k };
 				if (moved) {
 					const mover = graph.atom(moved.r.atom).seq;
-					child = { n, replaces: 0, lamport: graph.lamportOfSeq(mover), seq: mover, k: moved.r.k };
+					child = { n, replaces: 0, lamport: lamportOf(mover), seq: mover, k: moved.r.k };
 					at = moved.parent;
 				}
 				const list = children.get(at);
 				if (list) list.push(child);
 				else children.set(at, [child]);
 				texts.set(n, text);
+				writers.set(n, seq);
 			}
 			for (const [n, deleter] of graph.packedDeletes(file)) {
 				if (!this.#has(deleter)) continue;
@@ -675,10 +689,11 @@ export class View {
 		}
 		const order = (a: Child, b: Child) =>
 			b.replaces - a.replaces || b.lamport - a.lamport || b.seq - a.seq || a.k - b.k;
-		const priority = (a: number, b: number) => graph.lamportOfSeq(a) - graph.lamportOfSeq(b) || a - b;
+		const priority = (a: number, b: number) => lamportOf(a) - lamportOf(b) || a - b;
 		const seq: number[] = [];
 		const vis: number[] = [];
 		const visText: (string | null)[] = [];
+		const visWriter: number[] = [];
 		const deletedBy = new Map<number, readonly number[]>();
 		const stack: number[] = [];
 		const push = (code: number) => {
@@ -696,11 +711,20 @@ export class View {
 			} else {
 				vis.push(n);
 				visText.push(texts.get(n) ?? null);
+				visWriter.push(writers.get(n)!);
 			}
 			if (complete) seq.push(n);
 			push(n);
 		}
-		return { attrs, complete, seq: Int32Array.from(seq), vis: Int32Array.from(vis), deletedBy, visText };
+		return {
+			attrs,
+			complete,
+			seq: Int32Array.from(seq),
+			vis: Int32Array.from(vis),
+			deletedBy,
+			visText,
+			visWriter: Int32Array.from(visWriter),
+		};
 	}
 
 	#attributes(path: string): FileAttrs {
@@ -859,8 +883,8 @@ export class View {
 	/** Atom-building line handles; text is loaded only when requested. */
 	buildLines(path: string): readonly VisibleLine[] {
 		const graph = this.graph;
-		// Texts the packed layout already holds are not read again (abso Capacity).
-		const { vis, visText } = this.#file(path);
+		// Texts and writers the packed layout already holds are not read again (abso Capacity).
+		const { vis, visText, visWriter } = this.#file(path);
 		const lines: VisibleLine[] = new Array(vis.length);
 		for (let i = 0; i < vis.length; i++) {
 			const n = vis[i]!;
@@ -871,7 +895,7 @@ export class View {
 				get text() {
 					return packed ?? graph.textOf(n);
 				},
-				atom: graph.idOfSeq(graph.writerSeqOf(n)),
+				atom: graph.idOfSeq(visWriter ? visWriter[i]! : graph.writerSeqOf(n)),
 			};
 		}
 		return lines;
@@ -881,14 +905,14 @@ export class View {
 	lines(path: string): readonly VisibleLine[] {
 		if (this.#linesCache?.path === path) return this.#linesCache.lines;
 		const graph = this.graph;
-		const { vis, visText } = this.#file(path);
+		const { vis, visText, visWriter } = this.#file(path);
 		const lines: VisibleLine[] = new Array(vis.length);
 		for (let i = 0; i < vis.length; i++) {
 			const n = vis[i]!;
 			lines[i] = {
 				id: graph.lineIdOf(n),
 				text: visText?.[i] ?? graph.textOf(n),
-				atom: graph.idOfSeq(graph.writerSeqOf(n)),
+				atom: graph.idOfSeq(visWriter ? visWriter[i]! : graph.writerSeqOf(n)),
 			};
 		}
 		this.#linesCache = { path, lines };
@@ -1025,6 +1049,7 @@ export class View {
 				n += OBJECT_BYTES + OBJECT_BYTES + 2 * ARRAY_HEADER_BYTES;
 				n += f.seq.byteLength + f.vis.byteLength;
 				if (f.visText) for (const text of f.visText) n += REFERENCE_BYTES + 2 * (text?.length ?? 0);
+				if (f.visWriter) n += 4 * f.visWriter.length;
 				n += MAP_HEADER_BYTES + (MAP_ENTRY_BYTES + ARRAY_HEADER_BYTES) * f.deletedBy.size;
 				for (const deleters of f.deletedBy.values()) n += REFERENCE_BYTES * deleters.length;
 				if (f.seqIndex) n += MAP_HEADER_BYTES + MAP_ENTRY_BYTES * f.seqIndex.size;

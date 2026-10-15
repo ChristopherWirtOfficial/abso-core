@@ -91,11 +91,21 @@ export function blame(
 	const first = Math.max(1, from ?? 1);
 	const last = Math.min(all.length, to ?? all.length);
 	const graph = project.graph;
+	// Each atom's author once (abso Capacity): on a stored writer, graph.atom reads and parses the whole atom, and
+	// most lines share a few big atoms.
+	const authors = new Map<AtomId, string>();
+	const authorOf = (id: AtomId): string => {
+		const known = authors.get(id);
+		if (known !== undefined) return known;
+		const author = graph.atom(id).author;
+		authors.set(id, author);
+		return author;
+	};
 	const rows: BlameLine[] = all.slice(first - 1, last).map((l, i) => ({
 		n: first + i,
 		text: l.text,
 		atom: l.atom,
-		author: graph.atom(l.atom).author,
+		author: authorOf(l.atom),
 		version: project.versionOf(l.atom) ?? null,
 		...(project.publishOf(l.atom) === undefined ? { unpublished: true as const } : {}),
 	}));
@@ -380,6 +390,16 @@ export function folderBlame(
 	const key = pathKey(want.join("/"));
 	const graph = project.graph;
 	const counts = new Map<string, number>();
+	// Each atom's author once (abso Capacity): on a stored writer, graph.atom reads and parses the whole atom, and
+	// most lines share a few big atoms.
+	const authors = new Map<AtomId, string>();
+	const authorOf = (id: AtomId): string => {
+		const known = authors.get(id);
+		if (known !== undefined) return known;
+		const author = graph.atom(id).author;
+		authors.set(id, author);
+		return author;
+	};
 	let files = 0;
 	let total = 0;
 	let stored: string | undefined;
@@ -390,7 +410,7 @@ export function folderBlame(
 		stored ??= parts.slice(0, want.length).join("/");
 		files++;
 		for (const l of view.lines(path)) {
-			const author = graph.atom(l.atom).author;
+			const author = authorOf(l.atom);
 			counts.set(author, (counts.get(author) ?? 0) + 1);
 			total++;
 		}
