@@ -413,6 +413,23 @@ export function storedLists<V>(
 			storage.write(`${name}:pages`, pageKey(key, index), values);
 			storage.write(`${name}:lengths`, key, count + 1);
 		},
+		/** Append several values, writing each page they touch once. */
+		appendAll(key: string, more: readonly V[]): void {
+			if (more.length === 0) return;
+			const count = length(key);
+			let index = Math.floor(count / pageSize);
+			let values = count % pageSize === 0 ? [] : page(key, index);
+			if (values.length !== count % pageSize) throw new Error(`invalid writer list length in ${name}`);
+			for (const value of more) {
+				if (values.length === pageSize) {
+					storage.write(`${name}:pages`, pageKey(key, index++), values);
+					values = [];
+				}
+				values.push(value);
+			}
+			storage.write(`${name}:pages`, pageKey(key, index), values);
+			storage.write(`${name}:lengths`, key, count + more.length);
+		},
 	};
 }
 

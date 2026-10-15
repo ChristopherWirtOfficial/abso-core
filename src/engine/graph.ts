@@ -256,6 +256,15 @@ function parseLineId(id: string): { seq: number; k: number } | undefined {
 	return { seq, k };
 }
 
+/** A line in its file's packed history: [n, parent code, writer seq, k, 1 when it replaces its parent]. */
+export type PackedLine = [number, number, number, number, number];
+/** A delete of a line in a file's packed history: [n, deleter seq]. */
+export type PackedDelete = [number, number];
+/** An attribute set on a file: [seq, name, value]. */
+export type PackedAttr = [number, string, string | null];
+/** Lines longer than this aren't packed with their file; their text is read on its own. */
+const PACKED_TEXT = 4096;
+
 export class Graph {
 	readonly #storage?: GraphStateStorage;
 	readonly #childCounts?: ChildCounts;
@@ -294,6 +303,8 @@ export class Graph {
 			storage?: GraphStateStorage;
 			/** Optional derived indexing inside persistent atom acceptance; must be synchronous. */
 			indexAcceptedAtom?: (atom: Atom, files: readonly string[], storage: GraphStateStorage) => void;
+			/** false: a new stored graph keeps no packed file history, and lays files out line by line (tests of that path). */
+			packFiles?: boolean;
 		} = {},
 	) {
 		if (options.indexAcceptedAtom && !options.storage)
@@ -583,7 +594,56 @@ export class Graph {
 				JSON.stringify(["number", Number(key)]),
 			);
 			this.#labels = storedMap(storage, "labels");
+			this.#fileLines = storedLists<PackedLine>(storage, "file-lines");
+			this.#fileTexts = storedLists<string | null>(storage, "file-texts");
+			this.#fileDeletes = storedLists<PackedDelete>(storage, "file-deletes");
+			this.#fileAttrs = storedLists<PackedAttr>(storage, "file-attrs");
+			this.#packFiles = options.packFiles ?? true;
 		}
+	}
+
+	// Each file's line history packed, in pages (abso Capacity) ---------------------------------------------------
+	// For each file, by its path index: every line written in it ([n, parent code, writer seq, k, replaces]) and its
+	// text, every delete of one of those lines ([n, deleter seq]), and every attribute set on it ([seq, name, value]).
+	// Appended as atoms are added, so a view lays a file out from a few pages instead of a row read per line. Kept from
+	// a fresh adoption on; a graph adopted before has none, and views lay out as before.
+
+	#fileLines: ReturnType<typeof storedLists<PackedLine>> | undefined;
+	#fileTexts: ReturnType<typeof storedLists<string | null>> | undefined;
+	#fileDeletes: ReturnType<typeof storedLists<PackedDelete>> | undefined;
+	#fileAttrs: ReturnType<typeof storedLists<PackedAttr>> | undefined;
+	/** Whether a new stored graph starts packing (GraphOptions.packFiles). */
+	#packFiles = true;
+	/** Whether this graph's files are packed: read once, when first asked, so opening reads nothing. */
+	#packedKnown: boolean | undefined;
+	get #packed(): boolean {
+		this.#packedKnown ??= !!this.#storage && this.#storage.read("file-lines:meta", "format") === 1;
+		return this.#packedKnown;
+	}
+
+	/** Whether this graph keeps each file's line history packed. */
+	get packedFiles(): boolean {
+		return this.#packed;
+	}
+	/** A path's index, or undefined when nothing was ever written or set in it. */
+	pathIndexOf(path: string): number | undefined {
+		return this.#pathIndex.get(path);
+	}
+	/** The index of the path line n was written in. */
+	writtenInIndex(n: number): number {
+		return this.#lineFile.at(n);
+	}
+	*packedLines(file: number): IterableIterator<PackedLine> {
+		yield* this.#fileLines!.values(String(file));
+	}
+	*packedTexts(file: number): IterableIterator<string | null> {
+		yield* this.#fileTexts!.values(String(file));
+	}
+	*packedDeletes(file: number): IterableIterator<PackedDelete> {
+		yield* this.#fileDeletes!.values(String(file));
+	}
+	*packedAttrs(file: number): IterableIterator<PackedAttr> {
+		yield* this.#fileAttrs!.values(String(file));
 	}
 
 	/** Where an atom's key and delete lists are when the graph doesn't keep them (#46): the stored atom. */
@@ -1377,6 +1437,10 @@ export class Graph {
 			if (this.#atoms.length !== 0) throw new Error("ordered children require fresh adoption");
 			this.#storage.write("ordered-children", "format", 2);
 		}
+		if (this.#storage && this.#atoms.length === 0 && this.#packFiles) {
+			this.#storage.write("file-lines:meta", "format", 1);
+			this.#packedKnown = true;
+		}
 
 		if (this.#storage) this.withProjectionScratch((scratch) => this.#validateAcceptedAtom(atom, scratch));
 		else this.#validateAcceptedAtom(atom);
@@ -1425,11 +1489,19 @@ export class Graph {
 			if (deletedN) yield* deletedN;
 			else for (const line of atom.deletes) yield graph.#lineN(line);
 		};
+		const packedDeletes = new Map<number, PackedDelete[]>();
 		for (const n of deletedNumbers(this)) {
+			if (this.#packed) {
+				const file = this.#lineFile.at(n);
+				const list = packedDeletes.get(file);
+				if (list) list.push([n, seq]);
+				else packedDeletes.set(file, [[n, seq]]);
+			}
 			if (this.#deleter.at(n) < 0) this.#deleter.set(n, seq);
 			else if (this.#moreDeleterPages) this.#moreDeleterPages.append(String(n), seq);
 			else pushIndex(this.#moreDeleters, n, seq);
 		}
+		for (const [file, list] of packedDeletes) this.#fileDeletes!.appendAll(String(file), list);
 		this.#lineBase.push(this.#lineTotal);
 		for (const run of atom.inserts) {
 			const file = this.#pathOf(run.file);
@@ -1450,6 +1522,26 @@ export class Graph {
 
 			if (this.#runStartPages) this.#runStartPages.append(String(parent), first);
 			else pushOne(this.#runStarts, parent, first);
+			const replacesParent = deletes(run.parent) ? 1 : 0;
+			if (this.#packed) {
+				const base = this.#lineBase[seq]!;
+				this.#fileLines!.appendAll(
+					String(file),
+					run.lines.map(
+						(_, i): PackedLine => [
+							first + i,
+							i === 0 ? parent : first + i - 1,
+							seq,
+							first + i - base,
+							i === 0 ? replacesParent : 0,
+						],
+					),
+				);
+				this.#fileTexts!.appendAll(
+					String(file),
+					run.lines.map((text) => (typeof text === "string" && text.length <= PACKED_TEXT ? text : null)),
+				);
+			}
 			for (let i = 0; i < run.lines.length; i++) {
 				const n = this.#lineTotal;
 				this.#childCounts?.append(n);
@@ -1473,6 +1565,8 @@ export class Graph {
 			else pushIndex(this.#relocatedToCode, parentCode, info);
 		});
 		if (frozen.moves) this.#movers.push(frozen.id);
+		if (this.#packed)
+			for (const a of frozen.attrs ?? []) this.#fileAttrs!.append(String(this.#pathOf(a.file)), [seq, a.name, a.value]);
 		for (const key of writes) {
 			const code = this.#code(key);
 			if (this.#writersPages) {

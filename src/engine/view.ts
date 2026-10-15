@@ -64,6 +64,8 @@ interface FileState {
 	readonly vis: Int32Array;
 	/** For each deleted position in seq: the seqs of the atoms in the set that delete it, by priority. */
 	readonly deletedBy: ReadonlyMap<number, readonly number[]>;
+	/** Its visible lines' text, when laid out from the file's packed history: null for a line too long to pack. */
+	readonly visText?: readonly (string | null)[];
 	/** Positions by n, built the first time they're asked for. */
 	seqIndex?: Map<number, number>;
 	visIndex?: Map<number, number>;
@@ -451,6 +453,7 @@ export class View {
 	/** Lay out one file: its line tree from the set's atoms, linearized. */
 	#layout(path: string, complete: boolean): FileState {
 		const graph = this.graph;
+		if (graph.packedFiles && !this.#scratchMoves()) return this.#layoutPacked(path, complete);
 		if (this.#scratchMoves())
 			return graph.withProjectionScratch((scratch) =>
 				this.#layoutResolved(
@@ -462,10 +465,133 @@ export class View {
 		return this.#layoutResolved(path, complete);
 	}
 
+	/** For each path, the files that lines moved into it were written in: worked out once per view. */
+	#movedFrom: Map<string, Set<number>> | undefined;
+	#movedInFrom(): Map<string, Set<number>> {
+		if (this.#movedFrom) return this.#movedFrom;
+		const graph = this.graph;
+		const out = new Map<string, Set<number>>();
+		if (this.#hasMoves) {
+			const relocs = this.#relocationsN();
+			// Where each node sits, walked once for the whole view: through the moves, up to a file's start.
+			const memo = new Map<number, string>();
+			const fileOf = (code: number): string => {
+				const walked: number[] = [];
+				let cur = code;
+				let file: string | undefined;
+				while (file === undefined) {
+					if (cur < 0) file = graph.nodeOf(cur).slice(1);
+					else {
+						file = memo.get(cur);
+						if (file === undefined) {
+							walked.push(cur);
+							cur = relocs.get(cur)?.parent ?? graph.parentCodeOf(cur);
+						}
+					}
+				}
+				for (const n of walked) memo.set(n, file);
+				return file;
+			};
+			for (const [n, { parent }] of relocs) {
+				const into = fileOf(parent);
+				let from = out.get(into);
+				if (!from) out.set(into, (from = new Set()));
+				from.add(graph.writtenInIndex(n));
+			}
+		}
+		this.#movedFrom = out;
+		return out;
+	}
+
+	/**
+	 * Lay one file out from its packed history (abso Capacity, Graph.packedLines): the lines written in it, and in the
+	 * files its moved-in lines came from, read a page at a time; the same tree and order as #layoutResolved, built in
+	 * memory with no read per line.
+	 */
+	#layoutPacked(path: string, complete: boolean): FileState {
+		const graph = this.graph;
+		const attrs = this.#attributes(path);
+		const start = graph.startCodeOf(path);
+		if (start === undefined) return { attrs, complete, seq: EMPTY_INTS, vis: EMPTY_INTS, deletedBy: new Map() };
+		const relocs = this.#hasMoves ? this.#relocationsN() : undefined;
+		const files = new Set<number>([-1 - start, ...(this.#movedInFrom().get(path) ?? [])]);
+		const children = new Map<number, Child[]>();
+		const texts = new Map<number, string | null>();
+		const deleters = new Map<number, number[]>();
+		for (const file of files) {
+			const lineTexts = graph.packedTexts(file);
+			for (const [n, parent, seq, k, replaces] of graph.packedLines(file)) {
+				const text = lineTexts.next().value as string | null;
+				if (!this.#has(seq)) continue;
+				const moved = relocs?.get(n);
+				let at = parent;
+				let child: Child = { n, replaces, lamport: graph.lamportOfSeq(seq), seq, k };
+				if (moved) {
+					const mover = graph.atom(moved.r.atom).seq;
+					child = { n, replaces: 0, lamport: graph.lamportOfSeq(mover), seq: mover, k: moved.r.k };
+					at = moved.parent;
+				}
+				const list = children.get(at);
+				if (list) list.push(child);
+				else children.set(at, [child]);
+				texts.set(n, text);
+			}
+			for (const [n, deleter] of graph.packedDeletes(file)) {
+				if (!this.#has(deleter)) continue;
+				const by = deleters.get(n);
+				if (by) by.push(deleter);
+				else deleters.set(n, [deleter]);
+			}
+		}
+		const order = (a: Child, b: Child) =>
+			b.replaces - a.replaces || b.lamport - a.lamport || b.seq - a.seq || a.k - b.k;
+		const priority = (a: number, b: number) => graph.lamportOfSeq(a) - graph.lamportOfSeq(b) || a - b;
+		const seq: number[] = [];
+		const vis: number[] = [];
+		const visText: (string | null)[] = [];
+		const deletedBy = new Map<number, readonly number[]>();
+		const stack: number[] = [];
+		const push = (code: number) => {
+			const list = children.get(code);
+			if (!list) return;
+			if (list.length > 1) list.sort(order);
+			for (let i = list.length - 1; i >= 0; i--) stack.push(list[i]!.n);
+		};
+		push(start);
+		while (stack.length) {
+			const n = stack.pop()!;
+			const by = deleters.get(n);
+			if (by) {
+				if (complete) deletedBy.set(seq.length, by.length > 1 ? by.sort(priority) : by);
+			} else {
+				vis.push(n);
+				visText.push(texts.get(n) ?? null);
+			}
+			if (complete) seq.push(n);
+			push(n);
+		}
+		return { attrs, complete, seq: Int32Array.from(seq), vis: Int32Array.from(vis), deletedBy, visText };
+	}
+
 	#attributes(path: string): FileAttrs {
 		const graph = this.graph;
 		// For each attribute, the highest-priority setter in the set wins.
 		const setters = new Map<string, { id: AtomId; value: string | null }>();
+		const file = graph.packedFiles ? graph.pathIndexOf(path) : undefined;
+		if (graph.packedFiles) {
+			for (const [seq, name, value] of file === undefined ? [] : graph.packedAttrs(file)) {
+				if (!this.#has(seq)) continue;
+				const id = graph.idOfSeq(seq);
+				const best = setters.get(name);
+				if (!best || graph.comparePriority(best.id, id) < 0) setters.set(name, { id, value });
+			}
+			return {
+				exists: setters.get("exists")?.value === "1",
+				exec: setters.get("exec")?.value === "1",
+				link: setters.get("link")?.value ?? null,
+				blob: setters.get("blob")?.value ?? null,
+			};
+		}
 		for (const id of graph.eachAtomIn(path)) {
 			if (!this.#has(graph.atom(id).seq)) continue;
 			for (const a of graph.atom(id).attrs ?? []) {
@@ -556,9 +682,9 @@ export class View {
 	/** The projected text of a file ("" if it has no visible lines). */
 	text(path: string): string {
 		if (this.#textCache?.path === path) return this.#textCache.text;
-		const vis = this.#file(path).vis;
+		const { vis, visText } = this.#file(path);
 		const lines: string[] = new Array(vis.length);
-		for (let i = 0; i < vis.length; i++) lines[i] = this.graph.textOf(vis[i]!);
+		for (let i = 0; i < vis.length; i++) lines[i] = visText?.[i] ?? this.graph.textOf(vis[i]!);
 		const text = joinLines(lines);
 		this.#textCache = { path, text };
 		return text;
@@ -742,6 +868,7 @@ export class View {
 				// headers are separate from their payload byte lengths below.
 				n += OBJECT_BYTES + OBJECT_BYTES + 2 * ARRAY_HEADER_BYTES;
 				n += f.seq.byteLength + f.vis.byteLength;
+				if (f.visText) for (const text of f.visText) n += REFERENCE_BYTES + 2 * (text?.length ?? 0);
 				n += MAP_HEADER_BYTES + (MAP_ENTRY_BYTES + ARRAY_HEADER_BYTES) * f.deletedBy.size;
 				for (const deleters of f.deletedBy.values()) n += REFERENCE_BYTES * deleters.length;
 				if (f.seqIndex) n += MAP_HEADER_BYTES + MAP_ENTRY_BYTES * f.seqIndex.size;

@@ -47,6 +47,7 @@ test("counter writes avoid rereads while respecting failed writes, rollback and 
 	}
 });
 
+// The line-by-line layout, which a graph adopted before packed file history still uses (packFiles: false).
 test("current visibility stops at the first included deletion while history retains every deleter", () => {
 	class ObservedStorage extends SqlState {
 		pageReads = 0;
@@ -59,7 +60,7 @@ test("current visibility stops at the first included deletion while history reta
 	try {
 		const oracle = Repo.init({ "a.txt": "gone\nlive\n" });
 		const deletion = oracle.draft({ edits: [{ file: "a.txt", old: "gone\n", new: "" }] });
-		const graph = new Graph({ storage });
+		const graph = new Graph({ storage, packFiles: false });
 		graph.add(oracle.graph.atom("a0"));
 		const ids = ["a0"];
 		for (let seq = 1; seq <= 514; seq++) {
@@ -68,7 +69,7 @@ test("current visibility stops at the first included deletion while history reta
 			oracle.graph.add(atom);
 			ids.push(atom.id);
 		}
-		const reopened = new Graph({ storage });
+		const reopened = new Graph({ storage, packFiles: false });
 		const membership = new StableOverlaySet(ids);
 		const view = new View(reopened, membership);
 		storage.pageReads = 0;
@@ -479,9 +480,9 @@ test("persistent layout uses ordered successors without retaining deep or wide h
 			}
 			const before = oracle.view().text("a.txt");
 			oracle.edit({ edits: [{ file: "a.txt", old: before, new: "live\n" }] });
-			const graph = new Graph({ storage });
+			const graph = new Graph({ storage, packFiles: false });
 			for (const id of oracle.shared) graph.add(oracle.graph.atom(id));
-			const reopened = new Graph({ storage });
+			const reopened = new Graph({ storage, packFiles: false });
 			reopened.eachChildN = () => {
 				throw Error("unordered child collection forbidden");
 			};
@@ -540,12 +541,18 @@ test("ordered layout refuses missing format or child metadata instead of droppin
 	const storage = new SqlState();
 	try {
 		const oracle = Repo.init({ "a.txt": "one\n" });
-		const graph = new Graph({ storage });
+		const graph = new Graph({ storage, packFiles: false });
 		graph.add(oracle.graph.atom("a0"));
 		storage.remove("ordered-children", "format");
-		assert.throws(() => new View(new Graph({ storage }), new StableOverlaySet(["a0"])).text("a.txt"), /fresh adoption/);
 		assert.throws(
-			() => new Graph({ storage }).add(oracle.draft({ edits: [{ file: "a.txt", old: "one", new: "two" }] })),
+			() => new View(new Graph({ storage, packFiles: false }), new StableOverlaySet(["a0"])).text("a.txt"),
+			/fresh adoption/,
+		);
+		assert.throws(
+			() =>
+				new Graph({ storage, packFiles: false }).add(
+					oracle.draft({ edits: [{ file: "a.txt", old: "one", new: "two" }] }),
+				),
 			/fresh adoption/,
 		);
 		storage.write("ordered-children", "format", 2);
