@@ -21,12 +21,14 @@ import { OrderedIndex, orderedChildKey } from "./ordered-index.ts";
 import { withProjectionScratch } from "./projection-scratch.ts";
 import {
 	type GraphStateStorage,
+	readonlyPagedArray,
 	readonlyStoredArray,
 	type StateMap,
 	storedArray,
 	storedLists,
 	storedMap,
 	storedNumbers,
+	writePagedArray,
 } from "./state-source.ts";
 import { StoredText } from "./stored-text.ts";
 import {
@@ -353,7 +355,7 @@ export class Graph {
 				insertionFormat?: 1;
 				insertionRuns?: string;
 				textFormat?: 1;
-				listFormat?: 1;
+				listFormat?: 1 | 2;
 				listCount?: number;
 				lists?: Partial<Record<(typeof listFields)[number], string>>;
 				atom: Atom;
@@ -365,9 +367,9 @@ export class Graph {
 					const encoded = value as unknown as Partial<EncodedAtom>;
 					if (encoded.textFormat !== undefined && encoded.textFormat !== 1)
 						throw Error("invalid stored atom text format");
-					if (encoded.listFormat !== undefined && encoded.listFormat !== 1)
+					if (encoded.listFormat !== undefined && encoded.listFormat !== 1 && encoded.listFormat !== 2)
 						throw Error("invalid stored atom list format");
-					if (encoded.listFormat === 1) {
+					if (encoded.listFormat === 1 || encoded.listFormat === 2) {
 						if (
 							!encoded.lists ||
 							typeof encoded.lists !== "object" ||
@@ -382,7 +384,10 @@ export class Graph {
 					if (encoded.insertionFormat !== undefined && encoded.insertionFormat !== 1)
 						throw Error("invalid stored insertion format");
 					const atom =
-						encoded.textFormat === 1 || encoded.listFormat === 1 || encoded.insertionFormat === 1
+						encoded.textFormat === 1 ||
+						encoded.listFormat === 1 ||
+						encoded.listFormat === 2 ||
+						encoded.insertionFormat === 1
 							? encoded.atom!
 							: value;
 					if (encoded.insertionFormat === 1 && (!Array.isArray(atom.inserts) || atom.inserts.length !== 0))
@@ -462,7 +467,8 @@ export class Graph {
 						(author) => author,
 						text,
 					);
-					if (encoded.listFormat !== 1 && encoded.insertionFormat !== 1) return streamed(frozen);
+					if (encoded.listFormat !== 1 && encoded.listFormat !== 2 && encoded.insertionFormat !== 1)
+						return streamed(frozen);
 					const result = { ...frozen };
 					if (encoded.insertionFormat === 1) {
 						const collection = `atom-inserts:${atom.seq}`;
@@ -492,7 +498,11 @@ export class Graph {
 						if (collection === undefined) continue;
 						if (typeof collection !== "string" || collection !== `atom-list:${atom.seq}:${field}`)
 							throw Error("invalid stored atom list reference");
-						Object.defineProperty(result, field, { value: readonlyStoredArray(storage, collection), enumerable: true });
+						const list =
+							encoded.listFormat === 2
+								? readonlyPagedArray(storage, collection)
+								: readonlyStoredArray(storage, collection);
+						Object.defineProperty(result, field, { value: list, enumerable: true });
 					}
 					return streamed(Object.freeze(result));
 				},
@@ -502,9 +512,9 @@ export class Graph {
 					for (const field of listFields) {
 						const values = input[field];
 						if (!values || values.length <= 256) continue;
+						// 256 to a row from list format 2 on (abso Capacity); an atom stored before keeps a row per value.
 						const collection = `atom-list:${input.seq}:${field}`;
-						const saved = storedArray<unknown>(storage, collection);
-						for (const value of values) saved.push(value);
+						writePagedArray(storage, collection, values);
 						lists[field] = collection;
 						Object.defineProperty(atom, field, { value: [], enumerable: true });
 					}
@@ -535,12 +545,12 @@ export class Graph {
 						return {
 							insertionFormat: 1,
 							insertionRuns: collection,
-							...(hasLists ? { listFormat: 1, listCount, lists } : {}),
+							...(hasLists ? { listFormat: 2, listCount, lists } : {}),
 							atom: { ...atom, inserts: [] },
 						};
 					}
 					if (!atom.inserts.some((run) => run.lines.some((line) => line.length > StoredText.chunkCharacters)))
-						return hasLists ? { listFormat: 1, listCount, lists, atom } : atom;
+						return hasLists ? { listFormat: 2, listCount, lists, atom } : atom;
 					let index = 0;
 					const inserts = atom.inserts.map((run) => ({
 						...run,
@@ -553,7 +563,7 @@ export class Graph {
 					}));
 					return {
 						textFormat: 1,
-						...(hasLists ? { listFormat: 1, listCount, lists } : {}),
+						...(hasLists ? { listFormat: 2, listCount, lists } : {}),
 						atom: { ...atom, inserts },
 					};
 				},

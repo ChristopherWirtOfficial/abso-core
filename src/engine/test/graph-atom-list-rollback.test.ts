@@ -31,7 +31,8 @@ test("partial atom-list persistence rolls back and retries on the same graph", (
 		const write = storage.write.bind(storage);
 		storage.write = (collection, key, value) => {
 			write(collection, key, value);
-			if (collection === "atom-list:1:writes" && key === "128") throw Error("injected list persistence failure");
+			// Partway through: the second of the list's two pages (256 values to a page).
+			if (collection === "atom-list:1:writes:pages" && key === "1") throw Error("injected list persistence failure");
 		};
 		assert.throws(() => graph.add(atom), /injected list persistence failure/);
 		assert.deepEqual(storage.db.prepare("SELECT * FROM state ORDER BY collection,key").all(), before);

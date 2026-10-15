@@ -583,6 +583,70 @@ export class StoredSet<K extends string | number> extends Set<K> {
 }
 
 /** Read-only array access to individually stored values, without copying the list. */
+/** How many values an atom's long list keeps to a row (readonlyPagedArray). */
+export const LIST_PAGE = 256;
+
+/** Write a list as readonlyPagedArray reads it: its values LIST_PAGE to a row, and its length. */
+export function writePagedArray(storage: GraphStateStorage, name: string, values: readonly unknown[]): void {
+	for (let start = 0; start < values.length; start += LIST_PAGE)
+		storage.write(`${name}:pages`, String(start / LIST_PAGE), values.slice(start, start + LIST_PAGE));
+	storage.write(`${name}:meta`, "length", values.length);
+}
+
+/**
+ * A stored list read a page of LIST_PAGE values at a time (abso Capacity): an atom's long lists, which
+ * readonlyStoredArray reads a row per value. Collisions read every key a draft's atoms write; a draft deleting a big
+ * file has thousands, and that was a row each.
+ */
+export function readonlyPagedArray<T>(storage: GraphStateStorage, name: string): readonly T[] {
+	const length = () => {
+		const count = storage.read(`${name}:meta`, "length");
+		if (!Number.isSafeInteger(count) || (count as number) < 0) throw Error("invalid stored list length");
+		return count as number;
+	};
+	length();
+	let held = -1;
+	let page: readonly unknown[] = [];
+	const at = (index: number): T => {
+		const p = Math.floor(index / LIST_PAGE);
+		if (p !== held) {
+			const raw = storage.read(`${name}:pages`, String(p));
+			if (!Array.isArray(raw)) throw Error("missing stored list page");
+			page = raw;
+			held = p;
+		}
+		const value = page[index % LIST_PAGE];
+		if (value === undefined) throw Error("missing stored list element");
+		return (value && typeof value === "object" ? Object.freeze(value) : value) as T;
+	};
+	function* inOrder(): IterableIterator<T> {
+		const count = length();
+		for (let index = 0; index < count; index++) yield at(index);
+	}
+	return new Proxy([] as T[], {
+		get(target, key, receiver) {
+			if (key === "length") return length();
+			if (key === Symbol.iterator || key === "values") return inOrder;
+			if (indexKey(key)) return Number(key) >= length() ? undefined : at(Number(key));
+			return Reflect.get(target, key, receiver);
+		},
+		has(target, key) {
+			return indexKey(key) ? Number(key) < length() : Reflect.has(target, key);
+		},
+		ownKeys() {
+			return [...Array.from({ length: length() }, (_, index) => String(index)), "length"];
+		},
+		getOwnPropertyDescriptor(target, key) {
+			if (indexKey(key) && Number(key) < length())
+				return { configurable: true, enumerable: true, writable: false, value: at(Number(key)) };
+			return Reflect.getOwnPropertyDescriptor(target, key);
+		},
+		set() {
+			throw Error("stored lists are read-only");
+		},
+	});
+}
+
 export function readonlyStoredArray<T>(
 	storage: GraphStateStorage,
 	name: string,
