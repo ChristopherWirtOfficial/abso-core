@@ -2742,7 +2742,16 @@ export class Project {
 		// A draft that moves nothing resolves its moves as its base does (abso Capacity): take them from the base's view.
 		if (this.#writerStorage && agent.mine.length > 0 && view instanceof View) {
 			const base = this.#viewAt(this.#spaceOf(agent), agent.base);
-			if (base instanceof View) view.shareMoves(base);
+			if (base instanceof View) {
+				view.shareMoves(base);
+				// And its layout of every file the draft doesn't touch, when the draft moves nothing (abso Capacity).
+				const mine = agent.mine;
+				view.shareFiles(base, () =>
+					mine.some((id) => (this.#graph.atom(id).moves?.length ?? 0) > 0)
+						? undefined
+						: this.#touchedFiles(mine, [base, view]),
+				);
+			}
 		}
 		return view;
 	}

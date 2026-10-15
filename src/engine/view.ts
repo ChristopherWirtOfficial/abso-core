@@ -49,7 +49,7 @@ export interface FileAttrs {
 /** Structural read boundary shared by historical and transaction-bound projections. */
 export type ReadView = Omit<
 	Pick<View, keyof View>,
-	"sameText" | "visibleCount" | "shareMoves" | "fileOfNumber" | "lineNumberOf" | "visibleWriters"
+	"sameText" | "visibleCount" | "shareMoves" | "shareFiles" | "fileOfNumber" | "lineNumberOf" | "visibleWriters"
 > & {
 	sameText(path: string, other: ReadView): boolean;
 };
@@ -387,6 +387,27 @@ export class View {
 	shareMoves(from: View): void {
 		if (from.graph !== this.graph || from.#hasMoves !== this.#hasMoves || !this.#hasMoves || this.#relocs) return;
 		this.#movesFrom = from;
+	}
+
+	/**
+	 * Files laid out as another view lays them out (abso Capacity): a draft's view over its base's, for every file the
+	 * draft doesn't touch. The caller knows what the draft is; `except` is asked once, when a file is first needed, for
+	 * the files the draft touches, or undefined when nothing can be shared (a draft that moves lines). Without it, an
+	 * agent's tree, files and blame laid out every file of the project again for each agent.
+	 */
+	shareFiles(from: View, except: () => ReadonlySet<string> | undefined): void {
+		if (from.graph !== this.graph || from === this || this.#filesFrom !== undefined) return;
+		this.#filesFrom = { from, except };
+	}
+	#filesFrom: { from: View; except: () => ReadonlySet<string> | undefined } | null | undefined;
+	#filesShared: { from: View; except: ReadonlySet<string> } | null | undefined;
+	#sharedFiles(): { from: View; except: ReadonlySet<string> } | null {
+		if (this.#filesShared === undefined) {
+			const share = this.#filesFrom;
+			const except = share ? share.except() : undefined;
+			this.#filesShared = share && except ? { from: share.from, except } : null;
+		}
+		return this.#filesShared;
 	}
 
 	#takeShared(): void {
@@ -1104,7 +1125,9 @@ export class View {
 	#file(path: string, complete = false): FileState {
 		let state = this.#files.get(path);
 		if (!state || (complete && !state.complete)) {
-			state = this.graph.hasAtomsIn(path) ? this.#layout(path, complete) : NO_FILE;
+			const shared = this.#filesFrom === undefined ? null : this.#sharedFiles();
+			if (shared && !shared.except.has(path)) state = shared.from.#file(path, complete);
+			else state = this.graph.hasAtomsIn(path) ? this.#layout(path, complete) : NO_FILE;
 			this.#files.set(path, state);
 		}
 		return state;
