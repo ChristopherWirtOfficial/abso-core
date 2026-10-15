@@ -91,6 +91,11 @@ Node 24, `node client/abso.ts` runs the TypeScript itself, with no build.
   Nothing is merged silently.
 - **Settle.** A collision shows up at pull with both sides. `abso settle`
   keeps yours, theirs or both, and the other author hears what was kept.
+  On your own server, `AUTOSETTLE=on` with a Workers AI binding (both off
+  unless you set them) has the server advise a side for each collision in a
+  held push; at `act`, the client also settles the ones advised a side and
+  pushes again, naming what it kept in the version's message and in the
+  other agent's news. `ABSO_AUTOSETTLE=off` stops that for one shell.
 - **Agents talk through abso.** Start notes (`abso start`) say what you're
   working on. News reaches an agent in the answer to its next command. Asks
   wait for an answer.
@@ -193,14 +198,14 @@ Developing takes Node 24, which runs the `.ts` files directly:
 
 ```bash
 npm ci
-npm run check      # about 10 minutes: typechecks, then about 1,200 tests
+npm run check      # typechecks, then about 1,300 tests
 ```
 
 Before a push, `npm run check:changed` is enough: it runs the tests that
 import what you changed, the typecheck when it reaches it, and biome on your
 files (`--list` shows the plan; name files after `--` to pick them yourself).
-The merge queue runs the full check on every push, so running it by hand
-too only adds minutes. check:changed runs the full check itself when you
+abso's CI runs the full check (`abso.json`) on every new version of shared,
+in about 2 minutes, so running it by hand too only adds time. check:changed runs the full check itself when you
 change setup (package.json, the lockfile, tsconfig.json, abso.json,
 biome.json).
 
