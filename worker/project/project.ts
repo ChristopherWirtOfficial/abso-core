@@ -1767,6 +1767,7 @@ export class Project {
 			spaceNamed: (name) => this.#spaceNamed(name),
 			checkVersion: (space, version) => this.#checkVersion(space, version),
 			viewAt: (space, version) => this.#viewAt(space, version),
+			keptPaths: (space, version) => this.#keptPaths(space, version),
 			agentView: (agent) => this.#agentView(agent as AgentState),
 			spellingIn: (view, asked) => this.spellingIn(view, asked),
 			pathsOf: (space) => this.#paths.pathsOf(space),
@@ -1775,6 +1776,11 @@ export class Project {
 			removedIn: (space, from, to, line) => this.#paths.removedIn(space, from, to, line),
 		};
 		return this.#host;
+	}
+
+	/** Shared's file list from kept shapes on a stored writer, where a version's layout reads its files from disk. */
+	#keptPaths(space: Space, version: number): string[] | undefined {
+		return this.#writerStorage && space.name === SHARED ? this.#paths.keptPaths(space, version) : undefined;
 	}
 
 	/** One folder at a version (history.ts). */
@@ -2643,9 +2649,7 @@ export class Project {
 			spaceNamed: (name) => this.#spaceNamed(name),
 			checkVersion: (space, version) => this.#checkVersion(space, version),
 			viewAt: (space, version) => this.#viewAt(space, version),
-			// Shared's lists from kept shapes on a stored writer, where a version's layout reads its files from disk.
-			keptPaths: (space, version) =>
-				this.#writerStorage && space.name === SHARED ? this.#paths.keptPaths(space, version) : undefined,
+			keptPaths: (space, version) => this.#keptPaths(space, version),
 			agentView: (agent) => this.#agentView(agent),
 			version: () => this.version,
 			projectFile: () => (this.initialized ? projectFileIn(this.#sharedView()) : undefined),

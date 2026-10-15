@@ -16,6 +16,8 @@ export interface HistoryHost {
 	spaceNamed(name: string | null): Space;
 	checkVersion(space: Space, version: number): void;
 	viewAt(space: Space, version: number): ReadView;
+	/** A version's file list from kept version shapes, when every version up to it has one (pathindex.ts). */
+	keptPaths?(space: Space, version: number): string[] | undefined;
 	agentView(agent: { readonly name: string; readonly space: string; readonly base: number }): ReadView;
 	spellingIn(view: ReadView, asked: string): string;
 	pathsOf(space: Space): Map<string, PathLifeRecord>;
@@ -118,7 +120,8 @@ export function tree(
 			);
 		return e;
 	};
-	for (const path of view.paths()) {
+	const paths = (agent ? undefined : h.keptPaths?.(space, version)) ?? view.paths();
+	for (const path of paths) {
 		const e = entryOf(path);
 		if (!e) continue;
 		e.files++;
