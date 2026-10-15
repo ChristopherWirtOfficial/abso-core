@@ -9,7 +9,7 @@ import type { PathIndex } from "./pathindex.ts";
 import { ProjectError } from "./project-error.ts";
 import type { FileChange, LogAnswer, LogEntry, ShowAnswer } from "./project-types.ts";
 import { last, SHARED, type Space } from "./spaces.ts";
-import { changesBetween } from "./view-changes.ts";
+import { changesBetween, summariesBetween } from "./view-changes.ts";
 
 /** What the version list reads need from a project. */
 export interface LogHost {
@@ -243,8 +243,10 @@ export function compare(
 	host: LogHost,
 	from: number,
 	to: number,
-	options: { draft?: string | null; agent?: string } = {},
-): { from: number; to: number; files: FileChange[] } {
+	options: { draft?: string | null; agent?: string; summary?: boolean } = {},
+):
+	| { from: number; to: number; files: FileChange[] }
+	| { from: number; to: number; summary: true; files: ReturnType<typeof summariesBetween> } {
 	host.needInit();
 	const space = host.spaceFor(options);
 	host.checkVersion(space, from);
@@ -252,13 +254,18 @@ export function compare(
 	const before = host.viewAt(space, from);
 	const after = host.viewAt(space, to);
 	const files = new Set<string>();
+	// With summary, each file's size and SHA-256 instead of its texts (abso issue 680).
+	const answer = (paths: Iterable<string>) =>
+		options.summary
+			? { from, to, summary: true as const, files: summariesBetween(before, after, paths) }
+			: { from, to, files: changesBetween(before, after, paths) };
 	// A stored writer keeps each shared version's changed files (version-files.ts, abso Capacity): every file that
 	// differs between two versions changed in one between them, so those lists are the candidates, not every atom
 	// either set holds.
 	if (space.name === SHARED && host.graph.packedFiles) {
 		for (let v = Math.min(from, to) + 1; v <= Math.max(from, to); v++)
 			for (const file of host.paths.versionFiles(space, v)) files.add(file);
-		return { from, to, files: changesBetween(before, after, files) };
+		return answer(files);
 	}
 	const a = host.at(space, from);
 	const b = host.at(space, to);
@@ -274,7 +281,7 @@ export function compare(
 		))
 			files.add(file);
 	}
-	return { from, to, files: changesBetween(before, after, files) };
+	return answer(files);
 }
 
 /** A version of shared (or of a named draft) as a ReadView, for reading lines (blame at a version). */

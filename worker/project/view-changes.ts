@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ReadView } from "../../src/engine/index.ts";
 import { ProjectError } from "./project-error.ts";
 import type { FileChange, Mode, Modes } from "./project-types.ts";
@@ -14,6 +15,49 @@ export function changesBetween(before: ReadView, after: ReadView, files: Iterabl
 		const blob = bb !== ab ? { before: bb, after: ab } : undefined;
 		if (a !== b || mode || blob)
 			out.push({ path, before: b, after: a, ...(mode ? { mode } : {}), ...(blob ? { blob } : {}) });
+	}
+	return out;
+}
+
+/** A changed file's text or blob, summed up: its size in UTF-8 bytes and its SHA-256, or a blob's hash. */
+export type FileSummary = { size: number; sha256: string } | { blob: string };
+
+/**
+ * changesBetween without the texts (abso issue 680, compare's summary): each changed file before and after as its size
+ * and SHA-256, or its blob's hash for a binary file. Each text is read, summed up and let go, so a compare of thousands
+ * of files never holds them all.
+ */
+export function summariesBetween(
+	before: ReadView,
+	after: ReadView,
+	files: Iterable<string>,
+): {
+	path: string;
+	before: FileSummary | null;
+	after: FileSummary | null;
+	mode?: { before: Mode; after: Mode };
+	blob?: { before: string | null; after: string | null };
+}[] {
+	const sum = (view: ReadView, path: string): FileSummary | null => {
+		if (!view.hasFile(path)) return null;
+		const blob = view.attrs(path).blob;
+		if (blob !== null) return { blob };
+		const text = view.text(path);
+		return { size: Buffer.byteLength(text, "utf8"), sha256: createHash("sha256").update(text, "utf8").digest("hex") };
+	};
+	const out: ReturnType<typeof summariesBetween> = [];
+	for (const path of [...new Set(files)].toSorted()) {
+		if (!differs(before, after, path)) continue;
+		const mode = modeChange(before, after, path);
+		const bb = before.attrs(path).blob;
+		const ab = after.attrs(path).blob;
+		out.push({
+			path,
+			before: sum(before, path),
+			after: sum(after, path),
+			...(mode ? { mode } : {}),
+			...(bb !== ab ? { blob: { before: bb, after: ab } } : {}),
+		});
 	}
 	return out;
 }

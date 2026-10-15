@@ -392,7 +392,8 @@ export function answer(
 				const from = int(q.from);
 				const to = int(q.to);
 				if (from === undefined || to === undefined) return fail(400, "compare needs ?from=<number>&to=<number>");
-				return { status: 200, body: history.compare(from, to, draft, who) };
+				// summary=1: each file's size and SHA-256, not its texts (abso issue 680).
+				return { status: 200, body: history.compare(from, to, draft, who, q.summary === "1") };
 			}
 			const version = Number(q.version);
 			if (q.version === undefined || !Number.isInteger(version)) return fail(400, "show needs ?version=<number>");
