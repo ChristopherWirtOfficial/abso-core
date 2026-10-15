@@ -2,12 +2,26 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { type Ai, adviseHeld, refused, ruled } from "../src/autosettle.ts";
 
-/** A stand-in for Workers AI that always answers `pick`, and counts its calls. */
-function fakeAi(pick: string): Ai & { calls: number } {
+/**
+ * A stand-in for Workers AI that always leans to `pick`: a System One answer for Clef (`top` on `pick`, the rest
+ * spread evenly) or a JSON-mode answer for a text model. It counts its calls.
+ */
+function fakeAi(pick: string, top = 0.85): Ai & { calls: number } {
 	const ai = {
 		calls: 0,
-		async run() {
+		async run(_model: string, input: unknown) {
 			ai.calls++;
+			if ((input as { questions?: unknown }).questions) {
+				const probabilities = Object.fromEntries(
+					["yours", "theirs", "both", "agent"].map((k) => [k, k === pick ? top : (1 - top) / 3]),
+				);
+				return {
+					answers: {
+						settle: { type: "choice", probabilities },
+						settle_reversed: { type: "choice", probabilities },
+					},
+				};
+			}
 			return { response: { pick, confidence: 0.9, reason: "a fixed answer" }, usage: { prompt_tokens: 10 } };
 		},
 	};
@@ -20,13 +34,12 @@ const held = (yours: string, theirs: string, kind = "lines") => ({
 	yours: { lines: [3, 3] as [number, number], text: yours },
 	theirs: { agent: "other", message: "their reason", text: theirs },
 });
+const routes = held('\t"/blame": blame,\n', '\t"/search": search,\n');
+const me = { agent: "me", message: "my reason" };
 
 test("code settles when one side's lines are all in the other's, without asking the model", async () => {
 	const ai = fakeAi("both");
-	const [a] = await adviseHeld(ai, [held("\ttimeoutMs: 30000,\n", "\ttimeoutMs: 30000,\n\tretries: 2,\n")], {
-		agent: "me",
-		message: "my reason",
-	});
+	const [a] = await adviseHeld(ai, [held("\ttimeoutMs: 30000,\n", "\ttimeoutMs: 30000,\n\tretries: 2,\n")], me);
 	assert.equal(a?.pick, "theirs");
 	assert.equal(a?.by, "rule");
 	assert.equal(ai.calls, 0);
@@ -43,17 +56,31 @@ test("a keep-both that sets one key twice, or holds one import in two versions, 
 	assert.equal(ruled(hold(['\t"/blame": blame,'], ['\t"/search": search,'])), undefined);
 });
 
-test("the model's pick comes back with how many samples agree, and other kinds get no advice", async () => {
+test("Clef advises by default: one call, its confidence from the probabilities, and other kinds get no advice", async () => {
 	const ai = fakeAi("both");
-	const advice = await adviseHeld(
-		ai,
-		[held('\t"/blame": blame,\n', '\t"/search": search,\n'), held("x", "y", "definition")],
-		{ agent: "me", message: "my reason" },
-	);
+	const advice = await adviseHeld(ai, [routes, held("x", "y", "definition")], me);
 	assert.equal(advice[0]?.pick, "both");
 	assert.equal(advice[0]?.by, "model");
-	assert.equal(advice[0]?.confidence, 1);
+	assert.equal(advice[0]?.model, "@cf/cloudflare/clef");
+	assert.equal(advice[0]?.confidence.toFixed(2), "0.80");
 	assert.equal(advice[1], null);
+	assert.equal(ai.calls, 1);
+});
+
+test("a lean to one side under the threshold goes to an agent, saying which side it leaned to", async () => {
+	const [a] = await adviseHeld(fakeAi("both", 0.55), [routes], me);
+	assert.equal(a?.pick, "agent");
+	assert.equal(a?.by, "unsure");
+	assert.equal(a?.modelPick, "both");
+	const [b] = await adviseHeld(fakeAi("both", 0.55), [routes], me, { at: 0.3 });
+	assert.equal(b?.pick, "both");
+});
+
+test("a text model named instead takes 5 samples, its confidence the share that agree", async () => {
+	const ai = fakeAi("both");
+	const [a] = await adviseHeld(ai, [routes], me, { model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" });
+	assert.equal(a?.pick, "both");
+	assert.equal(a?.confidence, 1);
 	assert.equal(ai.calls, 5);
 });
 
@@ -63,6 +90,6 @@ test("a model that fails leaves no advice instead of failing the push's answer",
 			throw new Error("Workers AI is down");
 		},
 	};
-	const [a] = await adviseHeld(ai, [held("a = 1", "b = 2")], { agent: "me", message: "m" });
+	const [a] = await adviseHeld(ai, [held("a = 1", "b = 2")], me);
 	assert.equal(a, null);
 });

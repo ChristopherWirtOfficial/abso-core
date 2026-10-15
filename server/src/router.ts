@@ -274,7 +274,15 @@ async function projectRoute(
 			const held = a.body as { ok?: boolean; collisions?: Parameters<typeof adviseHeld>[1] };
 			if (held.ok === false && held.collisions && held.collisions.length > 0) {
 				const message = String((body as { message?: unknown } | undefined)?.message ?? "");
-				const advice = await adviseHeld(env.AI, held.collisions, { agent, message });
+				const advice = await adviseHeld(
+					env.AI,
+					held.collisions,
+					{ agent, message },
+					{
+						...(env.AUTOSETTLE_MODEL ? { model: env.AUTOSETTLE_MODEL } : {}),
+						...(Number(env.AUTOSETTLE_AT) > 0 ? { at: Number(env.AUTOSETTLE_AT) } : {}),
+					},
+				);
 				if (advice.some((x) => x !== null)) return json(a.status, { ...held, advice });
 			}
 		}

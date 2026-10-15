@@ -505,7 +505,9 @@ function adviceWords(a: Advice): string {
 			? "by a check in code"
 			: a.by === "turned down"
 				? `the model said keep ${a.modelPick}, turned down`
-				: `${a.confidence.toFixed(2)} of samples agree`;
+				: a.by === "unsure"
+					? `the model leaned to keep ${a.modelPick} at ${a.confidence.toFixed(2)}`
+					: `confidence ${a.confidence.toFixed(2)}`;
 	return `${what} (${how}): ${a.reason}`;
 }
 

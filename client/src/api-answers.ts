@@ -91,14 +91,14 @@ export type PublishAnswer =
 	| { ok: false; collisions: readonly Collision[]; reason?: string; advice?: readonly (Advice | null)[] };
 /**
  * A server's first opinion on one collision of a held push (#19), when it runs AUTOSETTLE: which settle fits,
- * how sure, and why. `by`: rule (code decided), model (Workers AI), or turned down (the model's pick would break
- * the file, so an agent settles).
+ * how sure, and why. `by`: rule (code decided), model (Workers AI), turned down (the model's pick would break
+ * the file, so an agent settles), or unsure (the model leaned to a side under the server's threshold).
  */
 export interface Advice {
 	readonly pick: "yours" | "theirs" | "both" | "agent";
 	readonly confidence: number;
 	readonly reason: string;
-	readonly by: "rule" | "model" | "turned down";
+	readonly by: "rule" | "model" | "turned down" | "unsure";
 	readonly modelPick?: string;
 	readonly model?: string;
 	readonly ms: number;

@@ -26,6 +26,10 @@ export interface Env {
 	KEY_HMAC_SECRET?: string;
 	/** "on" gives a held push a first opinion on each collision from Workers AI (#19); needs the AI binding. */
 	AUTOSETTLE?: string;
+	/** Which model advises: clef (the default), clef-flash, or a Workers AI text model's id. */
+	AUTOSETTLE_MODEL?: string;
+	/** The confidence under which a lean to one side is left to an agent: 0.5 unless set. */
+	AUTOSETTLE_AT?: string;
 	/** Workers AI, for AUTOSETTLE. Unbound unless wrangler.jsonc names it. */
 	AI?: { run(model: string, input: unknown): Promise<unknown> };
 }
