@@ -9,7 +9,8 @@
 // jobs make a version green (`required`). A job runs a command (`run`) or a
 // built-in step (`uses`), after the jobs it `needs`, and may take another
 // job's kept files (`from`) and named `secrets`, and a run job may ask for an
-// abso key on its own project (`abso: reader` or `writer`) for the length of the job.
+// abso key on its own project (`abso: reader` or `writer`) for the length of the job. A run job may
+// say how long each of its steps may take (`timeout`, in seconds: 300 unless it says, 900 at most).
 //
 // What the check refuses: a cycle in needs; needs, required or from naming a
 // job that doesn't exist; secrets in a pipeline a draft can start, since a
@@ -42,6 +43,8 @@ export interface Job extends Machine {
 	readonly secrets: readonly string[];
 	/** An abso key on the project for the job's length (abso 343): none unless asked. */
 	readonly abso?: "reader" | "writer";
+	/** Seconds each step of a run job may take, when it says (JOB_TIMEOUT_DEFAULT otherwise). */
+	readonly timeout?: number;
 	/** The built-in step's own settings (deploy's worker, staging, live; notify's to), as written. */
 	readonly with: Readonly<Record<string, unknown>>;
 }
@@ -98,7 +101,21 @@ export function triggerWord(t: string): string {
 }
 const SIZES: readonly Size[] = ["small", "standard", "large"];
 const MACHINE_KEYS = ["image", "dockerfile", "size"] as const;
-const JOB_KEYS = ["needs", "run", "uses", "from", "keep", "cache", "secrets", "abso", ...MACHINE_KEYS] as const;
+const JOB_KEYS = [
+	"needs",
+	"run",
+	"uses",
+	"from",
+	"keep",
+	"cache",
+	"secrets",
+	"abso",
+	"timeout",
+	...MACHINE_KEYS,
+] as const;
+/** A run job's step limit when it names none, and the most it may name (the customer runner's cap too). */
+export const JOB_TIMEOUT_DEFAULT = 300;
+export const JOB_TIMEOUT_MAX = 900;
 const PIPELINE_KEYS = ["on", "only", "jobs", "required"] as const;
 /** avcs.json's keys for today's CI (worker/src/ci.ts) and the merge queue: read elsewhere, left alone here. */
 const AVCS_JSON_KEYS = ["setup", "check", "build", "out", "queue", "whole"] as const;
@@ -299,6 +316,21 @@ function job(name: string, j: unknown, at: string, say: Say): Job | undefined {
 		else if (j.uses !== undefined)
 			say(`${at}.abso`, "gives a run job a key; a uses step runs on the server and has none");
 	}
+	const timeout = j.timeout;
+	const timed =
+		timeout !== undefined &&
+		typeof timeout === "number" &&
+		Number.isInteger(timeout) &&
+		timeout >= 1 &&
+		timeout <= JOB_TIMEOUT_MAX &&
+		j.uses === undefined;
+	if (timeout !== undefined && !timed)
+		say(
+			`${at}.timeout`,
+			j.uses !== undefined
+				? "gives a run job's steps more time; a uses step runs on the server and has none"
+				: `must be whole seconds from 1 to ${JOB_TIMEOUT_MAX}, not ${q(timeout)}`,
+		);
 	const withs: Record<string, unknown> = {};
 	for (const k of settings) if (j[k] !== undefined) withs[k] = j[k];
 	if (uses === "deploy" && typeof j.worker !== "string")
@@ -327,6 +359,7 @@ function job(name: string, j: unknown, at: string, say: Say): Job | undefined {
 		cache: list(j.cache, `${at}.cache`, say, "a list of files"),
 		secrets,
 		...((j.abso === "reader" || j.abso === "writer") && j.uses === undefined ? { abso: j.abso } : {}),
+		...(timed ? { timeout: timeout as number } : {}),
 		with: withs,
 		...machine(j, at, say, false),
 	};

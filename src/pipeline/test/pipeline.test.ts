@@ -5,7 +5,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { parse } from "yaml";
-import { type Checked, checkPipelines, type Problem, readPipelineFile } from "../pipeline.ts";
+import {
+	type Checked,
+	checkPipelines,
+	JOB_TIMEOUT_DEFAULT,
+	JOB_TIMEOUT_MAX,
+	type Problem,
+	readPipelineFile,
+} from "../pipeline.ts";
 
 /** The draft pipeline file, comments included. */
 const DRAFT = `defaults: { image: node, size: standard }   # image: a menu or \`dockerfile: path\`
@@ -300,14 +307,14 @@ describe("refusing", () => {
 		const ps = problems(
 			checkPipelines({
 				defaults: { image: "node", colour: "blue" },
-				pipelines: { p: { on: ["push"], when: "always", jobs: { a: { run: "x", timeout: 5, worker: "w" } } } },
+				pipelines: { p: { on: ["push"], when: "always", jobs: { a: { run: "x", retries: 5, worker: "w" } } } },
 				extra: 1,
 			}),
 		);
 		has(ps, "extra", /isn't a key here/);
 		has(ps, "defaults.colour", /isn't a key here/);
 		has(ps, "pipelines.p.when", /isn't a key here \(known: on, only, jobs, required\)/);
-		has(ps, "pipelines.p.jobs.a.timeout", /isn't a key here/);
+		has(ps, "pipelines.p.jobs.a.retries", /isn't a key here/);
 		// worker is deploy's own setting, not a run job's.
 		has(ps, "pipelines.p.jobs.a.worker", /isn't a key here/);
 	});
@@ -413,5 +420,29 @@ describe("abso.json's shorthand for a ci pipeline", () => {
 		);
 		has(ps, "check", /must be a command/);
 		has(ps, "out", /must be a folder under the project/);
+	});
+});
+
+describe("a run job's step limit", () => {
+	it("takes whole seconds up to the most a step may run, and keeps them on the job", () => {
+		const file = ok(checkPipelines(one({ test: { run: "npm test", timeout: 600 }, lint: { run: "npx biome ci ." } })));
+		const jobs = file.pipelines[0]!.jobs;
+		assert.equal(jobs.find((j) => j.name === "test")?.timeout, 600);
+		assert.equal(jobs.find((j) => j.name === "lint")?.timeout, undefined, "no timeout: the default, unsaid");
+		ok(checkPipelines(one({ a: { run: "x", timeout: JOB_TIMEOUT_MAX } })));
+	});
+	it("refuses a limit that isn't whole seconds from 1 to the most, and one on a uses step", () => {
+		for (const bad of [0, -5, 901, 2.5, "600", null])
+			has(
+				problems(checkPipelines(one({ a: { run: "x", timeout: bad } }))),
+				"pipelines.p.jobs.a.timeout",
+				/whole seconds from 1 to 900/,
+			);
+		has(
+			problems(checkPipelines(one({ a: { uses: "notify", to: "x", timeout: 600 } }))),
+			"pipelines.p.jobs.a.timeout",
+			/a uses step runs on the server/,
+		);
+		assert.equal(JOB_TIMEOUT_DEFAULT, 300);
 	});
 });
