@@ -452,6 +452,17 @@ export interface Settled {
 	lost?: string[];
 	/** The message of the settler's push that was held for this collision: its side's reason. */
 	held?: string;
+	/** The settler's abso settled it by itself, as the server advised (abso-core 19, 23): from the push's message. */
+	auto?: AutoSettled;
+}
+
+/** One file a client settled by itself (abso-core 23): the side kept, and the advice it followed. */
+export interface AutoSettled {
+	readonly pick: "yours" | "theirs" | "both";
+	/** rule: a check in code decided; model: the model, this sure. */
+	readonly by: "rule" | "model";
+	readonly confidence: number;
+	readonly reason: string;
 }
 /** A line both sides changed that a sync merged word by word (#37): check it. */
 export interface MergedLine {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type Ai, adviseHeld, refused, ruled, withAdvice } from "../autosettle.ts";
+import { type Ai, adviseHeld, autoSettledOf, autoTrailer, refused, ruled, withAdvice } from "../autosettle.ts";
+import { outlastsSync, settledItem } from "../news.ts";
 
 /**
  * A stand-in for Workers AI that always leans to `pick`: a System One answer for Clef (`top` on `pick`, the rest
@@ -111,4 +112,51 @@ test("the switch: off leaves the answer alone, on adds advice, act also tells th
 	assert.equal(act.settle, true);
 	const ok = { ok: true, version: 4 };
 	assert.equal(await withAdvice({ AUTOSETTLE: "act", AI: fakeAi("both") }, "publish", "me", request, ok), ok);
+});
+
+test("the message trailer: the client writes what it settled by itself, and the server reads it back by file", () => {
+	const trailer = autoTrailer([
+		[
+			"docs/start.md",
+			{ pick: "yours", by: "model", confidence: 0.8125, reason: "Both fixed the typo;\nyours adds a line." },
+		],
+		[
+			"src/network.ts",
+			{ pick: "theirs", by: "rule", confidence: 1, reason: "every line of yours is already in theirs" },
+		],
+	]);
+	assert.equal(
+		trailer,
+		[
+			"Settled automatically (abso 19):",
+			"- docs/start.md: kept yours, confidence 0.81. Both fixed the typo; yours adds a line.",
+			"- src/network.ts: kept theirs, by a check in code. every line of yours is already in theirs",
+		].join("\n"),
+	);
+	const read = autoSettledOf(`Fix the jion typo\n\n${trailer}`);
+	assert.deepEqual(read.get("docs/start.md"), {
+		pick: "yours",
+		by: "model",
+		confidence: 0.81,
+		reason: "Both fixed the typo; yours adds a line.",
+	});
+	assert.equal(read.get("src/network.ts")?.by, "rule");
+	assert.equal(autoSettledOf("Settled the typo by hand").size, 0);
+});
+
+test("the other agent's news says the settle was automatic, and still outlasts a sync", () => {
+	const s = {
+		file: "docs/start.md",
+		kept: "yours" as const,
+		theirs: { agent: "client", version: 2 },
+		auto: { pick: "yours" as const, by: "model" as const, confidence: 0.81, reason: "r" },
+	};
+	const item = settledItem("docs", 3, s);
+	assert.equal(outlastsSync(item.text), true);
+	assert.match(
+		item.text,
+		/^docs settled its collision with your version 2 in docs\/start\.md automatically, as abso's model advised \(confidence 0\.81\), pushing version 3:/,
+	);
+	const byHand = settledItem("docs", 3, { ...s, auto: undefined });
+	assert.match(byHand.text, /in docs\/start\.md, pushing version 3:/);
 });

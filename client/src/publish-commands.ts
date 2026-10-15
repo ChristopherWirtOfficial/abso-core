@@ -2,6 +2,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { autoTrailer } from "../../worker/project/autosettle.ts";
 import { type Advice, type Api, ApiError, type Collision, type Settled } from "./api.ts";
 import { bool, type Parsed, str, UsageError } from "./args.ts";
 import { boxOf, knownPrep, runRun, shellWord } from "./box-commands.ts";
@@ -501,14 +502,13 @@ async function publishSteps(
 				].join("\n"),
 				json: { collisions, advice, autosettle: { pulled: true, settled: done, left } },
 			};
-		const why = [...plan].map(([file, a]) => `${file}: kept ${a.pick} (${a.reason})`).join("; ");
 		const again = await publishSteps(
 			args,
 			env,
 			root,
 			config,
 			api,
-			`${message}\n\nSettled automatically (abso 19): ${why}`,
+			`${message}\n\n${autoTrailer(plan)}`,
 			checked,
 			waitSeconds,
 			skippedCheck,

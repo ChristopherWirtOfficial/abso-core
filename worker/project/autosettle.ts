@@ -3,6 +3,8 @@
 // Off unless AUTOSETTLE is "on" (advice) or "act" (the client settles) and the Worker has an AI binding. The model
 // picks one of four words; it never writes code.
 
+import type { AutoSettled } from "./project-types.ts";
+
 /** abso's settle choices, plus a hand edit by an agent. */
 export type Pick = "yours" | "theirs" | "both" | "agent";
 export const PICKS: readonly Pick[] = ["yours", "theirs", "both", "agent"];
@@ -38,6 +40,47 @@ export interface Advice {
 	readonly modelPick?: Pick;
 	readonly model?: string;
 	readonly ms: number;
+}
+
+/**
+ * The heading a client puts over what it settled by itself, in the message of the push that follows (abso-core 19,
+ * 23). One line per file under it: `- <file>: kept <side>, confidence 0.81. <reason>` or `…, by a check in code. …`.
+ */
+export const AUTO_HEADING = "Settled automatically (abso 19):";
+
+/** The lines a client adds to its message for the files it settled by itself. */
+export function autoTrailer(
+	plan: Iterable<
+		readonly [
+			string,
+			{ readonly pick: string; readonly by: string; readonly confidence: number; readonly reason: string },
+		]
+	>,
+): string {
+	const lines = [...plan].map(([file, a]) => {
+		const how = a.by === "rule" ? "by a check in code" : `confidence ${a.confidence.toFixed(2)}`;
+		return `- ${file}: kept ${a.pick}, ${how}. ${a.reason.replace(/\s+/g, " ").trim()}`;
+	});
+	return [AUTO_HEADING, ...lines].join("\n");
+}
+
+/** What a push's message says its abso settled by itself, by file; empty for a push that settled by hand. */
+export function autoSettledOf(message: string): Map<string, AutoSettled> {
+	const found = new Map<string, AutoSettled>();
+	const lines = message.split(/\r?\n/);
+	const at = lines.lastIndexOf(AUTO_HEADING);
+	if (at < 0) return found;
+	for (const line of lines.slice(at + 1)) {
+		const m = /^- (.+): kept (yours|theirs|both), (?:by a check in code|confidence ([01]\.\d\d))\. ?(.*)$/.exec(line);
+		if (!m) break;
+		found.set(m[1]!, {
+			pick: m[2] as AutoSettled["pick"],
+			by: m[3] === undefined ? "rule" : "model",
+			confidence: m[3] === undefined ? 1 : Number(m[3]),
+			reason: m[4] ?? "",
+		});
+	}
+	return found;
 }
 
 export interface Ai {

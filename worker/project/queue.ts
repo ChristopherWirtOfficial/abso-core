@@ -3,6 +3,7 @@
 
 import { type AtomId, buildAtom, type Graph, type ReadView } from "../../src/engine/index.ts";
 import { unionOverlay } from "../../src/engine/state-source.ts";
+import { autoSettledOf } from "./autosettle.ts";
 import type { Pair } from "./collisions.ts";
 import { definedTwice } from "./definitions.ts";
 import { heldMessage, keptOf, lostLines } from "./markers.ts";
@@ -158,18 +159,21 @@ export function enqueue(
 		if (collisions.length > 0) return host.refuse(agent, space, "publish", time, collisions, entries, message);
 	}
 	const view = host.agentView(agent);
+	const auto = autoSettledOf(message);
 	const settled: Settled[] = agent.marked
 		.filter((r) => r.space === SHARED)
 		.map((r) => {
 			const lines = view.hasFile(r.file) ? view.lines(r.file).map((l) => l.text) : [];
 			const lost = lostLines(lines, r);
 			const held = heldMessage(agent, r.file);
+			const by = auto.get(r.file);
 			return {
 				file: r.file,
 				kept: keptOf(lines, r),
 				theirs: { agent: r.agent, version: r.version },
 				...(lost.length > 0 ? { lost } : {}),
 				...(held ? { held } : {}),
+				...(by ? { auto: by } : {}),
 			};
 		});
 	const id = host.queuedId() + 1;

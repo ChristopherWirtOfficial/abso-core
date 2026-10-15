@@ -170,11 +170,19 @@ const SETTLED_WHAT: Record<Kept, string> = {
 };
 
 /** The other author of a marked collision a publish settled (#11): what was kept, any lines lost, and the settler's held reason. */
+/** " automatically, as abso's model advised (confidence 0.81)" for a settle the settler's abso made by itself (abso-core 23). */
+function autoWords(s: Settled): string {
+	if (!s.auto) return "";
+	return s.auto.by === "rule"
+		? " automatically, by a check in code"
+		: ` automatically, as abso's model advised (confidence ${s.auto.confidence.toFixed(2)})`;
+}
+
 export function settledItem(by: string, version: number, s: Settled): NewsItem {
 	return {
 		key: `settled ${by} ${version} ${s.file} ${s.theirs.version}`,
 		text:
-			`${by} settled its collision with your version ${s.theirs.version} in ${s.file}, pushing version ${version}: ${SETTLED_WHAT[s.kept]}.` +
+			`${by} settled its collision with your version ${s.theirs.version} in ${s.file}${autoWords(s)}, pushing version ${version}: ${SETTLED_WHAT[s.kept]}.` +
 			(s.lost
 				? ` It also lost ${s.lost.length === 1 ? "a line" : `${s.lost.length} lines`} you both still had: ${s.lost.map((l) => `"${clip(l)}"`).join(", ")}.`
 				: "") +

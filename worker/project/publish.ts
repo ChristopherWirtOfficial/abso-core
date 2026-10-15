@@ -3,6 +3,7 @@
 
 import { type AtomId, buildAtom, type Hunk, joinLines, type ReadView } from "../../src/engine/index.ts";
 import { differenceSet, unionOverlay } from "../../src/engine/state-source.ts";
+import { autoSettledOf } from "./autosettle.ts";
 import type { Pair } from "./collisions.ts";
 import type { DefinitionCollision } from "./definition-rule.ts";
 import { heldMessage, keptOf, lostLines, settleLines } from "./markers.ts";
@@ -169,18 +170,21 @@ export function publishDraft(
 		.map((p) => ({ version: p.version, agent: p.agent, message: p.message }));
 	// What each marked collision kept, judged from the file as published (#11).
 	const view = host.agentView(agent);
+	const auto = autoSettledOf(message);
 	const settled: Settled[] = agent.marked
 		.filter((r) => r.space === space.name)
 		.map((r) => {
 			const lines = view.hasFile(r.file) ? view.lines(r.file).map((l) => l.text) : [];
 			const lost = lostLines(lines, r);
 			const held = heldMessage(agent, r.file);
+			const by = auto.get(r.file);
 			return {
 				file: r.file,
 				kept: keptOf(lines, r),
 				theirs: { agent: r.agent, version: r.version },
 				...(lost.length > 0 ? { lost } : {}),
 				...(held ? { held } : {}),
+				...(by ? { auto: by } : {}),
 			};
 		});
 	entries.push({
