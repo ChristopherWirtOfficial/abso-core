@@ -85,6 +85,8 @@ export type PublishAnswer =
 			settled?: readonly Settled[];
 			/** Others' versions this publish went on top of that the folder hasn't synced yet (#37): nothing of theirs was overwritten. */
 			mergedWith?: readonly { readonly version: number; readonly agent: string; readonly message: string }[];
+			/** Where the project's CI runs, when the server says: off, the project's own Cloudflare account, or the server's own compute. */
+			ciWhere?: string;
 	  }
 	/** With the merge queue on (#39): queued, not landed yet; `ahead` publishes wait in front of it. */
 	| { ok: true; queued: number; position: number; ahead: number; changes: number; settled?: readonly Settled[] }

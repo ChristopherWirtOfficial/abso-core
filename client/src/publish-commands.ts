@@ -65,6 +65,20 @@ function droppedIgnoredText(dropped: readonly string[]): string[] {
 	];
 }
 
+/**
+ * After "Pushed version N.": whether CI will check it, where the server says (its `ciWhere`). Nothing for the server's own
+ * compute, where pushes have always been checked, or for a server that doesn't say.
+ */
+export function ciWhereText(where: string | undefined, version: number): string[] {
+	if (where === "off")
+		return [
+			`CI is off for this project, so version ${version} isn't checked. Connect a Cloudflare account in the project's settings on the website to run it there.`,
+		];
+	if (where === "account")
+		return [`CI checks it in the project's Cloudflare account: abso ci ${version} shows the result.`];
+	return [];
+}
+
 export async function runPublish(args: Parsed, env: Env): Promise<Output> {
 	const message = str(args, "message");
 	if (!message) throw new UsageError('say why with -m "<message>"');
@@ -418,9 +432,11 @@ async function publishSteps(
 						]
 					: []),
 				...settledText(answer.settled ?? [], answer.version),
+				...(answer.changes === 0 ? [] : ciWhereText(answer.ciWhere, answer.version)),
 			].join("\n"),
 			json: {
 				version: answer.version,
+				...(answer.ciWhere === undefined ? {} : { ciWhere: answer.ciWhere }),
 				changes: answer.changes ?? null,
 				mergedWith: answer.mergedWith ?? [],
 				settled: answer.settled ?? [],
