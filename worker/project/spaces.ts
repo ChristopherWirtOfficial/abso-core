@@ -3,7 +3,7 @@
 // on. Project and the derived tables (tables/, issue 47) both keep it from the same entries, so the rules
 // live here once.
 
-import type { AtomId } from "../../src/engine/index.ts";
+import { type AtomId, seqOf } from "../../src/engine/index.ts";
 import {
 	type GraphStateStorage,
 	markClosed,
@@ -87,6 +87,61 @@ interface MembershipEvent {
 	atom: AtomId;
 }
 
+/**
+ * Membership by atom number (abso Capacity): for each 256 atoms one page of numbers, one per atom. NONE when the atom
+ * has no event, the version of its only event when that adds it, or MIXED when it has more (a drop, a return), which
+ * reads its events as before. "Is a in the space at v" is then one page for most atoms, against two or three rows.
+ * Kept from a space's first event on; a space indexed before has none, and reads its events.
+ */
+const PAGE = 256;
+const NONE = -1;
+const MIXED = -2;
+
+function startPages(storage: GraphStateStorage, prefix: string): void {
+	if (storage.read(`${prefix}:pages:meta`, "kept") === undefined) storage.write(`${prefix}:pages:meta`, "kept", 1);
+}
+
+function notePage(storage: GraphStateStorage, prefix: string, atom: AtomId, code: number): void {
+	if (storage.read(`${prefix}:pages:meta`, "kept") !== 1) return;
+	const seq = seqOf(atom);
+	if (seq < 0) return;
+	const key = String(Math.floor(seq / PAGE));
+	const page = (storage.read(`${prefix}:pages`, key) as number[] | undefined) ?? [];
+	while (page.length <= seq % PAGE) page.push(NONE);
+	page[seq % PAGE] = code;
+	storage.write(`${prefix}:pages`, key, page);
+}
+
+/** Pages read once per set: a later version only adds events after this set's version, which can't change its answers. */
+class PageReader {
+	readonly #storage: GraphStateStorage;
+	readonly #prefix: string;
+	#kept: boolean | undefined;
+	readonly #pages = new Map<number, readonly number[]>();
+	constructor(storage: GraphStateStorage, prefix: string) {
+		this.#storage = storage;
+		this.#prefix = prefix;
+	}
+	/** Whether atom is present at version, or undefined when its events must be read. */
+	presentAt(atom: AtomId, version: number): boolean | undefined {
+		this.#kept ??= this.#storage.read(`${this.#prefix}:pages:meta`, "kept") === 1;
+		if (!this.#kept) return undefined;
+		const seq = seqOf(atom);
+		if (seq < 0) return undefined;
+		const index = Math.floor(seq / PAGE);
+		let page = this.#pages.get(index);
+		if (!page) {
+			page = (this.#storage.read(`${this.#prefix}:pages`, String(index)) as number[] | undefined) ?? [];
+			if (this.#pages.size >= 64) this.#pages.delete(this.#pages.keys().next().value!);
+			this.#pages.set(index, page);
+		}
+		const code = page[seq % PAGE] ?? NONE;
+		if (code === NONE) return false;
+		if (code === MIXED) return undefined;
+		return version >= code;
+	}
+}
+
 function membershipEvent(
 	storage: GraphStateStorage,
 	prefix: string,
@@ -106,6 +161,7 @@ function membershipEvent(
 
 function indexMembership(storage: GraphStateStorage, prefix: string, version: Published): void {
 	const order = storedArray<MembershipEvent>(storage, `${prefix}:events`);
+	if (order.length === 0) startPages(storage, prefix);
 	for (const [ids, present] of [
 		[version.atoms, true],
 		[version.dropped ?? [], false],
@@ -116,6 +172,7 @@ function indexMembership(storage: GraphStateStorage, prefix: string, version: Pu
 			const event = { atom, version: version.version, present, slot: order.length };
 			storedArray<MembershipEvent>(storage, `${prefix}:events:${atom}`).push(event);
 			order.push(event);
+			notePage(storage, prefix, atom, previous === undefined && present ? version.version : MIXED);
 		}
 	}
 }
@@ -155,6 +212,7 @@ export function indexClosure(storage: GraphStateStorage, shared: Space, graph: C
 	const indexed = closureIndexed(storage);
 	const newest = last(shared);
 	if (indexed === undefined && newest > 0) return;
+	if (indexed === undefined) startPages(storage, CLOSURE);
 	for (let v = (indexed ?? -1) + 1; v <= newest; v++) indexClosureVersion(storage, shared.versions[v]!, graph);
 	if (newest >= 0) storage.write(`${CLOSURE}:meta`, "indexed", newest);
 }
@@ -166,10 +224,12 @@ function indexClosureVersion(storage: GraphStateStorage, version: Published, gra
 	const present = (atom: AtomId) => own(atom) || extra(atom);
 	const order = storedArray<MembershipEvent>(storage, `${CLOSURE}:events`);
 	const set = (atom: AtomId, on: boolean) => {
-		if (extra(atom) === on) return;
+		const previous = extraEvent(storage, atom, v);
+		if ((previous?.present ?? false) === on) return;
 		const event = { atom, version: v, present: on, slot: order.length };
 		storedArray<MembershipEvent>(storage, `${CLOSURE}:events:${atom}`).push(event);
 		order.push(event);
+		notePage(storage, CLOSURE, atom, previous === undefined && on ? v : MIXED);
 	};
 	for (const added of version.atoms) {
 		const stack = [added];
@@ -213,14 +273,19 @@ class ClosedVersionSet extends StableSet<AtomId> {
 	readonly #storage: GraphStateStorage;
 	readonly #version: number;
 	readonly #own: StoredVersionSet;
+	readonly #pages: PageReader;
 	constructor(storage: GraphStateStorage, version: number) {
 		super();
 		this.#storage = storage;
 		this.#version = version;
 		this.#own = new StoredVersionSet(storage, OWN, version);
+		this.#pages = new PageReader(storage, CLOSURE);
 	}
 	has(atom: AtomId): boolean {
-		return this.#own.has(atom) || (extraEvent(this.#storage, atom, this.#version)?.present ?? false);
+		if (this.#own.has(atom)) return true;
+		return (
+			this.#pages.presentAt(atom, this.#version) ?? extraEvent(this.#storage, atom, this.#version)?.present ?? false
+		);
 	}
 	*values(): SetIterator<AtomId> {
 		yield* this.#own;
@@ -238,17 +303,23 @@ class StoredVersionSet extends StableSet<AtomId> {
 	readonly #storage: GraphStateStorage;
 	readonly #prefix: string;
 	readonly #version: number;
+	readonly #pages: PageReader;
 	constructor(storage: GraphStateStorage, prefix: string, version: number) {
 		super();
 		this.#storage = storage;
 		this.#prefix = prefix;
 		this.#version = version;
+		this.#pages = new PageReader(storage, prefix);
 	}
 	get [Symbol.toStringTag](): string {
 		return "Set";
 	}
 	has(atom: AtomId): boolean {
-		return membershipEvent(this.#storage, this.#prefix, atom, this.#version)?.present ?? false;
+		return (
+			this.#pages.presentAt(atom, this.#version) ??
+			membershipEvent(this.#storage, this.#prefix, atom, this.#version)?.present ??
+			false
+		);
 	}
 	get size(): number {
 		let count = 0;
