@@ -6,6 +6,7 @@
 import type { AtomId } from "../../src/engine/index.ts";
 import {
 	type GraphStateStorage,
+	markClosed,
 	StableSet,
 	StableUnionSet,
 	StoredMap,
@@ -115,6 +116,111 @@ function indexMembership(storage: GraphStateStorage, prefix: string, version: Pu
 			const event = { atom, version: version.version, present, slot: order.length };
 			storedArray<MembershipEvent>(storage, `${prefix}:events:${atom}`).push(event);
 			order.push(event);
+		}
+	}
+}
+
+/**
+ * Shared's closure on disk (abso Capacity): the atoms a version's views hold beyond what it published, because
+ * something in it depends on them (a discarded atom a later publish still needs, abso issue 80). Kept per version as
+ * events like membership's, so "is a in shared's closure at v" is two lookups, and no read proves closure again.
+ * Indexed from the first version only: a writer adopted before this has none and is proved as before.
+ */
+const CLOSURE = 'closure:""';
+const OWN = `membership:${JSON.stringify(SHARED)}`;
+
+function extraEvent(storage: GraphStateStorage, atom: AtomId, version: number): MembershipEvent | undefined {
+	return membershipEvent(storage, CLOSURE, atom, version);
+}
+
+/** The newest shared version whose closure is indexed, or undefined when this writer has none. */
+export function closureIndexed(storage: GraphStateStorage): number | undefined {
+	return storage.read(`${CLOSURE}:meta`, "indexed") as number | undefined;
+}
+
+export interface ClosureGraph {
+	atom(id: AtomId): { readonly deps: readonly AtomId[]; readonly seq: number };
+	eachDependentOf(id: AtomId): Iterable<AtomId>;
+}
+
+/** Index shared's closure for every version applied since the last call. */
+export function indexClosure(storage: GraphStateStorage, shared: Space, graph: ClosureGraph): void {
+	const indexed = closureIndexed(storage);
+	const newest = last(shared);
+	if (indexed === undefined && newest > 0) return;
+	for (let v = (indexed ?? -1) + 1; v <= newest; v++) indexClosureVersion(storage, shared.versions[v]!, graph);
+	if (newest >= 0) storage.write(`${CLOSURE}:meta`, "indexed", newest);
+}
+
+function indexClosureVersion(storage: GraphStateStorage, version: Published, graph: ClosureGraph): void {
+	const v = version.version;
+	const own = (atom: AtomId) => membershipEvent(storage, OWN, atom, v)?.present ?? false;
+	const extra = (atom: AtomId) => extraEvent(storage, atom, v)?.present ?? false;
+	const present = (atom: AtomId) => own(atom) || extra(atom);
+	const order = storedArray<MembershipEvent>(storage, `${CLOSURE}:events`);
+	const set = (atom: AtomId, on: boolean) => {
+		if (extra(atom) === on) return;
+		const event = { atom, version: v, present: on, slot: order.length };
+		storedArray<MembershipEvent>(storage, `${CLOSURE}:events:${atom}`).push(event);
+		order.push(event);
+	};
+	for (const added of version.atoms) {
+		const stack = [added];
+		while (stack.length)
+			for (const dep of graph.atom(stack.pop()!).deps)
+				if (!present(dep)) {
+					set(dep, true);
+					stack.push(dep);
+				}
+	}
+	// A dropped atom stays while something in the set depends on it, and so on down its deps: newest first, so an atom
+	// is decided after everything that could depend on it.
+	const candidates = new Map<AtomId, number>();
+	for (const dropped of version.dropped ?? []) if (!own(dropped)) candidates.set(dropped, graph.atom(dropped).seq);
+	while (candidates.size) {
+		let atom: AtomId | undefined;
+		let seq = -1;
+		for (const [a, s] of candidates)
+			if (s > seq) {
+				atom = a;
+				seq = s;
+			}
+		candidates.delete(atom!);
+		if (own(atom!)) continue;
+		let needed = false;
+		for (const dependent of graph.eachDependentOf(atom!))
+			if (present(dependent)) {
+				needed = true;
+				break;
+			}
+		set(atom!, needed);
+		if (!needed)
+			for (const dep of graph.atom(atom!).deps)
+				if (!own(dep) && extra(dep) && !candidates.has(dep)) candidates.set(dep, graph.atom(dep).seq);
+	}
+}
+
+/** Shared at a version with its closure: what it published, and what that depends on. Marked closed. */
+class ClosedVersionSet extends StableSet<AtomId> {
+	readonly retainedBytes = 96;
+	readonly #storage: GraphStateStorage;
+	readonly #version: number;
+	readonly #own: StoredVersionSet;
+	constructor(storage: GraphStateStorage, version: number) {
+		super();
+		this.#storage = storage;
+		this.#version = version;
+		this.#own = new StoredVersionSet(storage, OWN, version);
+	}
+	has(atom: AtomId): boolean {
+		return this.#own.has(atom) || (extraEvent(this.#storage, atom, this.#version)?.present ?? false);
+	}
+	*values(): SetIterator<AtomId> {
+		yield* this.#own;
+		for (const event of storedArray<MembershipEvent>(this.#storage, `${CLOSURE}:events`)) {
+			if (event.version > this.#version) break;
+			if (!event.present || this.#own.has(event.atom)) continue;
+			if (extraEvent(this.#storage, event.atom, this.#version)?.slot === event.slot) yield event.atom;
 		}
 	}
 }
@@ -356,16 +462,15 @@ export class Membership {
 	 */
 	at(space: Space, version: number): ReadonlySet<AtomId> {
 		if (this.#storage) {
-			const own = new StoredVersionSet(this.#storage, `membership:${JSON.stringify(space.name)}`, version);
-			if (space.name === SHARED) return own;
+			const storage = this.#storage;
+			const closed = (v: number) => (closureIndexed(storage) ?? -1) >= v;
+			const sharedAt = (v: number): StableSet<AtomId> =>
+				closed(v) ? markClosed(new ClosedVersionSet(storage, v)) : new StoredVersionSet(storage, OWN, v);
+			if (space.name === SHARED) return sharedAt(version);
+			const own = new StoredVersionSet(storage, `membership:${JSON.stringify(space.name)}`, version);
 			// Named drafts add local atoms over an immutable shared base; drop
 			// entries target shared, never a named draft's local membership.
-			const base = new StoredVersionSet(
-				this.#storage,
-				`membership:${JSON.stringify(SHARED)}`,
-				space.versions[version]!.sharedBase!,
-			);
-			return new StableUnionSet(base, own);
+			return new StableUnionSet(sharedAt(space.versions[version]!.sharedBase!), own);
 		}
 		if (space.name === SHARED && version === last(space)) return space.own;
 		const key = `${spaceId(space)}:${version}`;

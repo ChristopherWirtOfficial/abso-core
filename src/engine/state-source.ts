@@ -127,6 +127,19 @@ export class CachedStateStorage implements GraphStateStorage {
 	}
 }
 
+/**
+ * Sets known to be closed under dependencies (abso Capacity): every atom's deps are in the set. A view or a project
+ * given one skips proving it again, which read every atom and every dependency in the history.
+ */
+const closedSets = new WeakSet<object>();
+export function markClosed<S extends ReadonlySet<unknown>>(set: S): S {
+	closedSets.add(set);
+	return set;
+}
+export function isClosedSet(set: unknown): boolean {
+	return typeof set === "object" && set !== null && closedSets.has(set);
+}
+
 /** Immutable membership whose implementation does not retain its enumerated keys. */
 export abstract class StableSet<T> implements ReadonlySet<T> {
 	abstract has(value: T): boolean;
@@ -166,6 +179,12 @@ export class StableUnionSet<T> extends StableSet<T> {
 	}
 	get retainedBytes(): number {
 		return 32 + this.#left.retainedBytes + this.#right.retainedBytes;
+	}
+	get left(): StableSet<T> {
+		return this.#left;
+	}
+	get right(): StableSet<T> {
+		return this.#right;
 	}
 	has(value: T): boolean {
 		return this.#left.has(value) || this.#right.has(value);

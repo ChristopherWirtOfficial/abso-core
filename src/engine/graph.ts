@@ -913,8 +913,11 @@ export class Graph {
 			this.#lineParent.at(code + 1) === code
 		)
 			yield code + 1;
-		if (this.#runStartPages) yield* this.#runStartPages.values(String(code));
-		else yield* listOf(this.#runStarts.get(code));
+		if (this.#runStartPages) {
+			// The paged child counts say a line has no other children without a row read per line (abso Capacity).
+			if (code >= 0 && this.#childCounts && this.#childCounts.at(code, this.#lineTotal) === 0) return;
+			yield* this.#runStartPages.values(String(code));
+		} else yield* listOf(this.#runStarts.get(code));
 	}
 
 	get hasOrderedChildren(): boolean {

@@ -12,7 +12,7 @@
 import type { Graph, RelocationInfo } from "./graph.ts";
 import { isStartNode } from "./keys.ts";
 import { resolveScratchMoves, scratchLayoutNodes } from "./relocation-scratch.ts";
-import { StableSet } from "./state-source.ts";
+import { isClosedSet, StableSet } from "./state-source.ts";
 import { joinLines } from "./text.ts";
 import { type AtomId, type AtomSet, EngineError, type LineId, type NodeId } from "./types.ts";
 
@@ -91,6 +91,13 @@ const MAP_ENTRY_BYTES = 40;
 const SET_ENTRY_BYTES = 32;
 const REFERENCE_BYTES = 8;
 const FILE_LOCATION_MEMO_ENTRIES = 256;
+/**
+ * Moved lines a view resolves once and keeps (abso Capacity): a stored graph otherwise resolved every move again on
+ * disk for each file it laid out. Game's whole history has 290; past this many, the view goes back to that.
+ */
+export const MOVED_LINES_KEPT = 20_000;
+class TooManyMoves extends Error {}
+const NO_LINES: readonly number[] = Object.freeze([]);
 
 /**
  * The projection of a closed set. Construct once, then ask for files, lines
@@ -118,6 +125,10 @@ export class View {
 	#relocs: Map<LineId, RelocationInfo> | undefined;
 	/** The same, by n, with the new parent's code. */
 	#relocsN: Map<number, { readonly r: RelocationInfo; readonly parent: number }> | undefined;
+	/** The moved lines under each node, by its code, made from the relocations on first use. */
+	#movedInto: Map<number, number[]> | undefined;
+	/** Whether this view's moves are too many to keep, so they're resolved on disk per layout; undefined until asked. */
+	#movesOnDisk: boolean | undefined;
 	/** Bounded memo: ancestry can span the entire history even for one visible line. */
 	#fileOf = new Map<number, string>();
 	/** The latest records asked for: one file's lines, one file's sequence, one file's text. */
@@ -131,7 +142,8 @@ export class View {
 			this.#stable = set;
 			this.#set = set;
 			this.#in = new Uint8Array(0);
-			for (const id of set) {
+			// A set kept closed when it was written needs no proof here (abso Capacity).
+			for (const id of isClosedSet(set) ? [] : set) {
 				const atom = graph.atom(id);
 				for (const dependency of atom.deps) {
 					graph.atom(dependency);
@@ -220,6 +232,7 @@ export class View {
 		for (const id of this.#eachMover()) {
 			for (const m of graph.atom(id).moves!) {
 				if (!relocs.has(m.line)) relocs.set(m.line, pick(m.line)!);
+				if (graph.hasOrderedChildren && relocs.size > MOVED_LINES_KEPT) throw new TooManyMoves();
 			}
 		}
 		const parentOf = (line: LineId): NodeId => relocs.get(line)?.parent ?? graph.lineParent(line)!;
@@ -259,6 +272,21 @@ export class View {
 		return relocs;
 	}
 
+	/** Whether moves are resolved on disk for each layout: only a stored graph's view with more than MOVED_LINES_KEPT. */
+	#scratchMoves(): boolean {
+		if (!this.#hasMoves || !this.graph.hasOrderedChildren) return false;
+		if (this.#movesOnDisk === undefined) {
+			try {
+				this.#relocations();
+				this.#movesOnDisk = false;
+			} catch (error) {
+				if (!(error instanceof TooManyMoves)) throw error;
+				this.#movesOnDisk = true;
+			}
+		}
+		return this.#movesOnDisk;
+	}
+
 	/** The relocations by n, with each new parent's code. */
 	#relocationsN(): Map<number, { readonly r: RelocationInfo; readonly parent: number }> {
 		if (this.#relocsN) return this.#relocsN;
@@ -272,7 +300,7 @@ export class View {
 	/** The node a line hangs off in this set: where it was written, or where a move put it. */
 	parentOf(line: LineId): NodeId {
 		if (this.graph.lineParent(line) === undefined) throw new EngineError("unknown-line", `no line ${line}`);
-		if (this.#hasMoves && this.graph.hasOrderedChildren)
+		if (this.#scratchMoves())
 			return this.graph.withProjectionScratch((scratch) =>
 				resolveScratchMoves(this.graph, (id) => this.#has(this.graph.atom(id).seq), scratch).parent(line),
 			);
@@ -302,7 +330,7 @@ export class View {
 	#fileOfN(n: number): string {
 		const graph = this.graph;
 		if (!this.#hasMoves) return graph.writtenIn(n);
-		if (graph.hasOrderedChildren)
+		if (this.#scratchMoves())
 			return graph.withProjectionScratch((scratch) => {
 				const moves = resolveScratchMoves(graph, (id) => this.#has(graph.atom(id).seq), scratch);
 				let current = graph.nodeOf(n);
@@ -345,10 +373,18 @@ export class View {
 			out.push({ n, replaces: graph.replacesN(n) ? 1 : 0, lamport: graph.lamportOfSeq(seq), seq, k: graph.kOf(n) });
 		}
 		if (relocs) {
-			for (const r of graph.eachRelocatedToCode(code)) {
-				const n = graph.lineN(r.line);
-				const selected = relocs.get(n)?.r;
-				if (!selected || selected.atom !== r.atom || selected.k !== r.k) continue;
+			// The lines this set's moves put under each node, from the moves it already resolved: no row read per node
+			// (abso Capacity).
+			if (!this.#movedInto) {
+				this.#movedInto = new Map();
+				for (const [n, { parent }] of relocs) {
+					const into = this.#movedInto.get(parent);
+					if (into) into.push(n);
+					else this.#movedInto.set(parent, [n]);
+				}
+			}
+			for (const n of this.#movedInto.get(code) ?? NO_LINES) {
+				const r = relocs.get(n)!.r;
 				const seq = graph.atom(r.atom).seq;
 				out.push({ n, replaces: 0, lamport: graph.lamportOfSeq(seq), seq, k: r.k });
 			}
@@ -415,7 +451,7 @@ export class View {
 	/** Lay out one file: its line tree from the set's atoms, linearized. */
 	#layout(path: string, complete: boolean): FileState {
 		const graph = this.graph;
-		if (this.#hasMoves && graph.hasOrderedChildren)
+		if (this.#scratchMoves())
 			return graph.withProjectionScratch((scratch) =>
 				this.#layoutResolved(
 					path,
@@ -635,7 +671,7 @@ export class View {
 			}
 			return found && previous !== undefined ? [previous] : [];
 		};
-		if (this.#hasMoves && graph.hasOrderedChildren)
+		if (this.#scratchMoves())
 			return graph.withProjectionScratch((scratch) =>
 				scan(scratchLayoutNodes(graph, (id) => this.#has(graph.atom(id).seq), scratch, graph.nodeOf(start))),
 			);

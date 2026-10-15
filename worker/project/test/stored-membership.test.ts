@@ -143,7 +143,8 @@ test("opening an old shared membership does not hydrate its atom set", () => {
 	const shared = reopened.shared;
 	const reads = storage.reads;
 	const old = reopened.at(shared, 20);
-	assert.equal(storage.reads - reads, 0, "opening a historical membership does not read historical state");
+	// One read: whether shared's closure is kept on disk (abso Capacity). Nothing of the history.
+	assert.equal(storage.reads - reads, 1, "opening a historical membership does not read historical state");
 	assert.equal(old.size, 41);
 	assert.equal(old.has("a0"), true);
 	assert.equal(old.has("a79"), false);

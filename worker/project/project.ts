@@ -17,6 +17,8 @@ import {
 	CachedStateStorage,
 	differenceSet,
 	type GraphStateStorage,
+	isClosedSet,
+	markClosed,
 	StableOverlaySet,
 	StableSet,
 	StableUnionSet,
@@ -174,7 +176,7 @@ import { record as hostedRecord, type RecordHost } from "./record.ts";
 import { recordFile as hostedRecordFile, type RecordFileHost } from "./record-file.ts";
 import { refusals as hostedRefusals, refuse as hostedRefuse, type RefuseHost } from "./refuse.ts";
 import { restore as hostedRestore, type RestoreHost } from "./restore.ts";
-import { last, Membership, SHARED, SharedAdditions, type Space, sharedBaseOf } from "./spaces.ts";
+import { indexClosure, last, Membership, SHARED, SharedAdditions, type Space, sharedBaseOf } from "./spaces.ts";
 import { starting as hostedStarting, type StartingHost } from "./start.ts";
 import { switchTo as hostedSwitchTo, type SwitchHost } from "./switch-to.ts";
 import { sync as hostedSync, type SyncHost } from "./sync.ts";
@@ -1584,6 +1586,10 @@ export class Project {
 		const versionsBefore = this.#spaces.get(SHARED)?.versions.length ?? 0;
 		try {
 			this.#applyEntry(entry, at, keptTime);
+			// Shared's closure, kept per version on disk (abso Capacity): after the entry, since its atoms join the graph after
+			// its membership.
+			if (this.#writerStorage && (this.#spaces.get(SHARED)?.versions.length ?? 0) > versionsBefore)
+				indexClosure(this.#writerStorage, this.#spaces.get(SHARED)!, this.#graph);
 		} finally {
 			// Positions by version: where each version of shared was made.
 			const versionsAfter = this.#spaces.get(SHARED)?.versions.length ?? 0;
@@ -2719,9 +2725,12 @@ export class Project {
 	 * (abso issue 80). A closed set is unchanged.
 	 */
 	#closed(set: Iterable<AtomId>): ReadonlySet<AtomId> {
+		if (isClosedSet(set)) return set as ReadonlySet<AtomId>;
 		if (set instanceof StableSet) {
 			// Keep indexed membership external. Only dependencies absent from
-			// that snapshot belong in the operation's closure overlay.
+			// that snapshot belong in the operation's closure overlay. Over a stored closed base (abso Capacity),
+			// only the overlay's atoms can reach outside it.
+			const walk = set instanceof StableUnionSet && isClosedSet(set.left) ? set.right : set;
 			const missing = new Set<AtomId>();
 			const visit = (id: AtomId) => {
 				const stack = [id];
@@ -2734,8 +2743,8 @@ export class Project {
 					}
 				}
 			};
-			for (const id of set) visit(id);
-			return missing.size ? new StableUnionSet(set, new StableOverlaySet(missing)) : set;
+			for (const id of walk) visit(id);
+			return markClosed(missing.size ? new StableUnionSet(set, new StableOverlaySet(missing)) : set);
 		}
 		return this.#graph.closureOf(set);
 	}
