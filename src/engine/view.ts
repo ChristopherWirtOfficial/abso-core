@@ -242,23 +242,24 @@ export class View {
 			return;
 		}
 		const inSet = new Uint8Array(graph.size);
-		for (const id of set) {
-			const atom = graph.atom(id);
-			inSet[atom.seq] = 1;
-		}
+		// An atom's number is in its id (abso Capacity): reading the atom for it read the whole history on a stored graph.
+		const seqIn = (id: AtomId): number => {
+			const seq = seqOf(id);
+			return seq >= 0 && seq < inSet.length && graph.idOfSeq(seq) === id ? seq : graph.atom(id).seq;
+		};
+		for (const id of set) inSet[seqIn(id)] = 1;
 		// Validate one atom at a time. Keeping all decoded atoms here defeats
 		// storage-backed Graph reads even though the view only needs membership.
 		for (let seq = 0; seq < inSet.length; seq++) {
 			if (inSet[seq] !== 1) continue;
 			const atom = graph.atom(graph.idOfSeq(seq));
 			for (const d of atom.deps) {
-				if (inSet[graph.atom(d).seq] !== 1)
-					throw new EngineError("not-closed", `set is not closed: ${atom.id} depends on ${d}`);
+				if (inSet[seqIn(d)] !== 1) throw new EngineError("not-closed", `set is not closed: ${atom.id} depends on ${d}`);
 			}
 		}
 		this.graph = graph;
 		this.#in = inSet;
-		this.#movers = graph.movers().filter((id) => inSet[graph.atom(id).seq] === 1);
+		this.#movers = graph.movers().filter((id) => inSet[seqOf(id)] === 1);
 		this.#hasMoves = this.#movers.length > 0;
 		this.#relocs = this.#movers.length === 0 ? new Map() : undefined;
 		this.#relocsN = this.#movers.length === 0 ? new Map() : undefined;
@@ -458,10 +459,6 @@ export class View {
 	/** Whether any atom in the set moves lines. */
 	hasMoves(): boolean {
 		return this.#hasMoves;
-	}
-	*#eachMover(): IterableIterator<AtomId> {
-		if (this.#movers) yield* this.#movers;
-		else for (const id of this.graph.movers()) if (this.#stable!.has(id)) yield id;
 	}
 
 	/** The file a line is in, in this set: the one its chain of parents reaches. */

@@ -4,7 +4,8 @@
 // shared, with its message. Why adds the change's reasons, what it settled,
 // and the reasons other changes give that point at it, and the line's
 // earlier changes (trail.ts).
-import { type Atom, type AtomId, type LineId, type ReadView, View } from "../../src/engine/index.ts";
+import { type Atom, type AtomId, type LineId, type ReadView, seqOf, View } from "../../src/engine/index.ts";
+import { isClosedSet, markClosed, StableSet } from "../../src/engine/state-source.ts";
 import { blocksIn, isMarkerLine } from "./markers.ts";
 import { pathKey } from "./pathkey.ts";
 import type { Project } from "./project.ts";
@@ -126,21 +127,28 @@ export function blame(
 function keptThrough(project: Project, view: ReadView, file: string, line: LineId, author: Atom): Atom | undefined {
 	const graph = project.graph;
 	const set = view.set;
-	for (const s of graph.atoms()) {
-		if (s.seq <= author.seq || s.resolves.length === 0 || !set.has(s.id)) continue;
+	// Only atoms that write or take out the file's lines can take out its markers (abso Capacity): every atom in the
+	// history was read on a stored graph.
+	for (const id of graph.eachAtomIn(file)) {
+		if (seqOf(id) <= author.seq) continue;
+		const s = graph.atom(id);
+		if (s.resolves.length === 0 || !set.has(s.id)) continue;
 		const marks = s.deletes.filter((id) => {
 			const info = graph.line(id);
 			return info !== undefined && info.file === file && isMarkerLine(info.text);
 		});
 		if (marks.length === 0) continue;
-		// The file just before the settle, markers and all.
+		// The file just before the settle, markers and all: of a closed set, its atoms before the settle, which a
+		// stored set answers one by one; otherwise listed.
 		const before = new View(
 			graph,
-			graph
-				.atoms()
-				.slice(0, s.seq)
-				.filter((a) => set.has(a.id))
-				.map((a) => a.id),
+			isClosedSet(set)
+				? markClosed(new BeforeSet(set, s.seq))
+				: graph
+						.atoms()
+						.slice(0, s.seq)
+						.filter((a) => set.has(a.id))
+						.map((a) => a.id),
 		);
 		if (!before.hasFile(file)) continue;
 		const lines = before.lines(file);
@@ -150,6 +158,28 @@ function keptThrough(project: Project, view: ReadView, file: string, line: LineI
 		if (block && marks.includes(lines[block.start]!.id)) return s;
 	}
 	return undefined;
+}
+
+/** A set's atoms numbered below a limit. Atoms depend only on earlier ones, so a closed set's prefix is closed. */
+class BeforeSet extends StableSet<AtomId> {
+	readonly #set: ReadonlySet<AtomId>;
+	readonly #limit: number;
+	readonly retainedBytes = 32;
+	constructor(set: ReadonlySet<AtomId>, limit: number) {
+		super();
+		this.#set = set;
+		this.#limit = limit;
+	}
+	has(id: AtomId): boolean {
+		const seq = seqOf(id);
+		return seq >= 0 && seq < this.#limit && this.#set.has(id);
+	}
+	*values(): SetIterator<AtomId> {
+		for (const id of this.#set) {
+			const seq = seqOf(id);
+			if (seq >= 0 && seq < this.#limit) yield id;
+		}
+	}
 }
 
 /** The settler's push that was held for this collision, newest first: its message is that side's reason. */

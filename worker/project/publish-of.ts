@@ -18,11 +18,12 @@ export function publishOf(
 	host: PublishOfHost,
 	atom: AtomId,
 ): { draft: string | null; version: number; agent: string; message: string; time: number } | undefined {
-	const spaces = [
-		host.shared(),
-		...[...host.spaces.values()].filter((s) => s.name !== SHARED).toSorted((a, b) => (a.name < b.name ? -1 : 1)),
-	];
-	for (const space of spaces) {
+	// Shared first, and the named drafts only when it isn't there: listing them reads each one's space.
+	const spaces = function* (): Generator<Space> {
+		yield host.shared();
+		yield* [...host.spaces.values()].filter((s) => s.name !== SHARED).toSorted((a, b) => (a.name < b.name ? -1 : 1));
+	};
+	for (const space of spaces()) {
 		const version = space.publishedIn.get(atom);
 		if (version === undefined) continue;
 		const p = space.versions[version]!;
