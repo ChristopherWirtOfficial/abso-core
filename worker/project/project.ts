@@ -58,6 +58,7 @@ import {
 	type Pair,
 	pairsIn,
 	strandedFiles,
+	touchedBeyond,
 	touchedFiles,
 } from "./collisions.ts";
 import { type DefinitionCollision, DefinitionRule } from "./definition-rule.ts";
@@ -2748,20 +2749,7 @@ export class Project {
 				// view holds beyond its base is the draft and whatever the draft depends on that the base lacks (the view's
 				// set is closed): each of those can change a file, so all of them count.
 				const mine = agent.mine;
-				view.shareFiles(base, () => {
-					const graph = this.#graph;
-					const below = base.set;
-					const beyond = new Set<AtomId>();
-					const stack = [...mine];
-					while (stack.length) {
-						const id = stack.pop()!;
-						if (beyond.has(id) || below.has(id)) continue;
-						beyond.add(id);
-						for (const dep of graph.atom(id).deps) if (!beyond.has(dep) && !below.has(dep)) stack.push(dep);
-					}
-					for (const id of beyond) if ((graph.atom(id).moves?.length ?? 0) > 0) return undefined;
-					return this.#touchedFiles(beyond, [base, view]);
-				});
+				view.shareFiles(base, () => touchedBeyond(this.#graph, base.set, mine, [base, view]));
 			}
 		}
 		return view;

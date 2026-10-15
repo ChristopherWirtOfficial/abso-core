@@ -293,6 +293,30 @@ export function touchedFiles(g: Graph, ids: Iterable<AtomId>, views: readonly Re
 	return out;
 }
 
+/**
+ * The files a view over `below` plus `mine` can lay out differently from `below` (abso Capacity, View.shareFiles), or
+ * undefined when any of it moves lines. A view's set is closed under dependencies, so it holds `mine` and whatever
+ * `mine` depends on that `below` lacks; each of those can change a file, so all of them count. Counting `mine` alone
+ * missed the files of work the draft depends on (Testing's typescript-rs diff for cloud-ts-01, core 235).
+ */
+export function touchedBeyond(
+	g: Graph,
+	below: ReadonlySet<AtomId>,
+	mine: Iterable<AtomId>,
+	views: readonly ReadView[],
+): Set<string> | undefined {
+	const beyond = new Set<AtomId>();
+	const stack = [...mine];
+	while (stack.length) {
+		const id = stack.pop()!;
+		if (beyond.has(id) || below.has(id)) continue;
+		beyond.add(id);
+		for (const dep of g.atom(id).deps) if (!beyond.has(dep) && !below.has(dep)) stack.push(dep);
+	}
+	for (const id of beyond) if ((g.atom(id).moves?.length ?? 0) > 0) return undefined;
+	return touchedFiles(g, beyond, views);
+}
+
 /** The atom's visible lines in a file of a view, or where it acted when none are left. */
 export function describeSide(view: ReadView, atom: AtomId, file: string, keys: readonly string[]): CollisionSide {
 	const visible = view.lines(file);

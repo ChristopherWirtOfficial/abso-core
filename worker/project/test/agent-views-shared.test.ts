@@ -68,3 +68,46 @@ test("every agent's view reads every file as the in-memory project's, with files
 	assert.doesNotMatch(String(read(oracle, "cy")["src/geometry.ts"]), /const pi/);
 	assert.deepEqual(project.tree("", { agent: "cy", authors: true }), oracle.tree("", { agent: "cy", authors: true }));
 });
+
+// A push landed through the merge queue whose delete and write of the same text became a move, by an agent whose base
+// stays older than the landing, then more drafting in the moved-to file: the diff and every file read as in memory.
+// (Here the move is among the agent's own atoms, so nothing is shared; touched-beyond.test.ts covers work held only
+// by dependency.)
+function landedWithMoves(project: Project) {
+	let t = 0;
+	project.checkerReady = true;
+	project.init(
+		{
+			"avcs.json": `${JSON.stringify({ queue: true })}\n`,
+			"src/shapes.ts": `// shapes\n${AREA}`,
+			"src/geometry.ts": "// geometry\n",
+			"notes.md": "notes\n",
+		},
+		t,
+	);
+	project.sync("ann");
+	project.sync("bob");
+	const land = (agent: string, message: string) => {
+		const queued = project.publish(agent, message, ++t);
+		assert.ok(queued.ok && "queued" in queued, JSON.stringify(queued));
+		project.queueChecking(queued.queued);
+		project.queueLand(queued.queued, ++t);
+	};
+	project.record("bob", { "notes.md": "notes\nbob\n" }, ++t);
+	land("bob", "Notes");
+	project.edit("ann", { file: "src/shapes.ts", old: AREA, new: "" }, ++t);
+	project.edit("ann", { file: "src/geometry.ts", content: `// geometry\n${AREA}` }, ++t);
+	project.record("ann", { "README.md": "readme\n" }, ++t);
+	land("ann", "Move area, add a readme");
+	project.edit("ann", { file: "src/geometry.ts", old: "3.14", new: "Math.PI" }, ++t);
+	project.edit("ann", { file: "README.md", content: "readme\nmore\n" }, ++t);
+}
+
+test("a draft's diff takes nothing from its base that its landed work holds by dependency", () => {
+	const oracle = new Project(new MemoryStore());
+	const project = writer();
+	landedWithMoves(oracle);
+	landedWithMoves(project);
+	assert.deepEqual(project.diffOf("ann"), oracle.diffOf("ann"));
+	assert.deepEqual(read(project, "ann"), read(oracle, "ann"));
+});
