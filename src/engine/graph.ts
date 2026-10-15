@@ -267,6 +267,8 @@ export type PackedAttr = [number, string, string | null];
 /** A run written in another file under one of a file's lines: [the parent's n, the run's file index]. */
 export type PackedCrossing = [number, number];
 const EMPTY_NUMBERS: readonly number[] = Object.freeze([]);
+/** At most this many path names kept in memory (Graph.#pathName). */
+const PATH_NAMES = 4096;
 /** Lines longer than this aren't packed with their file; their text is read on its own. */
 const PACKED_TEXT = 4096;
 
@@ -881,7 +883,7 @@ export class Graph {
 			id,
 			atom: this.idOfSeq(seq),
 			k: n - this.#lineBase[seq]!,
-			file: this.#paths[this.#lineFile.at(n)]!,
+			file: this.#pathName(this.#lineFile.at(n)),
 			parent: this.#nodeName(this.#lineParent.at(n)),
 			text: this.#text(n),
 		};
@@ -902,7 +904,7 @@ export class Graph {
 	/** The file a line was written in, or undefined: line(id).file without making the record. */
 	lineFile(id: LineId): string | undefined {
 		const n = this.#lineN(id);
-		return n < 0 ? undefined : this.#paths[this.#lineFile.at(n)];
+		return n < 0 ? undefined : this.#pathName(this.#lineFile.at(n));
 	}
 
 	/** The node a line was written after, or undefined: line(id).parent without making the record. */
@@ -1014,7 +1016,7 @@ export class Graph {
 
 	/** The file line n was written in. */
 	writtenIn(n: number): string {
-		return this.#paths[this.#lineFile.at(n)]!;
+		return this.#pathName(this.#lineFile.at(n));
 	}
 
 	/** The code of the node line n was written after. */
@@ -1177,8 +1179,29 @@ export class Graph {
 	}
 
 	#nodeName(code: number): NodeId {
-		return code >= 0 ? this.#lineName(code) : startNode(this.#paths[-1 - code]!);
+		return code >= 0 ? this.#lineName(code) : startNode(this.#pathName(-1 - code));
 	}
+
+	/**
+	 * A path's name by its index, kept in memory once read (abso Capacity): finding a deleted line's file names the file
+	 * it reaches, and a stored graph read the path list each time. Cleared when the graph accepts an atom, so a name a
+	 * rolled-back add made never stays.
+	 */
+	#pathName(index: number): string {
+		if (this.#pathNamesAt !== this.#accepted) {
+			this.#pathNames.clear();
+			this.#pathNamesAt = this.#accepted;
+		}
+		let name = this.#pathNames.get(index);
+		if (name === undefined) {
+			name = this.#paths[index]!;
+			if (this.#pathNames.size >= PATH_NAMES) this.#pathNames.clear();
+			this.#pathNames.set(index, name);
+		}
+		return name;
+	}
+	readonly #pathNames = new Map<number, string>();
+	#pathNamesAt = -1;
 
 	#pathOf(file: string): number {
 		let p = this.#pathIndex.get(file);
@@ -1689,7 +1712,7 @@ export class Graph {
 		}
 		const files = new Set<string>();
 		for (const run of atom.inserts) files.add(run.file);
-		for (const n of deletedNumbers(this)) files.add(this.#paths[this.#lineFile.at(n)]!);
+		for (const n of deletedNumbers(this)) files.add(this.#pathName(this.#lineFile.at(n)));
 		for (const a of frozen.attrs ?? []) files.add(a.file);
 		for (const m of frozen.moves ?? []) {
 			files.add(this.lineFile(m.line)!);
