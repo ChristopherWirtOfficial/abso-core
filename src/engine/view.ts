@@ -1002,7 +1002,10 @@ export class View {
 	/** The seq of the atom that wrote each visible line, in order: lines() without ids or text. */
 	visibleWriters(path: string): number[] {
 		const graph = this.graph;
-		return Array.from(this.#file(path).vis, (n) => graph.writerSeqOf(n));
+		const { vis, visWriter } = this.#file(path);
+		// The packed layout keeps them (abso Capacity): looking each up again read a page per few lines on a stored graph.
+		if (visWriter) return Array.from(visWriter);
+		return Array.from(vis, (n) => graph.writerSeqOf(n));
 	}
 
 	/** All projected text files, path -> text, in path order. Binary files are in `blobs()`. */
