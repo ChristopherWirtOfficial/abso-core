@@ -50,6 +50,15 @@ function makeSettings(args: Parsed, env: Env, project: string): Settings {
 	return { server: serverFrom(args, env), project, agent: agentFrom(args) };
 }
 
+/**
+ * A new project has nothing in it yet: say what comes next, since the join itself wrote nothing. Not for a reader, which
+ * can't push, or when files were already in the folder (the join's own line names them).
+ */
+export function emptyHint(version: number, written: number, kept: number, reader: boolean): string[] {
+	if (reader || version !== 0 || written > 0 || kept > 0) return [];
+	return ['The project is empty. Put its files in this folder, then abso push -m "why" publishes them.'];
+}
+
 export async function runInit(args: Parsed, env: Env): Promise<Output> {
 	if (args.positionals.length > 1) throw new UsageError("init takes one folder");
 	const root = resolve(env.cwd, args.positionals[0] ?? ".");
@@ -350,6 +359,7 @@ export async function runJoin(args: Parsed, env: Env): Promise<Output> {
 						`These files were already here and differ from shared, so they were left alone: ${synced.kept.join(", ")}. abso record sends them as your changes.`,
 					]
 				: []),
+			...emptyHint(synced.version, synced.written.length, synced.kept.length, reader),
 			...setupHint(root),
 			hookHint(env.env),
 			...(root === resolve(env.cwd) ? [] : [`cd ${relative(env.cwd, root) || root}`]),
