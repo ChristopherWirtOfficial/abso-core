@@ -238,6 +238,12 @@ const UNTIMED = new Set<Entry["type"]>(["join", "sync", "news", "heard", "discar
 /** A start note lasts this long after the agent's last activity (#44). */
 const NOTE_IDLE = 2 * 60 * 60 * 1000;
 const WRITER_REOPEN = Symbol("verified writer checkpoint");
+/**
+ * The stored writer's read cache (abso Capacity). An agent's diff on typescript-rs touches more rows than the old
+ * 4,096 held, so it read many of them again: 59,000 reads cold, against 22,000 at this size.
+ */
+const WRITER_CACHE_BYTES = 4 * 1_048_576;
+const WRITER_CACHE_ROWS = 16_384;
 export interface WriterSource {
 	readonly generation: number;
 	readonly logLength: number;
@@ -385,7 +391,9 @@ export class Project {
 		if (options.indexAcceptedAtom && !options.writerStorage)
 			throw Error("accepted atom indexing requires writer storage");
 		this.#store = store;
-		this.#writerStorage = options.writerStorage ? new CachedStateStorage(options.writerStorage) : undefined;
+		this.#writerStorage = options.writerStorage
+			? new CachedStateStorage(options.writerStorage, WRITER_CACHE_BYTES, WRITER_CACHE_ROWS)
+			: undefined;
 		if (this.#writerStorage) {
 			const storage = this.#writerStorage;
 			// A stored Graph cannot be replayed over itself. Check before any
