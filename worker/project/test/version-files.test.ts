@@ -1,6 +1,6 @@
 // Each version's changed files kept as it lands (abso Capacity, version-files.ts): a writer-backed project's log,
-// path histories and shows match the in-memory project's through edits, new and removed files, a line taken out and
-// put back with the same text, moves and a drop.
+// path histories, shows and compares match the in-memory project's through edits, new and removed files, a line
+// taken out and put back with the same text, moves and a drop.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -52,4 +52,13 @@ test("kept version files match the in-memory project's log, paths and shows", ()
 	for (const path of ["a.txt", "b.txt", "c.txt", "d.txt", "e.txt", "gone.txt"])
 		assert.deepEqual(project.log({ limit: 100, path }), oracle.log({ limit: 100, path }), path);
 	for (let v = 0; v <= oracle.version; v++) assert.deepEqual(project.show(v), oracle.show(v), `version ${v}`);
+	// A compare reads the kept lists for the versions between (version-log.ts): both ways, and across the drop.
+	for (const [from, to] of [
+		[0, oracle.version],
+		[oracle.version, 0],
+		[2, 7],
+		[5, 9],
+		[3, 3],
+	] as const)
+		assert.deepEqual(project.compare(from, to), oracle.compare(from, to), `compare ${from} to ${to}`);
 });

@@ -249,11 +249,19 @@ export function compare(
 	const space = host.spaceFor(options);
 	host.checkVersion(space, from);
 	host.checkVersion(space, to);
-	const a = host.at(space, from);
-	const b = host.at(space, to);
 	const before = host.viewAt(space, from);
 	const after = host.viewAt(space, to);
 	const files = new Set<string>();
+	// A stored writer keeps each shared version's changed files (version-files.ts, abso Capacity): every file that
+	// differs between two versions changed in one between them, so those lists are the candidates, not every atom
+	// either set holds.
+	if (space.name === SHARED && host.graph.packedFiles) {
+		for (let v = Math.min(from, to) + 1; v <= Math.max(from, to); v++)
+			for (const file of host.paths.versionFiles(space, v)) files.add(file);
+		return { from, to, files: changesBetween(before, after, files) };
+	}
+	const a = host.at(space, from);
+	const b = host.at(space, to);
 	for (const [x, y] of [
 		[a, b],
 		[b, a],
