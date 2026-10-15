@@ -1042,9 +1042,12 @@ export class View {
 
 	/** Binary files, path -> the SHA-256 of their bytes, in path order. */
 	blobs(): Record<string, string> {
+		// From attributes alone (abso Capacity): a file with a blob exists, so no file is laid out to find them. Going
+		// through paths() laid out every file in the set, and shared() asks for blobs on every call.
 		const out: Record<string, string> = {};
-		for (const path of this.paths()) {
-			const blob = this.#file(path).attrs.blob;
+		const candidates = this.#stable ? [...this.graph.knownFiles()].sort() : this.#known;
+		for (const path of candidates) {
+			const blob = this.attrs(path).blob;
 			if (blob !== null) out[path] = blob;
 		}
 		return out;
