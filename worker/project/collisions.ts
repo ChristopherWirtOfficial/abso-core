@@ -282,13 +282,20 @@ export function touchedFiles(g: Graph, ids: Iterable<AtomId>, views: readonly Re
 		for (const file of g.filesOf(id)) out.add(file);
 		if (moved.length === 0) continue;
 		const atom = g.atom(id);
-		const lines: string[] = [...g.deletedLines(id)];
+		const lines: string[] = [];
 		for (const run of atom.inserts) if (!run.parent.startsWith("^")) lines.push(run.parent);
 		for (const m of atom.moves ?? []) {
 			lines.push(m.line);
 			if (!m.parent.startsWith("^")) lines.push(m.parent);
 		}
-		for (const v of moved) for (const line of lines) out.add(v.fileOf(line));
+		for (const v of moved) {
+			for (const line of lines) out.add(v.fileOf(line));
+			// Deleted lines by number where the view can (abso Capacity): a draft deleting a big file has thousands, and
+			// making each one's id only to look its number up again was most of collisions on website.
+			const byNumber = (v as { fileOfNumber?: (n: number) => string }).fileOfNumber;
+			if (byNumber) for (const n of g.deletedNumbers(id)) out.add(byNumber.call(v, n));
+			else for (const line of g.deletedLines(id)) out.add(v.fileOf(line));
+		}
 	}
 	return out;
 }

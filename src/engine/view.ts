@@ -138,9 +138,14 @@ class MoveSkeleton {
 		this.#graph = graph;
 	}
 
+	/** The graph's accepted count when movers were last taken in: nothing to read while it's the same. */
+	#stamp = -1;
+
 	/** Take in movers the graph gained since. */
 	update(): this {
 		const graph = this.#graph;
+		if (this.#stamp === graph.accepted) return this;
+		this.#stamp = graph.accepted;
 		const all = graph.movers();
 		if (this.#seen === all.length) return this;
 		for (; this.#seen < all.length; this.#seen++) {

@@ -820,6 +820,16 @@ export class Graph {
 		return this.#atoms.length;
 	}
 
+	/**
+	 * How many atoms this graph object has accepted since it was made (abso Capacity): in memory, so a cache over the
+	 * graph can tell nothing was added without reading storage. A rolled-back add still counts, which only makes such a
+	 * cache look again.
+	 */
+	get accepted(): number {
+		return this.#accepted;
+	}
+	#accepted = 0;
+
 	/** The id the next accepted atom must have. */
 	nextId(): AtomId {
 		return atomId(this.#atoms.length);
@@ -1530,6 +1540,7 @@ export class Graph {
 					this.#lists ? this.#listReader(seq) : undefined,
 				);
 		this.#atoms.push(this.#storage ? atom : frozen);
+		this.#accepted++;
 		let lam = 0;
 		for (const d of deps) lam = Math.max(lam, this.lamport(d) + 1);
 		if (this.#lamportPages) this.#lamportPages.push(lam);
