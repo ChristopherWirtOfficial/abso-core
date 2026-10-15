@@ -70,10 +70,13 @@ export function draftFiles(host: OverlapHost, agent: AgentState): Set<string> {
 	// No draft, no view to build: most agents in a big project have nothing unpublished.
 	if (draft.length === 0) return files;
 	const view = host.agentView(agent);
+	// By number where the view can (abso Capacity): a draft deleting a big generated file looked up each line's id.
+	const byNumber = (view as { fileOfNumber?(n: number): string }).fileOfNumber?.bind(view);
 	for (const id of draft) {
 		const atom = host.graph.atom(id);
 		for (const run of atom.inserts) files.add(isStartNode(run.parent) ? run.file : view.fileOf(run.parent));
-		for (const line of atom.deletes) files.add(view.fileOf(line));
+		if (byNumber) for (const n of host.graph.deletedNumbers(id)) files.add(byNumber(n));
+		else for (const line of atom.deletes) files.add(view.fileOf(line));
 		for (const m of atom.moves ?? []) files.add(view.fileOf(m.line));
 	}
 	return files;

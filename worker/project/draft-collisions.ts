@@ -2,7 +2,7 @@
 // is the project in memory.
 
 import { type AtomId, type Graph, parseKey, type ReadView } from "../../src/engine/index.ts";
-import { describeSide, fileOfKey, type Pair } from "./collisions.ts";
+import { claimantsAmong, describeSide, fileOfKey, pairsFrom } from "./collisions.ts";
 import type { DefinitionRule } from "./definition-rule.ts";
 import { type Definition, definedTwice } from "./definitions.ts";
 import { pathKey } from "./pathkey.ts";
@@ -25,7 +25,6 @@ export interface DraftCollisionHost {
 	draft(agent: Agent): AtomId[];
 	agentView(agent: Agent): ReadView;
 	view(set: ReadonlySet<AtomId>): ReadView;
-	pairs(draft: readonly AtomId[], against: ReadonlySet<AtomId>, settled: ReadonlySet<AtomId>): Pair[];
 	touchedFiles(ids: Iterable<AtomId>, views: readonly ReadView[]): Set<string>;
 }
 
@@ -54,6 +53,38 @@ export function draftCollisions(
 	const sharedView = host.sharedView();
 	const out: DraftCollision[] = [];
 	const side = (agent: string, file: string, s: CollisionSide) => ({ agent, file, lines: s.lines, text: s.text });
+	// Every draft change's claimants among all the drafts, found once (abso Capacity): a stored atom's keys are read
+	// from disk, and a draft deleting a big file has thousands, read again for every other agent.
+	let claimants: ReadonlyMap<AtomId, readonly AtomId[]> | undefined;
+	const claimantsOf = (agent: Agent): ReadonlyMap<AtomId, readonly AtomId[]> => {
+		claimants ??= claimantsAmong(
+			host.graph,
+			working.flatMap((a) => host.draft(a)),
+		);
+		const all = claimants;
+		return new Map(host.draft(agent).map((id) => [id, all.get(id) ?? []]));
+	};
+	// One set per draft, so the definition rule keeps what it worked out about it (abso Capacity).
+	const draftSets = new Map<Agent, ReadonlySet<AtomId>>();
+	const draftSet = (agent: Agent) => {
+		let set = draftSets.get(agent);
+		if (!set) draftSets.set(agent, (set = new Set(host.draft(agent))));
+		return set;
+	};
+	// Shared now with each agent's draft on top, once per agent: the key of a view of a set lists every atom in it.
+	const nowViews = new Map<Agent, ReadView>();
+	const nowViewOf = (agent: Agent) => {
+		let view = nowViews.get(agent);
+		if (!view) nowViews.set(agent, (view = host.view(new Set([...shared, ...host.draft(agent)]))));
+		return view;
+	};
+	// Each agent's touched files once, not once per pair (abso Capacity).
+	const touched = new Map<Agent, Set<string>>();
+	const touchedBy = (agent: Agent) => {
+		let files = touched.get(agent);
+		if (!files) touched.set(agent, (files = host.touchedFiles(host.draft(agent), [host.agentView(agent)])));
+		return files;
+	};
 	for (let i = 0; i < working.length; i++) {
 		for (let j = 0; j < working.length; j++) {
 			if (i === j) continue;
@@ -61,14 +92,14 @@ export function draftCollisions(
 			const b = working[j]!;
 			const draftA = host.draft(a);
 			const draftB = host.draft(b);
-			const newer = new Set(draftA);
+			const newer = draftSet(a);
 			const union = new Set([...shared, ...draftA, ...draftB]);
 			const viewA = host.agentView(a);
 			const viewB = host.agentView(b);
 			if (i < j) {
 				// Lines and attributes: the same either way round, so once per pair.
 				const paired = new Set<string>();
-				for (const pair of host.pairs(draftB, newer, union)) {
+				for (const pair of pairsFrom(host.graph, claimantsOf(b), newer, union)) {
 					paired.add(`${pair.theirs} ${pair.yours}`);
 					const file = fileOfKey(pair.keys[0]!.key, viewB);
 					const fileKeys = pair.keys.filter((k) => fileOfKey(k.key, viewB) === file).map((k) => k.key);
@@ -96,11 +127,14 @@ export function draftCollisions(
 				}
 				// A name both define at the top level of one file: what the second meets once it syncs onto the
 				// first's work, as the publish rule checks it then. Not when the two definitions are one lines collision.
-				const both = host.view(union);
+				// The union's view only when the two share a file (abso Capacity): laying out shared plus both drafts
+				// cost a few seconds a pair on a stored writer.
+				let both: ReadView | undefined;
 				const mineA = new Set(draftA);
 				const mineB = new Set(draftB);
-				const filesA = host.touchedFiles(draftA, [viewA]);
-				for (const file of [...host.touchedFiles(draftB, [viewB])].filter((f) => filesA.has(f)).toSorted()) {
+				const filesA = touchedBy(a);
+				for (const file of [...touchedBy(b)].filter((f) => filesA.has(f)).toSorted()) {
+					both ??= host.view(union);
 					if (!both.hasFile(file)) continue;
 					for (const [name, defs] of definedTwice(both, file)) {
 						const by = (mine: Set<AtomId>) => defs.find((d) => d.lines.some((l) => mine.has(host.graph.line(l)!.atom)));
@@ -121,8 +155,8 @@ export function draftCollisions(
 				}
 			}
 			// Definitions: b's new lines use a name whose definition a's changes change.
-			const nowView = host.view(new Set([...shared, ...draftA]));
-			for (const d of host.definitionRule().collisions(new Set(draftB), viewB, sharedView, nowView, newer, SHARED)) {
+			const nowView = () => nowViewOf(a);
+			for (const d of host.definitionRule().collisions(draftSet(b), viewB, sharedView, nowView, newer, SHARED)) {
 				const c = d.collision;
 				out.push({
 					kind: "definition",

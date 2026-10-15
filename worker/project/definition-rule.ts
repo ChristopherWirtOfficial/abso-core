@@ -36,10 +36,23 @@ interface RunEnd {
 	readonly parent: string;
 }
 
+/** Definitions in the files newer work touched, before it and with it. */
+interface Changed {
+	readonly baseDefs: ReturnType<typeof definitionsIn>;
+	readonly nowDefs: ReturnType<typeof definitionsIn>;
+}
+
+/** Names a draft's lines use that they don't declare, with where. */
+type Uses = ReadonlyMap<string, readonly { file: string; index: number }[]>;
+
 export class DefinitionRule {
 	readonly #graph: Graph;
 	readonly #origin: (atom: AtomId, spaceName: string) => Origin;
 	readonly #replacedCache = new Map<string, ReadonlySet<string>>();
+	/** A draft's uses, kept while it is asked about with the same views: draft collisions ask once per other agent. */
+	readonly #usesCache = new WeakMap<ReadonlySet<AtomId>, { view: ReadView; base: ReadView; uses: Uses }>();
+	/** The newer work's definitions before and after, kept while it is asked about with the same views. */
+	readonly #changedCache = new WeakMap<ReadonlySet<AtomId>, { base: ReadView; now: ReadView; defs: Changed }>();
 
 	constructor(graph: Graph, origin: (atom: AtomId, spaceName: string) => Origin) {
 		this.#graph = graph;
@@ -93,47 +106,35 @@ export class DefinitionRule {
 	 * draft declares itself is its own. A changed definition is any difference
 	 * in the text of the name's definitions (see definitions.ts), including one
 	 * that disappeared; a use that imports the name, or sits in a file that
-	 * defines it, only counts that definition.
+	 * defines it, only counts that definition. `nowView` may be a function, called only when the draft uses a name.
 	 */
 	collisions(
 		draft: ReadonlySet<AtomId>,
 		view: ReadView,
 		baseView: ReadView,
-		nowView: ReadView,
+		nowView: ReadView | (() => ReadView),
 		newer: ReadonlySet<AtomId>,
 		spaceName: string,
 	): DefinitionCollision[] {
 		if (draft.size === 0 || newer.size === 0) return [];
-		const uses = new Map<string, { file: string; index: number }[]>();
-		const declared = new Set<string>();
-		const runsOf = new Map<AtomId, readonly RunEnd[]>();
-		// Only files the draft wrote lines in can hold its lines.
-		const draftFiles = touchedFiles(this.#graph, draft, [view]);
-		for (const file of [...draftFiles].sort()) {
-			if (holdsNoCode(file) || !view.hasFile(file)) continue;
-			const visible = view.lines(file);
-			if (!visible.some((l) => draft.has(l.atom))) continue;
-			const code = codeOfLines(visible.map((l) => l.text));
-			visible.forEach((line, i) => {
-				if (!draft.has(line.atom)) return;
-				for (const name of declaredIn(code[i]!)) declared.add(name);
-				// Only names the change added: a use already on the lines it replaced is not the draft's to answer for.
-				const before = this.#replacedNames(line.id, baseView, runsOf);
-				for (const name of usedNames(code[i]!)) {
-					if (before.has(name)) continue;
-					const list = uses.get(name);
-					if (list) list.push({ file, index: i });
-					else uses.set(name, [{ file, index: i }]);
-				}
-			});
+		let kept = this.#usesCache.get(draft);
+		if (!kept || kept.view !== view || kept.base !== baseView) {
+			kept = { view, base: baseView, uses: this.#usesOf(draft, view, baseView) };
+			this.#usesCache.set(draft, kept);
 		}
-		for (const name of declared) uses.delete(name);
+		const uses = kept.uses;
 		if (uses.size === 0) return [];
+		const now = typeof nowView === "function" ? nowView() : nowView;
 
 		// A definition can only have changed in a file the newer work touched.
-		const touched = touchedFiles(this.#graph, newer, [baseView, nowView]);
-		const baseDefs = definitionsIn(baseView, touched);
-		const nowDefs = definitionsIn(nowView, touched);
+		let changed = this.#changedCache.get(newer);
+		if (!changed || changed.base !== baseView || changed.now !== now) {
+			const touched = touchedFiles(this.#graph, newer, [baseView, now]);
+			const defs = { baseDefs: definitionsIn(baseView, touched), nowDefs: definitionsIn(now, touched) };
+			changed = { base: baseView, now, defs };
+			this.#changedCache.set(newer, changed);
+		}
+		const { baseDefs, nowDefs } = changed.defs;
 		const out: DefinitionCollision[] = [];
 		for (const [name, where] of [...uses].sort(([a], [b]) => (a < b ? -1 : 1))) {
 			// Which definitions the uses mean: the file each use imports the name
@@ -188,5 +189,34 @@ export class DefinitionRule {
 			});
 		}
 		return out;
+	}
+
+	/** The names the draft's lines use and don't declare, less those the lines they replaced already used. */
+	#usesOf(draft: ReadonlySet<AtomId>, view: ReadView, baseView: ReadView): Uses {
+		const uses = new Map<string, { file: string; index: number }[]>();
+		const declared = new Set<string>();
+		const runsOf = new Map<AtomId, readonly RunEnd[]>();
+		// Only files the draft wrote lines in can hold its lines.
+		const draftFiles = touchedFiles(this.#graph, draft, [view]);
+		for (const file of [...draftFiles].sort()) {
+			if (holdsNoCode(file) || !view.hasFile(file)) continue;
+			const visible = view.lines(file);
+			if (!visible.some((l) => draft.has(l.atom))) continue;
+			const code = codeOfLines(visible.map((l) => l.text));
+			visible.forEach((line, i) => {
+				if (!draft.has(line.atom)) return;
+				for (const name of declaredIn(code[i]!)) declared.add(name);
+				// Only names the change added: a use already on the lines it replaced is not the draft's to answer for.
+				const before = this.#replacedNames(line.id, baseView, runsOf);
+				for (const name of usedNames(code[i]!)) {
+					if (before.has(name)) continue;
+					const list = uses.get(name);
+					if (list) list.push({ file, index: i });
+					else uses.set(name, [{ file, index: i }]);
+				}
+			});
+		}
+		for (const name of declared) uses.delete(name);
+		return uses;
 	}
 }

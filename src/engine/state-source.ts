@@ -594,16 +594,23 @@ export function readonlyStoredArray<T>(
 		return count as number;
 	};
 	length();
+	const at = (index: number): T => {
+		const raw = storage.read(name, String(index));
+		const value = raw === undefined ? undefined : decode ? decode(raw, index) : (raw as T);
+		if (value === undefined) throw Error("missing stored list element");
+		return value && typeof value === "object" ? (Object.freeze(value) as T) : value;
+	};
+	// In order, with the length read once (abso Capacity): the array iterator reads it again before every element, a
+	// second disk read per element of a list too long for the cache.
+	function* inOrder(): IterableIterator<T> {
+		const count = length();
+		for (let index = 0; index < count; index++) yield at(index);
+	}
 	return new Proxy([] as T[], {
 		get(target, key, receiver) {
 			if (key === "length") return length();
-			if (indexKey(key)) {
-				if (Number(key) >= length()) return undefined;
-				const raw = storage.read(name, key);
-				const value = raw === undefined ? undefined : decode ? decode(raw, Number(key)) : (raw as T);
-				if (value === undefined) throw Error("missing stored list element");
-				return value && typeof value === "object" ? Object.freeze(value) : value;
-			}
+			if (indexKey(key)) return Number(key) >= length() ? undefined : at(Number(key));
+			if (key === Symbol.iterator || key === "values") return inOrder;
 			return Reflect.get(target, key, receiver);
 		},
 		has(target, key) {

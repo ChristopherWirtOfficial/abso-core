@@ -1874,7 +1874,6 @@ export class Project {
 			draft: (agent) => this.#draft(agent as AgentState),
 			agentView: (agent) => this.#agentView(agent as AgentState),
 			view: (set) => this.#view(set),
-			pairs: (draft, against, settled) => this.#pairs(draft, against, settled),
 			touchedFiles: (ids, views) => this.#touchedFiles(ids, views),
 		};
 		return this.#draftCollisionHost;
@@ -2719,12 +2718,18 @@ export class Project {
 	}
 
 	#agentView(agent: AgentState): ReadView {
-		return this.#viewKeyed(this.#agentViewKey(agent), () => {
+		const view = this.#viewKeyed(this.#agentViewKey(agent), () => {
 			const base = this.#at(this.#spaceOf(agent), agent.base);
 			return base instanceof StableSet
 				? new StableUnionSet(base, new StableOverlaySet(agent.mine))
 				: new Set([...base, ...agent.mine]);
 		});
+		// A draft that moves nothing resolves its moves as its base does (abso Capacity): take them from the base's view.
+		if (this.#writerStorage && agent.mine.length > 0 && view instanceof View) {
+			const base = this.#viewAt(this.#spaceOf(agent), agent.base);
+			if (base instanceof View) view.shareMoves(base);
+		}
+		return view;
 	}
 
 	/** An agent's view, keyed by what the set is made of, not by sorting every atom in it (#46): that cost more than the work. */

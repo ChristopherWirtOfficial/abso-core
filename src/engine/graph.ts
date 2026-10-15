@@ -262,6 +262,7 @@ export type PackedLine = [number, number, number, number, number];
 export type PackedDelete = [number, number];
 /** An attribute set on a file: [seq, name, value]. */
 export type PackedAttr = [number, string, string | null];
+const EMPTY_NUMBERS: readonly number[] = Object.freeze([]);
 /** Lines longer than this aren't packed with their file; their text is read on its own. */
 const PACKED_TEXT = 4096;
 
@@ -877,6 +878,16 @@ export class Graph {
 		const out: LineId[] = new Array(ns.length);
 		for (let i = 0; i < ns.length; i++) out[i] = this.#lineName(ns[i]!);
 		return out;
+	}
+
+	/** The numbers of the lines an atom deletes, from the graph's packed copy: no lookup per line id. */
+	*deletedNumbers(id: AtomId): IterableIterator<number> {
+		const seq = this.#seq(id);
+		if (this.#storage?.read("atom-delete-counts", String(seq)) !== undefined) {
+			yield* storedLists<number>(this.#storage!, "atom-deletes").values(String(seq));
+			return;
+		}
+		yield* this.#atomDeletes[seq] ?? EMPTY_NUMBERS;
 	}
 
 	/** How many lines an atom deletes, without reading its lists. */

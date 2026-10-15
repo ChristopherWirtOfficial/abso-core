@@ -10,7 +10,7 @@
 // made when a caller asks for them, and the latest asked for is kept.
 
 import type { Graph, RelocationInfo } from "./graph.ts";
-import { isStartNode } from "./keys.ts";
+import { isStartNode, seqOf } from "./keys.ts";
 import { resolveScratchMoves, scratchLayoutNodes } from "./relocation-scratch.ts";
 import { isClosedSet, StableSet } from "./state-source.ts";
 import { joinLines } from "./text.ts";
@@ -47,7 +47,10 @@ export interface FileAttrs {
 }
 
 /** Structural read boundary shared by historical and transaction-bound projections. */
-export type ReadView = Omit<Pick<View, keyof View>, "sameText" | "visibleCount" | "shareMoves"> & {
+export type ReadView = Omit<
+	Pick<View, keyof View>,
+	"sameText" | "visibleCount" | "shareMoves" | "fileOfNumber" | "lineNumberOf" | "visibleWriters"
+> & {
 	sameText(path: string, other: ReadView): boolean;
 };
 
@@ -280,13 +283,16 @@ export class View {
 	#fileOfShared: Map<number, string> | undefined;
 
 	/**
-	 * Take another view's resolved moves (abso Capacity). Only for a set that differs from that view's by atoms that
-	 * move nothing, drop nothing and change no closure: its moves resolve the same, and every line it shares with that
-	 * view sits where it sat there.
+	 * Take another view's resolved moves (abso Capacity), when both sets hold the very same atoms that move lines: the
+	 * moves then resolve the same, and every line sits where it sits there. Checked here, so any caller may ask.
 	 */
 	shareMoves(from: View): void {
 		if (from.graph !== this.graph || from.#hasMoves !== this.#hasMoves || !this.#hasMoves) return;
-		if (from.#scratchMoves()) return;
+		if (this.#relocs || from.#scratchMoves()) return;
+		for (const id of this.graph.movers()) {
+			const seq = seqOf(id);
+			if (this.#has(seq) !== from.#has(seq)) return;
+		}
 		this.#relocs = from.#relocations();
 		this.#relocsN = from.#relocationsN();
 		this.#movesOnDisk = false;
@@ -696,6 +702,11 @@ export class View {
 		return [...this.#known];
 	}
 
+	/** The file line n sits in, in this set: fileOf by the line's number, with no lookup of its id. */
+	fileOfNumber(n: number): string {
+		return this.#fileOfN(n);
+	}
+
 	/** How many visible lines a file has. */
 	visibleCount(path: string): number {
 		return this.#file(path).vis.length;
@@ -849,12 +860,23 @@ export class View {
 
 	/** Index of a line in `lines(path)` (0-based visible line number), or -1 if not visible. */
 	lineNumber(path: string, line: LineId): number {
+		return this.lineNumberOf(path, this.graph.lineN(line));
+	}
+
+	/** lineNumber by the line's number, with no lookup of its id. */
+	lineNumberOf(path: string, n: number): number {
 		const f = this.#file(path);
 		if (!f.visIndex) {
 			f.visIndex = new Map();
 			for (let i = 0; i < f.vis.length; i++) f.visIndex.set(f.vis[i]!, i);
 		}
-		return f.visIndex.get(this.graph.lineN(line)) ?? -1;
+		return f.visIndex.get(n) ?? -1;
+	}
+
+	/** The seq of the atom that wrote each visible line, in order: lines() without ids or text. */
+	visibleWriters(path: string): number[] {
+		const graph = this.graph;
+		return Array.from(this.#file(path).vis, (n) => graph.writerSeqOf(n));
 	}
 
 	/** All projected text files, path -> text, in path order. Binary files are in `blobs()`. */

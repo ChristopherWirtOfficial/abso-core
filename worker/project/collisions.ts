@@ -9,8 +9,10 @@ import {
 	conflictKeys,
 	type Graph,
 	joinLines,
+	type Key,
 	parseKey,
 	type ReadView,
+	seqOf,
 } from "../../src/engine/index.ts";
 import { differenceSet, StableOverlaySet } from "../../src/engine/state-source.ts";
 import { definedTwice } from "./definitions.ts";
@@ -44,7 +46,20 @@ export function pairsIn(
 	against: ReadonlySet<AtomId>,
 	settled: ReadonlySet<AtomId>,
 ): Pair[] {
-	const out: Pair[] = [];
+	return pairsFrom(g, claimantsIn(g, draft, against), against, settled);
+}
+
+/**
+ * Each draft change's claimants in `against`, in seq order: the atoms whose claims meet its keys, before the
+ * engine's rule is applied. A stored atom's keys are read from disk, so a caller checking one draft against many
+ * (draft-collisions.ts) gathers once against all of them and filters with pairsFrom.
+ */
+export function claimantsIn(
+	g: Graph,
+	draft: readonly AtomId[],
+	against: ReadonlySet<AtomId>,
+): ReadonlyMap<AtomId, readonly AtomId[]> {
+	const out = new Map<AtomId, AtomId[]>();
 	for (const yours of draft) {
 		const atom = g.atom(yours);
 		const streams: IterableIterator<AtomId>[] = [];
@@ -52,7 +67,62 @@ export function pairsIn(
 			streams.push(g.eachWriterOf(key), g.eachReaderOf(key), g.eachHolderOf(key));
 		}
 		for (const key of claimsOf(atom)) streams.push(g.eachWriterOf(key));
-		for (const theirs of orderedClaimants(g, streams)) {
+		const theirs: AtomId[] = [];
+		for (const id of orderedClaimants(g, streams)) if (against.has(id)) theirs.push(id);
+		out.set(yours, theirs);
+	}
+	return out;
+}
+
+/**
+ * claimantsIn for a few atoms against each other: each atom's claimants among `atoms`, in seq order, from their own
+ * keys held in memory. Walking each key's history of claimants read four lists from disk per key, and a draft deleting
+ * a big file has thousands of keys (abso Capacity).
+ */
+export function claimantsAmong(g: Graph, atoms: readonly AtomId[]): ReadonlyMap<AtomId, readonly AtomId[]> {
+	const claimers = new Map<Key, AtomId[]>();
+	const writers = new Map<Key, AtomId[]>();
+	const keys = new Map<AtomId, { writes: readonly Key[]; claims: readonly Key[] }>();
+	const add = (index: Map<Key, AtomId[]>, key: Key, id: AtomId) => {
+		const list = index.get(key);
+		if (list) list.push(id);
+		else index.set(key, [id]);
+	};
+	for (const id of atoms) {
+		const atom = g.atom(id);
+		const writes = [...atom.writes];
+		// claimsOf, with the writes already read.
+		const claims = [...new Set([...writes, ...atom.reads, ...atom.holds])].sort();
+		keys.set(id, { writes, claims });
+		for (const key of writes) add(writers, key, id);
+		for (const key of claims) add(claimers, key, id);
+	}
+	const out = new Map<AtomId, AtomId[]>();
+	for (const id of atoms) {
+		const own = keys.get(id)!;
+		const found = new Set<AtomId>();
+		// As claimantsIn's streams: what claims a key it writes, and what writes a key it claims.
+		for (const key of own.writes) for (const other of claimers.get(key) ?? []) found.add(other);
+		for (const key of own.claims) for (const other of writers.get(key) ?? []) found.add(other);
+		found.delete(id);
+		out.set(
+			id,
+			[...found].sort((a, b) => seqOf(a) - seqOf(b)),
+		);
+	}
+	return out;
+}
+
+/** The claimants in `against` that collide by the engine's rule and that no atom of `settled` resolves. */
+export function pairsFrom(
+	g: Graph,
+	claimants: ReadonlyMap<AtomId, readonly AtomId[]>,
+	against: ReadonlySet<AtomId>,
+	settled: ReadonlySet<AtomId>,
+): Pair[] {
+	const out: Pair[] = [];
+	for (const [yours, theirsList] of claimants) {
+		for (const theirs of theirsList) {
 			if (!against.has(theirs)) continue;
 			const [lo, hi] = g.atom(yours).seq < g.atom(theirs).seq ? [yours, theirs] : [theirs, yours];
 			const keys = conflictKeys(g.atom(lo), g.atom(hi), g.dependsOn(hi, lo));
