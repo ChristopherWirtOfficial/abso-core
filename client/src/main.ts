@@ -548,9 +548,9 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 	},
 	autosettle: {
 		flags: { at: "string" },
-		usage: "abso autosettle [off|advise|settle] [--at 0.3-0.95]",
+		usage: "abso autosettle [off|advise|settle] [--at 0.3-0.95] | abso autosettle history [<id>]",
 		about:
-			"What the server does with a held push (abso-core 23). With no word, says which. advise: each collision comes back with a model's pick (keep yours, keep theirs, keep both, or leave it to an agent), how sure it is, and why; the agent still settles. settle: when the model is at least --at sure about every collision, your abso settles it and pushes again by itself, saying so in the message; anything less sure stays held, with the advice. off: held pushes come back as they always have. New projects start on advise. Changing it takes the project owner's key (on staging, the shared token works too). ABSO_AUTOSETTLE=off on a machine makes its abso settle nothing by itself.",
+			"What the server does with a held push (abso-core 23). With no word, says which. advise: each collision comes back with a model's pick (keep yours, keep theirs, keep both, or leave it to an agent), how sure it is, and why; the agent still settles. settle: when the model is at least --at sure about every collision, your abso settles it and pushes again by itself, saying so in the message; anything less sure stays held, with the advice. off: held pushes come back as they always have. New projects start on advise. Changing it takes the project owner's key (on staging, the shared token works too). ABSO_AUTOSETTLE=off on a machine makes its abso settle nothing by itself. abso autosettle history lists the held pushes the model advised on, newest first, with what it said and what was then kept; history <id> shows one, with its calls to the model (--json has each request and answer).",
 		run: runAutosettle,
 	},
 	ci: {

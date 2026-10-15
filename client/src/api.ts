@@ -728,6 +728,16 @@ export class Api {
 		return this.json("POST", `/autosettle?mode=${mode}${at === undefined ? "" : `&at=${at}`}`, {});
 	}
 
+	/** Auto-settle's history (abso-core 23): held pushes the model advised on, newest first. */
+	autosettleHistory(): Promise<unknown> {
+		return this.json("GET", "/autosettle/history");
+	}
+
+	/** One held push from the history, with each collision's calls to the model. */
+	autosettleHold(id: number): Promise<unknown> {
+		return this.json("GET", `/autosettle/history/${id}`);
+	}
+
 	/** Take back this agent's queued publishes (#39); refused while one is being checked. */
 	unqueue(): Promise<{ pulled: readonly number[] }> {
 		return this.json("POST", this.agentPath("unqueue"), {});

@@ -35,7 +35,71 @@ export function autosettleWords(a: AutosettleAnswer): string {
 	].join("\n");
 }
 
+/** One held push in the history, as the server answers it. */
+interface HistoryHold {
+	readonly id: number;
+	readonly time: string;
+	readonly agent: string;
+	readonly message: string;
+	readonly mode: AutosettleMode;
+	readonly at: number;
+	readonly collisions: readonly {
+		readonly file: string;
+		readonly theirs: { readonly agent: string; readonly version?: number };
+		readonly advice: {
+			readonly pick: string;
+			readonly confidence: number;
+			readonly by: string;
+			readonly reason: string;
+		};
+		readonly settled: boolean;
+		readonly outcome: { readonly kept: string; readonly auto: boolean; readonly version?: number } | null;
+		readonly calls?: readonly { readonly model: string; readonly input: unknown; readonly output: unknown }[];
+	}[];
+}
+
+/** A held push in a few lines: what the model said, and what was then kept. */
+export function holdWords(h: HistoryHold): string {
+	return [
+		`${h.id}: ${h.agent}, ${h.time}, under ${h.mode}${h.mode === "settle" ? ` at ${h.at.toFixed(2)}` : ""}: "${h.message.split(/\r?\n/)[0]}"`,
+		...h.collisions.map((c) => {
+			const said = `${c.advice.pick === "agent" ? "leave it to an agent" : `keep ${c.advice.pick}`} (${c.advice.by === "rule" ? "a check in code" : `${c.advice.by}, ${c.advice.confidence.toFixed(2)}`})`;
+			const then = c.outcome
+				? `kept ${c.outcome.kept}${c.outcome.auto ? " automatically" : " by hand"}${c.outcome.version !== undefined ? ` in version ${c.outcome.version}` : ""}`
+				: "not settled yet";
+			return `  ${c.file}, against ${c.theirs.agent}${c.theirs.version !== undefined ? `'s version ${c.theirs.version}` : ""}: advised ${said}${c.settled ? ", told to settle" : ""}; ${then}.`;
+		}),
+	].join("\n");
+}
+
+/** abso autosettle history [<id>]: the held pushes the model advised on, newest first, or one with its calls. */
+async function runHistory(args: Parsed, env: Env): Promise<Output> {
+	const { api } = open(env);
+	const id = args.positionals[1];
+	if (id !== undefined) {
+		if (!/^[0-9]{1,9}$/.test(id)) throw new UsageError("abso autosettle history <id> takes a hold's number");
+		const hold = (await api.autosettleHold(Number(id))) as HistoryHold;
+		const calls = hold.collisions.flatMap((c) => (c.calls ?? []).map((k) => `  ${c.file}: ${k.model}`));
+		return {
+			text: [holdWords(hold), "Calls to the model (--json has each request and answer):", ...calls].join("\n"),
+			json: { ...hold },
+		};
+	}
+	const page = (await api.autosettleHistory()) as { holds: HistoryHold[]; next?: number };
+	return {
+		text:
+			page.holds.length === 0
+				? "No held push has had advice in this project yet."
+				: page.holds.map(holdWords).join("\n"),
+		json: { ...page },
+	};
+}
+
 export async function runAutosettle(args: Parsed, env: Env): Promise<Output> {
+	if (args.positionals[0] === "history") {
+		if (args.positionals.length > 2) throw new UsageError("abso autosettle history takes at most a hold's number");
+		return runHistory(args, env);
+	}
 	if (args.positionals.length > 1) throw new UsageError("autosettle takes at most one word: off, advise or settle");
 	const want = args.positionals[0];
 	const atRaw = str(args, "at");
