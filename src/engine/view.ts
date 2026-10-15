@@ -55,6 +55,28 @@ export type ReadView = Omit<
 };
 
 const NO_ATTRS: FileAttrs = { exists: false, exec: false, link: null, blob: null };
+
+/**
+ * A file layout's bytes, less its lookup indexes, worked out once per layout (abso Capacity): a layout never changes
+ * once made, and the view cache weighs every view it holds on every lookup, which summed every line's text again.
+ */
+const layoutSizes = new WeakMap<FileState, number>();
+function layoutBytes(f: FileState): number {
+	let n = layoutSizes.get(f);
+	if (n !== undefined) return n;
+	// FileState and FileAttrs are per laid-out file; typed-array headers are separate from their payload byte lengths.
+	n = OBJECT_BYTES + OBJECT_BYTES + 2 * ARRAY_HEADER_BYTES;
+	n += f.seq.byteLength + f.vis.byteLength;
+	if (f.visText) for (const text of f.visText) n += REFERENCE_BYTES + 2 * (text?.length ?? 0);
+	if (f.visWriter) n += 4 * f.visWriter.length;
+	if (f.visK) n += 4 * f.visK.length;
+	if (f.seqWriter) n += 4 * f.seqWriter.length;
+	if (f.seqK) n += 4 * f.seqK.length;
+	n += MAP_HEADER_BYTES + (MAP_ENTRY_BYTES + ARRAY_HEADER_BYTES) * f.deletedBy.size;
+	for (const deleters of f.deletedBy.values()) n += REFERENCE_BYTES * deleters.length;
+	layoutSizes.set(f, n);
+	return n;
+}
 const NONE: readonly never[] = Object.freeze([]);
 
 interface FileState {
@@ -1087,7 +1109,7 @@ export class View {
 	 * populate lazy caches, enumerate the graph, or count temporary traversal
 	 * containers and shared empty singleton payloads as retained view state.
 	 */
-	weight(): number {
+	weight(seen?: Set<object>): number {
 		let n = this.#in.byteLength;
 		n += 2 * ARRAY_HEADER_BYTES + this.#membershipSeq.byteLength + this.#membershipValue.byteLength;
 		if (this.#movers) n += ARRAY_HEADER_BYTES + REFERENCE_BYTES * this.#movers.length;
@@ -1101,17 +1123,9 @@ export class View {
 		for (const f of this.#files.values()) {
 			n += MAP_ENTRY_BYTES;
 			if (f !== NO_FILE) {
-				// FileState and FileAttrs are per laid-out file; typed-array
-				// headers are separate from their payload byte lengths below.
-				n += OBJECT_BYTES + OBJECT_BYTES + 2 * ARRAY_HEADER_BYTES;
-				n += f.seq.byteLength + f.vis.byteLength;
-				if (f.visText) for (const text of f.visText) n += REFERENCE_BYTES + 2 * (text?.length ?? 0);
-				if (f.visWriter) n += 4 * f.visWriter.length;
-				if (f.visK) n += 4 * f.visK.length;
-				if (f.seqWriter) n += 4 * f.seqWriter.length;
-				if (f.seqK) n += 4 * f.seqK.length;
-				n += MAP_HEADER_BYTES + (MAP_ENTRY_BYTES + ARRAY_HEADER_BYTES) * f.deletedBy.size;
-				for (const deleters of f.deletedBy.values()) n += REFERENCE_BYTES * deleters.length;
+				// A layout another view counted already (`seen`, across a cache's views) isn't counted again.
+				if (!seen?.has(f)) n += layoutBytes(f);
+				seen?.add(f);
 				if (f.seqIndex) n += MAP_HEADER_BYTES + MAP_ENTRY_BYTES * f.seqIndex.size;
 				if (f.visIndex) n += MAP_HEADER_BYTES + MAP_ENTRY_BYTES * f.visIndex.size;
 			}

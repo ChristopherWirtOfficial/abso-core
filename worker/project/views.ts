@@ -44,11 +44,23 @@ export class ViewCache {
 	 * large generated file add up. At most VIEW_COUNT.
 	 */
 	#trim(): void {
+		// The newest views that fit, as evicting oldest first leaves them. A file layout two views share (a draft's view
+		// takes its base's, View.shareFiles) counts once (abso Capacity): counted per view, they filled the budget twice
+		// over, and a kept writer laid abso's drafts out again on every collisions call.
+		const seen = new Set<object>();
 		let total = 0;
-		for (const v of this.#cache.values()) total += v.weight();
-		for (const [key, v] of this.#cache) {
-			if (total <= VIEW_BUDGET && this.#cache.size <= VIEW_COUNT) break;
-			total -= v.weight();
+		let kept = 0;
+		let full = false;
+		for (const [key, v] of [...this.#cache].reverse()) {
+			if (!full) {
+				const w = v.weight(seen);
+				if (total + w <= VIEW_BUDGET && kept < VIEW_COUNT) {
+					total += w;
+					kept++;
+					continue;
+				}
+				full = true;
+			}
 			this.#cache.delete(key);
 		}
 	}
