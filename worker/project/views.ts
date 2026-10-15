@@ -12,12 +12,19 @@ import { StableSet } from "../../src/engine/state-source.ts";
  */
 const VIEW_BUDGET = 24_000_000;
 
+/**
+ * At most this many views (abso Capacity). where visits every agent's draft view in turn: with more agents than views,
+ * each visit evicted the next one, and a warm where on abso laid every view out again (4.5 s against 0.33 s). The byte
+ * budget still bounds what they hold.
+ */
+export const VIEW_COUNT = 128;
+
 /** Internal opt-in. The owner validates identity and lifetime on every returned reader. */
 export interface ReadViewProvider {
 	keyed(key: string): ReadView;
 }
 
-/** Views by key, most recently used last, held under VIEW_BUDGET bytes and 32 views. */
+/** Views by key, most recently used last, held under VIEW_BUDGET bytes and VIEW_COUNT views. */
 export class ViewCache {
 	readonly #graph: Graph;
 	readonly #provider?: ReadViewProvider;
@@ -34,13 +41,13 @@ export class ViewCache {
 	/**
 	 * Keep the cached views under VIEW_BUDGET bytes (the website project, #43,
 	 * #46): each view holds every line its files ever had, so a few views of a
-	 * large generated file add up. At most 32.
+	 * large generated file add up. At most VIEW_COUNT.
 	 */
 	#trim(): void {
 		let total = 0;
 		for (const v of this.#cache.values()) total += v.weight();
 		for (const [key, v] of this.#cache) {
-			if (total <= VIEW_BUDGET && this.#cache.size <= 32) break;
+			if (total <= VIEW_BUDGET && this.#cache.size <= VIEW_COUNT) break;
 			total -= v.weight();
 			this.#cache.delete(key);
 		}

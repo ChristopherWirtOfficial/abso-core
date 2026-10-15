@@ -4,7 +4,7 @@ import type { ReadView } from "../../../src/engine/index.ts";
 import { buildBase, Graph, View } from "../../../src/engine/index.ts";
 import { StableOverlaySet } from "../../../src/engine/state-source.ts";
 import type { AtomId } from "../../../src/engine/types.ts";
-import { ViewCache } from "../views.ts";
+import { VIEW_COUNT, ViewCache } from "../views.ts";
 
 const VIEW_BUDGET = 24_000_000;
 
@@ -25,7 +25,7 @@ test("indexed view cache keys never enumerate membership and remain bounded by e
 	assert.equal(cache.view(set), view);
 	assert.equal(set.iterations, 1, "cache hit must not construct a full-history key");
 	assert.equal(view.text("a.txt"), "one\n");
-	for (let i = 0; i < 33; i++) cache.view(new Counted(["a0"]));
+	for (let i = 0; i < VIEW_COUNT + 1; i++) cache.view(new Counted(["a0"]));
 	assert.notEqual(cache.view(set), view, "indexed identities obey the same cache eviction limit");
 	assert.equal(set.iterations, 2);
 });
@@ -76,16 +76,16 @@ test("the incoming view counts toward the retained byte budget", () => {
 	});
 });
 
-test("the cache retains exactly 32 views and evicts the least recently used one", () => {
+test("the cache retains exactly VIEW_COUNT views and evicts the least recently used one", () => {
 	withControlledWeights((control) => {
 		const cache = new ViewCache(new Graph());
-		control.setIncomingWeights(Array(33).fill(0));
+		control.setIncomingWeights(Array(VIEW_COUNT + 1).fill(0));
 		const first = get(cache, "key-0");
-		const retained = Array.from({ length: 31 }, (_, i) => get(cache, `key-${i + 1}`));
+		const retained = Array.from({ length: VIEW_COUNT - 1 }, (_, i) => get(cache, `key-${i + 1}`));
 		assert.equal(get(cache, "key-0"), first);
-		const last = get(cache, "key-32");
+		const last = get(cache, `key-${VIEW_COUNT}`);
 		assert.equal(get(cache, "key-0"), first);
-		assert.equal(get(cache, "key-32"), last);
+		assert.equal(get(cache, `key-${VIEW_COUNT}`), last);
 		for (let i = 1; i < retained.length; i++) assert.equal(get(cache, `key-${i + 1}`), retained[i]);
 		assert.notEqual(get(cache, "key-1"), retained[0]);
 	});
