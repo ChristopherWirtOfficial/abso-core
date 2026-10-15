@@ -147,6 +147,6 @@ test("opening an old shared membership does not hydrate its atom set", () => {
 	assert.equal(old.size, 41);
 	assert.equal(old.has("a0"), true);
 	assert.equal(old.has("a79"), false);
-	assert.equal(shared.atCache.size, 0, "storage-backed shared history never fills the in-memory set cache");
+	assert.equal(reopened.setsKept, 0, "storage-backed shared history never fills the in-memory set cache");
 	storage.db.close();
 });

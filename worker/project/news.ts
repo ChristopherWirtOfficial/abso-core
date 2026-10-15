@@ -123,6 +123,38 @@ export function markedItem(draftId: string, file: string, blocks: number): NewsI
 }
 
 /**
+ * How many unheard news lines an agent keeps (abso Capacity). An agent that never hears its news, most often one that
+ * stopped, kept every line: 7 MB of prod project abso's memory. Past this many (and NEWS_TRIM more), the oldest go,
+ * and one line in front says how many.
+ */
+export const NEWS_KEPT = 200;
+/** How far past NEWS_KEPT the news grows before the oldest are trimmed off. */
+export const NEWS_TRIM = 50;
+
+const DROPPED_NEWS = /^(\d+) older news items? went unheard and (?:was|were) dropped: an agent keeps its newest \d+\.$/;
+
+/** The line in front of an agent's news that counts what was dropped. */
+export function droppedNewsLine(count: number): string {
+	return `${count} older news ${count === 1 ? "item" : "items"} went unheard and ${count === 1 ? "was" : "were"} dropped: an agent keeps its newest ${NEWS_KEPT}.`;
+}
+
+/**
+ * Keeps an agent's unheard news to at most NEWS_KEPT + NEWS_TRIM lines (and their times, in step): the oldest go, and the dropped-count
+ * line in front adds them up. Deterministic, so a replay of the log keeps the same lines.
+ */
+export function capNews(agent: { news: string[]; newsAt: (number | undefined)[] }): void {
+	const counted = DROPPED_NEWS.exec(agent.news[0] ?? "");
+	const before = counted ? Number(counted[1]) : 0;
+	const from = counted ? 1 : 0;
+	// Trimmed in batches of NEWS_TRIM, so a busy agent isn't copied on every line of news.
+	if (agent.news.length - from <= NEWS_KEPT + NEWS_TRIM) return;
+	const over = agent.news.length - from - NEWS_KEPT;
+	const at = agent.newsAt[from + over];
+	agent.news = [droppedNewsLine(before + over), ...agent.news.slice(from + over)];
+	agent.newsAt = [at, ...agent.newsAt.slice(from + over)];
+}
+
+/**
  * News a sync doesn't make moot, so it is kept through one: announcements,
  * and what a settle kept (the pull brings the file, not whose side survived).
  */

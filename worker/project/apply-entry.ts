@@ -3,7 +3,7 @@
 // which space) is applied first, in spaces.ts.
 
 import type { AtomId, Graph } from "../../src/engine/index.ts";
-import { outlastsSync } from "./news.ts";
+import { capNews, outlastsSync } from "./news.ts";
 import { ProjectError } from "./project-error.ts";
 import type {
 	AgentState,
@@ -201,6 +201,7 @@ export function applyEntry(host: ApplyEntryHost, entry: Entry, at: number, time:
 				host.setAnnounced(Math.max(host.announced(), id));
 				tellSent(host.tells, id, entry.text[i] ?? entry.text[0] ?? "", agent.name, time);
 			});
+			capNews(agent);
 			break;
 		}
 		case "discard": {

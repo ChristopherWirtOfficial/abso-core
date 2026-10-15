@@ -46,7 +46,6 @@ interface Space {
 	readonly publishedIn: Map<AtomId, number>;
 	/** Atoms a drop took out, and the version of the drop. */
 	readonly droppedIn: Map<AtomId, number>;
-	readonly atCache: Map<number, ReadonlySet<AtomId>>;
 	/** For a named draft, the log position of the entry that made it: the change its work belongs to (#44). */
 	startedAt?: number;
 }
@@ -62,10 +61,9 @@ export function newSpace(name: string, storage?: GraphStateStorage): Space {
 			own: new StoredSet(storage, `${prefix}:own`),
 			publishedIn: new StoredMap(storage, `${prefix}:published`),
 			droppedIn: new StoredMap(storage, `${prefix}:dropped`),
-			atCache: new Map(),
 		};
 	}
-	return { name, versions: [], own: new Set(), publishedIn: new Map(), droppedIn: new Map(), atCache: new Map() };
+	return { name, versions: [], own: new Set(), publishedIn: new Map(), droppedIn: new Map() };
 }
 
 export function addVersion(space: Space, version: Published): void {
@@ -204,10 +202,30 @@ export function sharedBaseOf(space: Space): number {
 	return space.versions[space.versions.length - 1]!.sharedBase ?? 0;
 }
 
+/**
+ * How many built membership sets the in-memory path keeps, across every space (abso Capacity). Each named draft's set
+ * is a whole copy of shared's at its base plus its own atoms, so a cache per space held one copy of shared per draft:
+ * on prod project abso, 106 drafts kept 37 MB of them. One least-recently-used cache holds at most this many; a set
+ * that fell out is built again when asked for, in milliseconds at that size. Measured on abso's prod export (81,855
+ * entries): 96.6 MB after load before, 64.6 MB with 16 kept, 62.0 MB with 8; 16 keeps the load as fast as before.
+ */
+export const MEMBERSHIP_SETS_KEPT = 16;
+
+/** A number per space object, so a space replaced under the same name (tables/build.ts) never gets the old one's sets. */
+const spaceIds = new WeakMap<Space, number>();
+let nextSpaceId = 0;
+function spaceId(space: Space): number {
+	let id = spaceIds.get(space);
+	if (id === undefined) spaceIds.set(space, (id = nextSpaceId++));
+	return id;
+}
+
 /** Every space, and each one's contents at any of its versions. */
 export class Membership {
 	readonly spaces: Map<string, Space>;
 	readonly #storage?: GraphStateStorage;
+	/** Built sets by space and version, oldest use first (MEMBERSHIP_SETS_KEPT). */
+	readonly #sets = new Map<string, ReadonlySet<AtomId>>();
 	constructor(storage?: GraphStateStorage) {
 		this.#storage = storage;
 		if (!storage) {
@@ -350,18 +368,26 @@ export class Membership {
 			return new StableUnionSet(base, own);
 		}
 		if (space.name === SHARED && version === last(space)) return space.own;
-		let set = space.atCache.get(version);
-		if (!set) {
-			const s = new Set<AtomId>();
-			if (space.name !== SHARED) for (const id of this.at(this.shared, space.versions[version]!.sharedBase!)) s.add(id);
-			for (let v = 0; v <= version; v++) {
-				for (const id of space.versions[v]!.atoms) s.add(id);
-				for (const id of space.versions[v]!.dropped ?? []) s.delete(id);
-			}
-			set = s;
-			if (space.atCache.size > 16) space.atCache.clear();
-			space.atCache.set(version, set);
+		const key = `${spaceId(space)}:${version}`;
+		const kept = this.#sets.get(key);
+		if (kept) {
+			this.#sets.delete(key);
+			this.#sets.set(key, kept);
+			return kept;
 		}
-		return set;
+		const s = new Set<AtomId>();
+		if (space.name !== SHARED) for (const id of this.at(this.shared, space.versions[version]!.sharedBase!)) s.add(id);
+		for (let v = 0; v <= version; v++) {
+			for (const id of space.versions[v]!.atoms) s.add(id);
+			for (const id of space.versions[v]!.dropped ?? []) s.delete(id);
+		}
+		this.#sets.set(key, s);
+		if (this.#sets.size > MEMBERSHIP_SETS_KEPT) this.#sets.delete(this.#sets.keys().next().value!);
+		return s;
+	}
+
+	/** How many built sets the in-memory cache holds now (for tests). */
+	get setsKept(): number {
+		return this.#sets.size;
 	}
 }
