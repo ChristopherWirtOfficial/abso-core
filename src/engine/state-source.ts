@@ -609,8 +609,8 @@ export function readonlyStoredArray<T>(
 	return new Proxy([] as T[], {
 		get(target, key, receiver) {
 			if (key === "length") return length();
-			if (indexKey(key)) return Number(key) >= length() ? undefined : at(Number(key));
 			if (key === Symbol.iterator || key === "values") return inOrder;
+			if (indexKey(key)) return Number(key) >= length() ? undefined : at(Number(key));
 			return Reflect.get(target, key, receiver);
 		},
 		has(target, key) {
