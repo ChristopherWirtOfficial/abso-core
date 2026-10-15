@@ -1,3 +1,3 @@
-// Checks in code around the model's pick (#19): the open server's own, so the scripts score what it runs.
+// Checks in code around the model's pick (#19): the tool's own (worker/project/autosettle.ts), so the scripts score what the servers run.
 
-export { refused, ruled } from "../../server/src/autosettle.ts";
+export { refused, ruled } from "../../worker/project/autosettle.ts";

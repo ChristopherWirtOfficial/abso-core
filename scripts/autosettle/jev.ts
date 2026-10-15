@@ -7,9 +7,9 @@
 // is never printed or written anywhere.
 
 import { execFileSync } from "node:child_process";
-import { confidenceOf, SIGNS, systemOneBody } from "../../server/src/autosettle.ts";
+import { confidenceOf, SIGNS, systemOneBody } from "../../worker/project/autosettle.ts";
 
-// The questions are the open server's own (server/src/autosettle.ts), so Jev and Clef are asked alike.
+// The questions are the tool's own (worker/project/autosettle.ts), so Jev and Clef are asked alike.
 export { systemOneBody };
 
 export const ENDPOINT = "https://api.typesafe.ai/v1/systemone";

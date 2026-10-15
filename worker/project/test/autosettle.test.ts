@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type Ai, adviseHeld, refused, ruled } from "../src/autosettle.ts";
+import { type Ai, adviseHeld, refused, ruled } from "../autosettle.ts";
 
 /**
  * A stand-in for Workers AI that always leans to `pick`: a System One answer for Clef (`top` on `pick`, the rest
