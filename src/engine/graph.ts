@@ -262,6 +262,8 @@ export type PackedLine = [number, number, number, number, number];
 export type PackedDelete = [number, number];
 /** An attribute set on a file: [seq, name, value]. */
 export type PackedAttr = [number, string, string | null];
+/** A run written in another file under one of a file's lines: [the parent's n, the run's file index]. */
+export type PackedCrossing = [number, number];
 const EMPTY_NUMBERS: readonly number[] = Object.freeze([]);
 /** Lines longer than this aren't packed with their file; their text is read on its own. */
 const PACKED_TEXT = 4096;
@@ -599,13 +601,16 @@ export class Graph {
 			this.#fileTexts = storedLists<string | null>(storage, "file-texts");
 			this.#fileDeletes = storedLists<PackedDelete>(storage, "file-deletes");
 			this.#fileAttrs = storedLists<PackedAttr>(storage, "file-attrs");
+			this.#fileCrossings = storedLists<PackedCrossing>(storage, "file-crossings");
 			this.#packFiles = options.packFiles ?? true;
 		}
 	}
 
 	// Each file's line history packed, in pages (abso Capacity) ---------------------------------------------------
 	// For each file, by its path index: every line written in it ([n, parent code, writer seq, k, replaces]) and its
-	// text, every delete of one of those lines ([n, deleter seq]), and every attribute set on it ([seq, name, value]).
+	// text, every delete of one of those lines ([n, deleter seq]), every attribute set on it ([seq, name, value]), and
+	// every run written in another file under one of its lines ([parent n, the run's file]): a line follows its parent,
+	// so a run written while its parent was moved elsewhere lays out wherever the parent is.
 	// Appended as atoms are added, so a view lays a file out from a few pages instead of a row read per line. Kept from
 	// a fresh adoption on; a graph adopted before has none, and views lay out as before.
 
@@ -613,18 +618,38 @@ export class Graph {
 	#fileTexts: ReturnType<typeof storedLists<string | null>> | undefined;
 	#fileDeletes: ReturnType<typeof storedLists<PackedDelete>> | undefined;
 	#fileAttrs: ReturnType<typeof storedLists<PackedAttr>> | undefined;
+	#fileCrossings: ReturnType<typeof storedLists<PackedCrossing>> | undefined;
 	/** Whether a new stored graph starts packing (GraphOptions.packFiles). */
 	#packFiles = true;
-	/** Whether this graph's files are packed: read once, when first asked, so opening reads nothing. */
-	#packedKnown: boolean | undefined;
+	/**
+	 * How this graph's files are packed, read once when first asked so opening reads nothing: 0 not at all, 1 lines,
+	 * deletes and attributes, 2 the runs written across files as well.
+	 */
+	#formatKnown: number | undefined;
+	get #format(): number {
+		if (this.#formatKnown === undefined) {
+			const format = this.#storage?.read("file-lines:meta", "format");
+			this.#formatKnown = format === 1 || format === 2 ? format : 0;
+		}
+		return this.#formatKnown;
+	}
 	get #packed(): boolean {
-		this.#packedKnown ??= !!this.#storage && this.#storage.read("file-lines:meta", "format") === 1;
-		return this.#packedKnown;
+		return this.#format >= 1;
+	}
+	get #crossings(): boolean {
+		return this.#format >= 2;
 	}
 
 	/** Whether this graph keeps each file's line history packed. */
 	get packedFiles(): boolean {
 		return this.#packed;
+	}
+	/**
+	 * Whether a file can be laid out from packed history alone: it also keeps the runs written across files. A graph
+	 * packed before those were kept lays files out line by line.
+	 */
+	get packedLayout(): boolean {
+		return this.#crossings;
 	}
 	/** A path's index, or undefined when nothing was ever written or set in it. */
 	pathIndexOf(path: string): number | undefined {
@@ -645,6 +670,9 @@ export class Graph {
 	}
 	*packedAttrs(file: number): IterableIterator<PackedAttr> {
 		yield* this.#fileAttrs!.values(String(file));
+	}
+	*packedCrossings(file: number): IterableIterator<PackedCrossing> {
+		yield* this.#fileCrossings!.values(String(file));
 	}
 
 	/** Where an atom's key and delete lists are when the graph doesn't keep them (#46): the stored atom. */
@@ -1449,8 +1477,8 @@ export class Graph {
 			this.#storage.write("ordered-children", "format", 2);
 		}
 		if (this.#storage && this.#atoms.length === 0 && this.#packFiles) {
-			this.#storage.write("file-lines:meta", "format", 1);
-			this.#packedKnown = true;
+			this.#storage.write("file-lines:meta", "format", 2);
+			this.#formatKnown = 2;
 		}
 
 		if (this.#storage) this.withProjectionScratch((scratch) => this.#validateAcceptedAtom(atom, scratch));
@@ -1535,6 +1563,10 @@ export class Graph {
 			else pushOne(this.#runStarts, parent, first);
 			const replacesParent = deletes(run.parent) ? 1 : 0;
 			if (this.#packed) {
+				if (this.#crossings && parent >= 0) {
+					const from = this.#lineFile.at(parent);
+					if (from !== file) this.#fileCrossings!.append(String(from), [parent, file]);
+				}
 				const base = this.#lineBase[seq]!;
 				this.#fileLines!.appendAll(
 					String(file),

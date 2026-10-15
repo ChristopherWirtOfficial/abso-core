@@ -597,7 +597,7 @@ export class View {
 	/** Lay out one file: its line tree from the set's atoms, linearized. */
 	#layout(path: string, complete: boolean): FileState {
 		const graph = this.graph;
-		if (graph.packedFiles && !this.#scratchMoves()) return this.#layoutPacked(path, complete);
+		if (graph.packedLayout && !this.#scratchMoves()) return this.#layoutPacked(path, complete);
 		if (this.#scratchMoves())
 			return graph.withProjectionScratch((scratch) =>
 				this.#layoutResolved(
@@ -632,9 +632,9 @@ export class View {
 	}
 
 	/**
-	 * Lay one file out from its packed history (abso Capacity, Graph.packedLines): the lines written in it, and in the
-	 * files its moved-in lines came from, read a page at a time; the same tree and order as #layoutResolved, built in
-	 * memory with no read per line.
+	 * Lay one file out from its packed history (abso Capacity, Graph.packedLines): the lines written in it, in the files
+	 * its moved-in lines came from, and in the files runs under any of those lines were written in, read a page at a
+	 * time; the same tree and order as #layoutResolved, built in memory with no read per line.
 	 */
 	#layoutPacked(path: string, complete: boolean): FileState {
 		const graph = this.graph;
@@ -670,6 +670,8 @@ export class View {
 				if (by) by.push(deleter);
 				else deleters.set(n, [deleter]);
 			}
+			// Runs written elsewhere under this file's lines follow them; the loop reads their files too.
+			for (const [parent, into] of graph.packedCrossings(file)) if (texts.has(parent)) files.add(into);
 		}
 		const order = (a: Child, b: Child) =>
 			b.replaces - a.replaces || b.lamport - a.lamport || b.seq - a.seq || a.k - b.k;
