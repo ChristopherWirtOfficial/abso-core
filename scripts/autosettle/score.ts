@@ -1,6 +1,6 @@
 // Score a model against how agents really settled past holds (#19).
 //
-//   node scripts/autosettle/score.ts <cases.json> [--via workers-ai|jev] [--model <id>] [--out <report.json>]
+//   node scripts/autosettle/score.ts <cases.json> [--via workers-ai|clef|jev] [--model <id>] [--out <report.json>]
 //
 // --via workers-ai (the default) needs the Worker in workers-ai/ running under wrangler dev.
 //
@@ -9,6 +9,7 @@
 // both, or rewrote, which counts as "agent": a hand edit). --via jev needs JEV_API_KEY.
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { askClef } from "./clef.ts";
 import { ask, dollars, type Hold, PICKS, type Pick } from "./jev.ts";
 import { askWorkersAi } from "./workers-ai.ts";
 
@@ -70,7 +71,12 @@ const rows: { id: string; truth: Pick; verdict: Verdict; right: boolean }[] = []
 for (const c of cases) {
 	try {
 		const model = flag(args, "--model") ? { model: flag(args, "--model")! } : {};
-		const verdict: Verdict = via === "jev" ? await ask(holdOf(c), model) : await askWorkersAi(holdOf(c), model);
+		const verdict: Verdict =
+			via === "jev"
+				? await ask(holdOf(c), model)
+				: via === "clef"
+					? await askClef(holdOf(c), { model: (model.model as "clef" | "clef-flash") ?? "clef" })
+					: await askWorkersAi(holdOf(c), model);
 		const t = truth(c.kept);
 		rows.push({ id: c.id, truth: t, verdict, right: verdict.pick === t });
 		console.log(

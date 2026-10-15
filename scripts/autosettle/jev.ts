@@ -124,32 +124,43 @@ function top(p: Record<Pick, number>): Pick {
 	return PICKS.reduce((a, b) => (p[b] > p[a] ? b : a));
 }
 
-/** Ask Jev once, with the choice in two option orders (Jev's docs warn order can sway a Choice) and the side questions. */
-export async function ask(h: Hold, opts: { model?: string; key?: string } = {}): Promise<Verdict> {
-	const forward = PICKS;
-	const backward = [...PICKS].reverse();
-	const body = {
-		model: opts.model ?? "jev-latest",
+/**
+ * One System One request (TypeSafe's API, which Cloudflare's Clef also takes): the choice in two option orders
+ * (Jev's docs warn order can sway a Choice) and the side questions.
+ */
+export function systemOneBody(h: Hold, model: string) {
+	return {
+		model,
 		state: stateOf(h),
 		questions: {
-			settle: choice(forward),
-			settle_reversed: choice(backward),
+			settle: choice(PICKS),
+			settle_reversed: choice([...PICKS].reverse()),
 			...Object.fromEntries(Object.entries(SIGNS).map(([id, q]) => [id, { type: "noul", instructions: q }])),
 		},
 	};
+}
+
+export interface SystemOneAnswer {
+	model: string;
+	answers: Record<string, { type: string; probabilities?: Record<string, number>; noul?: number; choice?: string }>;
+	usage?: { input_tokens?: number };
+}
+
+/** Ask Jev once. */
+export async function ask(h: Hold, opts: { model?: string; key?: string } = {}): Promise<Verdict> {
 	const started = performance.now();
 	const res = await fetch(ENDPOINT, {
 		method: "POST",
 		headers: { authorization: `Bearer ${opts.key ?? apiKey()}`, "content-type": "application/json" },
-		body: JSON.stringify(body),
+		body: JSON.stringify(systemOneBody(h, opts.model ?? "jev-latest")),
 	});
 	const ms = performance.now() - started;
 	if (!res.ok) throw new Error(`Jev answered ${res.status}: ${(await res.text()).slice(0, 500)}`);
-	const out = (await res.json()) as {
-		model: string;
-		answers: Record<string, { type: string; probabilities?: Record<string, number>; noul?: number; choice?: string }>;
-		usage: { input_tokens: number };
-	};
+	return verdictOf((await res.json()) as SystemOneAnswer, ms);
+}
+
+/** A System One answer to systemOneBody's questions, as a Verdict. */
+export function verdictOf(out: SystemOneAnswer, ms: number): Verdict {
 	const orders = ["settle", "settle_reversed"].map((id) => {
 		const probabilities = Object.fromEntries(PICKS.map((k) => [k, out.answers[id]!.probabilities![k] ?? 0])) as Record<
 			Pick,
@@ -168,7 +179,7 @@ export async function ask(h: Hold, opts: { model?: string; key?: string } = {}):
 		signs: Object.fromEntries(Object.keys(SIGNS).map((id) => [id, out.answers[id]?.noul ?? Number.NaN])),
 		model: out.model,
 		ms,
-		inputTokens: out.usage.input_tokens,
+		inputTokens: out.usage?.input_tokens ?? 0,
 	};
 }
 

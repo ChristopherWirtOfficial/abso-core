@@ -74,6 +74,18 @@ const SCHEMA = {
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		if (request.method !== "POST") return new Response("POST a hold", { status: 405 });
+		// POST /system-one: a System One request (state and typed questions) for a Clef decision model, passed through.
+		if (new URL(request.url).pathname === "/system-one") {
+			const body = (await request.json()) as { model?: string };
+			const id = body.model === "clef-flash" ? "@cf/cloudflare/clef-flash" : "@cf/cloudflare/clef";
+			const started = Date.now();
+			try {
+				const out = await env.AI.run(id, { ...body, model: body.model ?? "clef" });
+				return Response.json({ ...(out as object), ms: Date.now() - started });
+			} catch (e) {
+				return Response.json({ error: (e as Error).message, model: id }, { status: 502 });
+			}
+		}
 		const {
 			hold,
 			model = DEFAULT_MODEL,
