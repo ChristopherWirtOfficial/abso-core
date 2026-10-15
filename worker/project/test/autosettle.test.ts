@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type Ai, adviseHeld, refused, ruled } from "../autosettle.ts";
+import { type Ai, adviseHeld, refused, ruled, withAdvice } from "../autosettle.ts";
 
 /**
  * A stand-in for Workers AI that always leans to `pick`: a System One answer for Clef (`top` on `pick`, the rest
@@ -92,4 +92,23 @@ test("a model that fails leaves no advice instead of failing the push's answer",
 	};
 	const [a] = await adviseHeld(ai, [held("a = 1", "b = 2")], me);
 	assert.equal(a, null);
+});
+
+test("the switch: off leaves the answer alone, on adds advice, act also tells the client to settle", async () => {
+	const answer = { ok: false, collisions: [routes] };
+	const request = { message: "my reason" };
+	assert.equal(await withAdvice({ AI: fakeAi("both") }, "publish", "me", request, answer), answer);
+	assert.equal(await withAdvice({ AUTOSETTLE: "on", AI: fakeAi("both") }, "draft", "me", request, answer), answer);
+	const on = (await withAdvice({ AUTOSETTLE: "on", AI: fakeAi("both") }, "publish", "me", request, answer)) as {
+		advice?: unknown[];
+		settle?: boolean;
+	};
+	assert.equal(on.advice?.length, 1);
+	assert.equal(on.settle, undefined);
+	const act = (await withAdvice({ AUTOSETTLE: "act", AI: fakeAi("both") }, "publish", "me", request, answer)) as {
+		settle?: boolean;
+	};
+	assert.equal(act.settle, true);
+	const ok = { ok: true, version: 4 };
+	assert.equal(await withAdvice({ AUTOSETTLE: "act", AI: fakeAi("both") }, "publish", "me", request, ok), ok);
 });

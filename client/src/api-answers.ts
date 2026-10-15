@@ -88,7 +88,14 @@ export type PublishAnswer =
 	  }
 	/** With the merge queue on (#39): queued, not landed yet; `ahead` publishes wait in front of it. */
 	| { ok: true; queued: number; position: number; ahead: number; changes: number; settled?: readonly Settled[] }
-	| { ok: false; collisions: readonly Collision[]; reason?: string; advice?: readonly (Advice | null)[] };
+	| {
+			ok: false;
+			collisions: readonly Collision[];
+			reason?: string;
+			advice?: readonly (Advice | null)[];
+			/** The server runs AUTOSETTLE=act: settle the collisions it advised a side of, and push again (#19). */
+			settle?: boolean;
+	  };
 /**
  * A server's first opinion on one collision of a held push (#19), when it runs AUTOSETTLE: which settle fits,
  * how sure, and why. `by`: rule (code decided), model (Workers AI), turned down (the model's pick would break

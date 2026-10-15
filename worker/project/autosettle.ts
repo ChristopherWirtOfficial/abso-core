@@ -1,6 +1,6 @@
 // A first opinion on a held push (#19), shared by the open server and the platform: for each collision, which of abso's
 // settle choices fits, from Workers AI, with checks in code before and after.
-// Off unless AUTOSETTLE is "on" and the Worker has an AI binding. The model
+// Off unless AUTOSETTLE is "on" (advice) or "act" (the client settles) and the Worker has an AI binding. The model
 // picks one of four words; it never writes code.
 
 /** abso's settle choices, plus a hand edit by an agent. */
@@ -356,4 +356,43 @@ export async function adviseHeld(
 			}
 		}),
 	);
+}
+
+/** The switch as a Worker's env carries it: AUTOSETTLE "on" advises, "act" also has the client settle; else off. */
+export interface AutosettleEnv {
+	readonly AUTOSETTLE?: string;
+	readonly AUTOSETTLE_MODEL?: string;
+	readonly AUTOSETTLE_AT?: string | number;
+	readonly AI?: Ai;
+}
+
+/**
+ * The one hook for a server (#19): a publish answer with the first opinion added when the push was held and the
+ * switch is on, or the answer as it was. Under "act" it also says `settle: true`, and the client settles the
+ * collisions advised to a side and pushes again; under "on" the client only shows the advice.
+ */
+export async function withAdvice(
+	env: AutosettleEnv,
+	op: string | undefined,
+	agent: string | undefined,
+	request: unknown,
+	answer: unknown,
+): Promise<unknown> {
+	const mode = env.AUTOSETTLE;
+	if (op !== "publish" || (mode !== "on" && mode !== "act") || !env.AI || !agent) return answer;
+	const held = answer as { ok?: boolean; collisions?: readonly HeldCollision[] } | null;
+	if (held?.ok !== false || !held.collisions || held.collisions.length === 0) return answer;
+	const message = String((request as { message?: unknown } | null | undefined)?.message ?? "");
+	const at = Number(env.AUTOSETTLE_AT);
+	const advice = await adviseHeld(
+		env.AI,
+		held.collisions,
+		{ agent, message },
+		{
+			...(env.AUTOSETTLE_MODEL ? { model: env.AUTOSETTLE_MODEL } : {}),
+			...(at > 0 ? { at } : {}),
+		},
+	);
+	if (!advice.some((x) => x !== null)) return answer;
+	return { ...held, advice, ...(mode === "act" ? { settle: true } : {}) };
 }

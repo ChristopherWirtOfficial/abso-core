@@ -461,8 +461,9 @@ async function publishSteps(
 	const newer = real.filter((c) => c.kind !== "duplicate");
 	// The server's first opinion on each collision (#19), when it runs AUTOSETTLE.
 	const advice = answer.advice ?? [];
-	// When it says to keep a side of every collision, settle them here and push again (ABSO_AUTOSETTLE=off stops it).
-	const plan = autoSettled ? null : autoPlan(collisions, advice, env);
+	// When the server says to settle (its AUTOSETTLE=act) and to keep a side of every collision, settle them here and
+	// push again (ABSO_AUTOSETTLE=off stops it).
+	const plan = autoSettled || answer.settle !== true ? null : autoPlan(collisions, advice, env);
 	if (plan) {
 		const pulled = await runSync({ positionals: [], flags: new Map() }, env);
 		const done: string[] = [];
