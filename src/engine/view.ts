@@ -859,15 +859,17 @@ export class View {
 	/** Atom-building line handles; text is loaded only when requested. */
 	buildLines(path: string): readonly VisibleLine[] {
 		const graph = this.graph;
-		const vis = this.#file(path).vis;
+		// Texts the packed layout already holds are not read again (abso Capacity).
+		const { vis, visText } = this.#file(path);
 		const lines: VisibleLine[] = new Array(vis.length);
 		for (let i = 0; i < vis.length; i++) {
 			const n = vis[i]!;
+			const packed = visText?.[i];
 			lines[i] = {
 				id: graph.lineIdOf(n),
 				textChunks: () => graph.textChunks(n),
 				get text() {
-					return graph.textOf(n);
+					return packed ?? graph.textOf(n);
 				},
 				atom: graph.idOfSeq(graph.writerSeqOf(n)),
 			};
@@ -879,11 +881,15 @@ export class View {
 	lines(path: string): readonly VisibleLine[] {
 		if (this.#linesCache?.path === path) return this.#linesCache.lines;
 		const graph = this.graph;
-		const vis = this.#file(path).vis;
+		const { vis, visText } = this.#file(path);
 		const lines: VisibleLine[] = new Array(vis.length);
 		for (let i = 0; i < vis.length; i++) {
 			const n = vis[i]!;
-			lines[i] = { id: graph.lineIdOf(n), text: graph.textOf(n), atom: graph.idOfSeq(graph.writerSeqOf(n)) };
+			lines[i] = {
+				id: graph.lineIdOf(n),
+				text: visText?.[i] ?? graph.textOf(n),
+				atom: graph.idOfSeq(graph.writerSeqOf(n)),
+			};
 		}
 		this.#linesCache = { path, lines };
 		return lines;

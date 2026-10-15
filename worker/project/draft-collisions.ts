@@ -2,6 +2,7 @@
 // is the project in memory.
 
 import { type AtomId, type Graph, parseKey, type ReadView } from "../../src/engine/index.ts";
+import { StableSet, unionOverlay } from "../../src/engine/state-source.ts";
 import { claimantsAmong, describeSide, fileOfKey, pairsFrom } from "./collisions.ts";
 import type { DefinitionRule } from "./definition-rule.ts";
 import { type Definition, definedTwice } from "./definitions.ts";
@@ -37,6 +38,29 @@ export interface DraftCollisionHost {
  * top of a file (refused once the second syncs onto the first's work). Exact for shared at `version`; as shared moves on, so can
  * the answer, as a real publish's would. `file` or `folder` narrows it.
  */
+/**
+ * A set and some drafts' atoms, by lookup (abso Capacity): copying shared's atoms into a new set read every one of them
+ * from disk on a stored writer, once per pair of agents.
+ */
+class WithDrafts extends StableSet<AtomId> {
+	readonly retainedBytes: number;
+	readonly #base: ReadonlySet<AtomId>;
+	readonly #drafts: ReadonlySet<AtomId>;
+	constructor(base: ReadonlySet<AtomId>, drafts: Iterable<AtomId>) {
+		super();
+		this.#base = base;
+		this.#drafts = new Set(drafts);
+		this.retainedBytes = 64 + this.#drafts.size * 32;
+	}
+	has(atom: AtomId): boolean {
+		return this.#drafts.has(atom) || this.#base.has(atom);
+	}
+	*values(): SetIterator<AtomId> {
+		yield* this.#base;
+		for (const atom of this.#drafts) if (!this.#base.has(atom)) yield atom;
+	}
+}
+
 export function draftCollisions(
 	host: DraftCollisionHost,
 	options: { file?: string; folder?: string } = {},
@@ -71,11 +95,14 @@ export function draftCollisions(
 		if (!set) draftSets.set(agent, (set = new Set(host.draft(agent))));
 		return set;
 	};
-	// Shared now with each agent's draft on top, once per agent: the key of a view of a set lists every atom in it.
+	// Shared now with each agent's draft on top, once per agent. Over shared's view's own set (abso Capacity): a view's set
+	// is closed under dependencies anyway, so shared's closed set and the drafts lay out what shared's atoms and the drafts
+	// do, and only the drafts' atoms are walked to close it.
+	const withDraftsView = (...drafts: readonly AtomId[][]) => host.view(unionOverlay(sharedView.set, drafts.flat()));
 	const nowViews = new Map<Agent, ReadView>();
 	const nowViewOf = (agent: Agent) => {
 		let view = nowViews.get(agent);
-		if (!view) nowViews.set(agent, (view = host.view(new Set([...shared, ...host.draft(agent)]))));
+		if (!view) nowViews.set(agent, (view = withDraftsView(host.draft(agent))));
 		return view;
 	};
 	// Each agent's touched files once, not once per pair (abso Capacity).
@@ -93,7 +120,7 @@ export function draftCollisions(
 			const draftA = host.draft(a);
 			const draftB = host.draft(b);
 			const newer = draftSet(a);
-			const union = new Set([...shared, ...draftA, ...draftB]);
+			const union = new WithDrafts(shared, [...draftA, ...draftB]);
 			const viewA = host.agentView(a);
 			const viewB = host.agentView(b);
 			if (i < j) {
@@ -134,15 +161,15 @@ export function draftCollisions(
 				const mineB = new Set(draftB);
 				const filesA = touchedBy(a);
 				for (const file of [...touchedBy(b)].filter((f) => filesA.has(f)).toSorted()) {
-					both ??= host.view(union);
+					both ??= withDraftsView(draftA, draftB);
 					if (!both.hasFile(file)) continue;
 					for (const [name, defs] of definedTwice(both, file)) {
-						const by = (mine: Set<AtomId>) => defs.find((d) => d.lines.some((l) => mine.has(host.graph.line(l)!.atom)));
+						const by = (mine: Set<AtomId>) => defs.find((d) => d.lines.some((l) => mine.has(host.graph.lineAtom(l)!)));
 						const dA = by(mineA);
 						const dB = by(mineB);
 						if (!dA || !dB || dA === dB) continue;
 						const atomsOf = (d: Definition, mine: Set<AtomId>) =>
-							d.lines.map((l) => host.graph.line(l)!.atom).filter((x) => mine.has(x));
+							d.lines.map((l) => host.graph.lineAtom(l)!).filter((x) => mine.has(x));
 						if (atomsOf(dA, mineA).some((x) => atomsOf(dB, mineB).some((y) => paired.has(`${x} ${y}`)))) continue;
 						out.push({
 							kind: "duplicate",

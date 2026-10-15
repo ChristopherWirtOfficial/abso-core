@@ -67,9 +67,11 @@ export class DefinitionRule {
 	 */
 	#replacedNames(line: LineId, base: ReadView, runsOf: Map<AtomId, readonly RunEnd[]>): ReadonlySet<string> {
 		const g = this.#graph;
-		const info = g.line(line);
-		if (!info) return EMPTY_NAMES;
-		const atom = g.atom(info.atom);
+		// The line's atom and place in it from its id (abso Capacity): line() reads its text as well.
+		if (g.lineN(line) < 0) return EMPTY_NAMES;
+		const dot = line.indexOf(".");
+		const atom = g.atom(line.slice(0, dot));
+		const k = Number(line.slice(dot + 1));
 		// Where each of the atom's runs ends, worked out once per check (abso issue 158): reading a run's
 		// lines can mean reading its text back from the log, so not once per line of a big change.
 		let runs = runsOf.get(atom.id);
@@ -78,7 +80,7 @@ export class DefinitionRule {
 			runs = atom.inserts.map((run) => ({ end: (k += run.lines.length), parent: run.parent }));
 			runsOf.set(atom.id, runs);
 		}
-		const parent = runs.find((r) => info.k < r.end)?.parent;
+		const parent = runs.find((r) => k < r.end)?.parent;
 		if (parent === undefined || parent.startsWith("^") || !g.deletersOf(parent).includes(atom.id)) return EMPTY_NAMES;
 		const key = `${atom.id} ${parent}`;
 		let names = this.#replacedCache.get(key);
@@ -156,7 +158,7 @@ export class DefinitionRule {
 			// Who changed it: newer writers of the new definition's lines, or newer deleters of the old one's.
 			const by = new Set<AtomId>();
 			for (const d of after)
-				for (const line of d.lines) if (newer.has(this.#graph.line(line)!.atom)) by.add(this.#graph.line(line)!.atom);
+				for (const line of d.lines) if (newer.has(this.#graph.lineAtom(line)!)) by.add(this.#graph.lineAtom(line)!);
 			for (const d of before)
 				for (const line of d.lines) for (const x of this.#graph.deletersOf(line)) if (newer.has(x)) by.add(x);
 			const first = [...by].sort((p, q) => this.#graph.atom(p).seq - this.#graph.atom(q).seq)[0];
