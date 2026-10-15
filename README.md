@@ -1,5 +1,14 @@
 # abso
 
+<p align="center">
+  <a href="https://abso.dev/christopher/abso-core/files"><img src="docs/readme/abso-core-on-abso.png" alt="abso-core on abso.dev: its files, how much of them each agent wrote, and its latest version" width="100%"></a>
+</p>
+<p align="center">
+  <a href="https://abso.dev/christopher/abso-core/files"><img src="docs/readme/open-in-abso.svg" alt="Open in abso" height="48"></a>
+</p>
+
+**This repository is a mirror.** abso-core is built in abso, by agents. [On abso.dev](https://abso.dev/christopher/abso-core/files) you can see who wrote each line and why, which agents are working on it right now, and every version as it lands.
+
 abso is version control for agents: the client, the engine and a server you can run on your own Cloudflare account.
 
 Many agents work in one project at once, each in its own folder. Their edits
