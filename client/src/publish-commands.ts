@@ -293,6 +293,7 @@ async function publishSteps(
 	waitSeconds: number,
 	skippedCheck: boolean,
 	leftOut: LeftOut[],
+	autoSettled = false,
 ): Promise<Output> {
 	const recorded = await recordFolder(root, api, false, meantBinary(args));
 	leftOut.push(...recorded.leftOut);
@@ -458,8 +459,73 @@ async function publishSteps(
 	const real = collisions.filter((c) => !isLocalOnly(c.file));
 	const twice = real.filter((c) => c.kind === "duplicate");
 	const newer = real.filter((c) => c.kind !== "duplicate");
-	// The server's first opinion on each collision (#19), when it runs AUTOSETTLE. Advice only: the agent settles.
+	// The server's first opinion on each collision (#19), when it runs AUTOSETTLE.
 	const advice = answer.advice ?? [];
+	// When it says to keep a side of every collision, settle them here and push again (ABSO_AUTOSETTLE=off stops it).
+	const plan = autoSettled ? null : autoPlan(collisions, advice, env);
+	if (plan) {
+		const pulled = await runSync({ positionals: [], flags: new Map() }, env);
+		const done: string[] = [];
+		for (const [file, a] of plan) {
+			const path = absolute(root, file);
+			const text = readText(path);
+			const settled =
+				text === null || text === undefined ? null : settleText(text, a.pick as "yours" | "theirs" | "both");
+			if (!settled) continue;
+			if (settled.blocks > 0) {
+				writeFileAtomic(path, settled.text);
+				done.push(file);
+				continue;
+			}
+			// No marker block: the pull merged the lines itself. That counts when the file already holds the
+			// advised side's lines (keep both: both sides').
+			const lines = new Set(text!.split(/\r?\n/).map((l) => l.trim()));
+			const sides = collisions
+				.filter((c) => c.file === file)
+				.flatMap((c) => [
+					...(a.pick !== "theirs" ? [c.yours.text] : []),
+					...(a.pick !== "yours" ? [c.theirs.text] : []),
+				]);
+			const wanted = sides.flatMap((t) => t.split(/\r?\n/).map((l) => l.trim())).filter((l) => l !== "");
+			if (wanted.length > 0 && wanted.every((l) => lines.has(l))) done.push(file);
+		}
+		const left = [...plan.keys()].filter((f) => !done.includes(f));
+		if (left.length > 0)
+			return {
+				exit: EXIT.refused,
+				text: [
+					...pre,
+					pulled.text,
+					`Not pushed: the server advised settling ${left.join(", ")}, but the pull left no marker block there. Settle as the pull says, then push again.`,
+				].join("\n"),
+				json: { collisions, advice, autosettle: { pulled: true, settled: done, left } },
+			};
+		const why = [...plan].map(([file, a]) => `${file}: kept ${a.pick} (${a.reason})`).join("; ");
+		const again = await publishSteps(
+			args,
+			env,
+			root,
+			config,
+			api,
+			`${message}\n\nSettled automatically (abso 19): ${why}`,
+			checked,
+			waitSeconds,
+			skippedCheck,
+			leftOut,
+			true,
+		);
+		return {
+			...again,
+			text: [
+				...pre,
+				`Held: ${plural(collisions.length, "collision")} with work pushed since your last pull. Settled automatically, as the server advised:`,
+				...[...plan].map(([file, a]) => `  ${file}: ${adviceWords(a)}`),
+				again.text,
+				"Check what was kept with abso show <version>:<file>; to change it, edit the file and push. ABSO_AUTOSETTLE=off settles nothing by itself.",
+			].join("\n"),
+			json: { ...(again.json as object), autosettled: Object.fromEntries(plan) },
+		};
+	}
 	return {
 		exit: EXIT.refused,
 		text: [
@@ -509,6 +575,29 @@ function adviceWords(a: Advice): string {
 					? `the model leaned to keep ${a.modelPick} at ${a.confidence.toFixed(2)}`
 					: `confidence ${a.confidence.toFixed(2)}`;
 	return `${what} (${how}): ${a.reason}`;
+}
+
+/**
+ * What to settle by itself (#19), file by file, or null to leave it to the agent: every collision a lines collision
+ * the server advised keeping a side of (it advises a side only at or above its threshold), each file's advice the
+ * same, nothing still queued or local-only, and ABSO_AUTOSETTLE not "off".
+ */
+function autoPlan(
+	collisions: readonly Collision[],
+	advice: readonly (Advice | null)[],
+	env: Env,
+): Map<string, Advice> | null {
+	if (fromEnv(env.env, "AUTOSETTLE") === "off" || collisions.length === 0) return null;
+	const plan = new Map<string, Advice>();
+	for (const [i, c] of collisions.entries()) {
+		const a = advice[i];
+		if ((c.kind ?? "lines") !== "lines" || c.untouched || c.marked || c.theirs.queued !== undefined) return null;
+		if (isLocalOnly(c.file) || !a || a.pick === "agent") return null;
+		const before = plan.get(c.file);
+		if (before && before.pick !== a.pick) return null;
+		if (!before || a.confidence < before.confidence) plan.set(c.file, a);
+	}
+	return plan;
 }
 
 export async function runSync(args: Parsed, env: Env): Promise<Output> {
