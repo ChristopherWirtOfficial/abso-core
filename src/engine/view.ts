@@ -295,6 +295,8 @@ export class View {
 	 */
 	#relocations(): Map<LineId, RelocationInfo> {
 		if (this.#relocs) return this.#relocs;
+		this.#takeShared();
+		if (this.#relocs) return this.#relocs;
 		const graph = this.graph;
 		const skeleton = skeletonOf(graph);
 		const stronger = (a: RelocationInfo, b: RelocationInfo): boolean => graph.comparePriority(a.atom, b.atom) > 0;
@@ -365,13 +367,25 @@ export class View {
 		return this.#relocs;
 	}
 
+	/** The view whose moves this one may take, until it needs them all; then the view it took them from. */
+	#movesFrom: View | undefined;
+	#movesTaken: View | undefined;
+
 	/**
 	 * Take another view's resolved moves (abso Capacity), when both sets hold the very same atoms that move lines: the
-	 * moves then resolve the same, and every line sits where it sits there. Checked here, so any caller may ask.
+	 * moves then resolve the same, and every line sits where it sits there. Checked when this view first needs all its
+	 * moves, so any caller may ask, and a view that only finds a few lines' files never resolves them.
 	 */
 	shareMoves(from: View): void {
-		if (from.graph !== this.graph || from.#hasMoves !== this.#hasMoves || !this.#hasMoves) return;
-		if (this.#relocs || from.#scratchMoves()) return;
+		if (from.graph !== this.graph || from.#hasMoves !== this.#hasMoves || !this.#hasMoves || this.#relocs) return;
+		this.#movesFrom = from;
+	}
+
+	#takeShared(): void {
+		const from = this.#movesFrom;
+		if (!from) return;
+		this.#movesFrom = undefined;
+		if (from.#scratchMoves()) return;
 		for (const id of this.graph.movers()) {
 			const seq = seqOf(id);
 			if (this.#has(seq) !== from.#has(seq)) return;
@@ -379,7 +393,27 @@ export class View {
 		this.#relocs = from.#relocations();
 		this.#relocsN = from.#relocationsN();
 		this.#movesOnDisk = false;
-		this.#movedFrom = from.#movedInFrom();
+		this.#movesTaken = from;
+	}
+
+	/** Moved lines' relocations picked one at a time, before the view resolves them all (null: not moved here). */
+	readonly #picked = new Map<number, MoveEntry | null>();
+
+	/**
+	 * The relocation of moved line n that counts here, as #relocations picks it before any loop: right whenever the
+	 * walk that reached n goes on to a file's start, since only lines on a loop have their relocation set aside.
+	 */
+	#pickOne(n: number): MoveEntry | undefined {
+		let picked = this.#picked.get(n);
+		if (picked === undefined) {
+			const graph = this.graph;
+			let best: MoveEntry | undefined;
+			for (const e of skeletonOf(graph).byLine.get(n) ?? []) {
+				if (this.#has(seqOf(e.r.atom)) && (!best || graph.comparePriority(e.r.atom, best.r.atom) > 0)) best = e;
+			}
+			this.#picked.set(n, (picked = best ?? null));
+		}
+		return picked ?? undefined;
 	}
 
 	/** Whether moves are resolved on disk for each layout: only a stored graph's view with more than MOVED_LINES_KEPT. */
@@ -453,8 +487,21 @@ export class View {
 	/** The file a node sits in, in this set: up by where lines were written, through the moves that count here. */
 	#fileOfCode(code: number): string {
 		const graph = this.graph;
-		const relocs = this.#relocationsN();
 		const skeleton = skeletonOf(graph);
+		if (!this.#relocsN) {
+			// One moved line at a time, until a walk comes back to a line it passed: then moves loop, and are resolved whole.
+			const passed = new Set<number>();
+			let c = code;
+			for (;;) {
+				c = skeleton.climb(c);
+				if (c < 0) return graph.nodeOf(c).slice(1);
+				if (passed.has(c)) break;
+				passed.add(c);
+				const e = this.#pickOne(c);
+				c = e ? e.parent : graph.parentCodeOf(c);
+			}
+		}
+		const relocs = this.#relocationsN();
 		let c = code;
 		for (;;) {
 			c = skeleton.climb(c);
@@ -569,6 +616,8 @@ export class View {
 	#movedFrom: Map<string, Set<number>> | undefined;
 	#movedInFrom(): Map<string, Set<number>> {
 		if (this.#movedFrom) return this.#movedFrom;
+		this.#relocations();
+		if (this.#movesTaken) return (this.#movedFrom = this.#movesTaken.#movedInFrom());
 		const graph = this.graph;
 		const out = new Map<string, Set<number>>();
 		if (this.#hasMoves) {
@@ -962,6 +1011,7 @@ export class View {
 		if (this.#knownList) n += ARRAY_HEADER_BYTES + REFERENCE_BYTES * this.#knownList.length;
 		if (this.#relocs) n += MAP_HEADER_BYTES + MAP_ENTRY_BYTES * this.#relocs.size;
 		if (this.#relocsN) n += MAP_HEADER_BYTES + (MAP_ENTRY_BYTES + OBJECT_BYTES) * this.#relocsN.size;
+		n += MAP_ENTRY_BYTES * this.#picked.size;
 		for (const f of this.#files.values()) {
 			n += MAP_ENTRY_BYTES;
 			if (f !== NO_FILE) {

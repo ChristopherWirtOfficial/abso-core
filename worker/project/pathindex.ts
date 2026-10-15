@@ -41,6 +41,28 @@ export class PathIndex {
 	/** Each version's files made and taken out, and moves (#41), worked out with its files. */
 	readonly #shapeCache = new WeakMap<Space, Map<number, VersionShape>>();
 
+	/** The files at the newest version folded so far from kept shapes, per space (keptPaths). */
+	readonly #keptPaths = new WeakMap<Space, { version: number; files: Set<string> }>();
+
+	/**
+	 * The files a space has at a version, from the kept rows of every version up to it: each one's files made and
+	 * taken out, folded from version 0 (abso Capacity). Undefined when a version has no kept row that describes it;
+	 * then the caller lays the version out.
+	 */
+	keptPaths(space: Space, version: number): string[] | undefined {
+		let fold = this.#keptPaths.get(space);
+		if (!fold || fold.version > version) fold = { version: -1, files: new Set() };
+		const files = new Set(fold.files);
+		for (let v = fold.version + 1; v <= version; v++) {
+			if (!this.#keptFiles(space, v)) return undefined;
+			const shape = this.#shapeCache.get(space)!.get(v)!;
+			for (const f of shape.gone) files.delete(f);
+			for (const f of shape.made) files.add(f);
+		}
+		this.#keptPaths.set(space, { version, files });
+		return [...files].sort();
+	}
+
 	/** Each space's path index (#41): built the first time it's asked for, then kept up as versions land. */
 	readonly #pathIndex = new WeakMap<Space, { upTo: number; paths: Map<string, PathLife> }>();
 

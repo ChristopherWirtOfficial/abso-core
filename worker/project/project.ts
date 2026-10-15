@@ -2643,6 +2643,9 @@ export class Project {
 			spaceNamed: (name) => this.#spaceNamed(name),
 			checkVersion: (space, version) => this.#checkVersion(space, version),
 			viewAt: (space, version) => this.#viewAt(space, version),
+			// Shared's lists from kept shapes on a stored writer, where a version's layout reads its files from disk.
+			keptPaths: (space, version) =>
+				this.#writerStorage && space.name === SHARED ? this.#paths.keptPaths(space, version) : undefined,
 			agentView: (agent) => this.#agentView(agent),
 			version: () => this.version,
 			projectFile: () => (this.initialized ? projectFileIn(this.#sharedView()) : undefined),

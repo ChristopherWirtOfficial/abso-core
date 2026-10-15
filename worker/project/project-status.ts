@@ -40,6 +40,8 @@ export interface SnapshotHost {
 	spaceNamed(name: string | null): Space;
 	checkVersion(space: Space, version: number): void;
 	viewAt(space: Space, version: number): ReadView;
+	/** A version's file list from kept version shapes, when every version up to it has one (pathindex.ts). */
+	keptPaths?(space: Space, version: number): string[] | undefined;
 	agentView(agent: AgentState): ReadView;
 	version(): number;
 	/** Shared's project file (224), or undefined before init or without one. */
@@ -74,7 +76,7 @@ export function pathsAt(
 	const space = host.spaceNamed(draft);
 	const v = version ?? last(space);
 	host.checkVersion(space, v);
-	return { version: v, draft, files: host.viewAt(space, v).paths() };
+	return { version: v, draft, files: host.keptPaths?.(space, v) ?? host.viewAt(space, v).paths() };
 }
 
 /**
