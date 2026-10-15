@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { runAnnounce, runNews, runStart } from "./announce.ts";
 import { ApiError } from "./api.ts";
 import { bool, type FlagSpec, type Parsed, parseArgs, str, UsageError } from "./args.ts";
+import { runAutosettle } from "./autosettle-commands.ts";
 import { bodyFilesHelp, readBodyFiles, withBodyFiles } from "./body-files.ts";
 import { boxPublic, boxText, login, loginRequest, logout, readBox } from "./box.ts";
 import { runDiff, runFiles, runLog, runRestore, runShow } from "./changes.ts";
@@ -544,6 +545,13 @@ const COMMANDS: Readonly<Record<string, CommandDef>> = {
 		about:
 			"Whether the project is public. With no word, says which. public, with --yes, lets anyone read it, signed in or not: files, versions, drafts, notes, Issues, people's names, CI as pass or fail; never keys, CI logs, preview links or boxes. private makes it members-only again. Switching takes the project owner's key (on staging, the shared token works too).",
 		run: runVisibility,
+	},
+	autosettle: {
+		flags: { at: "string" },
+		usage: "abso autosettle [off|advise|settle] [--at 0.3-0.95]",
+		about:
+			"What the server does with a held push (abso-core 23). With no word, says which. advise: each collision comes back with a model's pick (keep yours, keep theirs, keep both, or leave it to an agent), how sure it is, and why; the agent still settles. settle: when the model is at least --at sure about every collision, your abso settles it and pushes again by itself, saying so in the message; anything less sure stays held, with the advice. off: held pushes come back as they always have. New projects start on advise. Changing it takes the project owner's key (on staging, the shared token works too). ABSO_AUTOSETTLE=off on a machine makes its abso settle nothing by itself.",
+		run: runAutosettle,
 	},
 	ci: {
 		flags: { version: "string", revoke: "boolean" },

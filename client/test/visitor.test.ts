@@ -58,6 +58,7 @@ const REFUSED = [
 	"reply",
 	"unqueue",
 	"visibility",
+	"autosettle",
 	"ci",
 	"shot",
 	"prep",

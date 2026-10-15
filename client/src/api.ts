@@ -19,6 +19,7 @@ import type {
 	SyncAnswer,
 } from "./api-answers.ts";
 import { ApiError, errorSentence, neverSent } from "./api-error.ts";
+import type { AutosettleAnswer, AutosettleMode } from "./autosettle-commands.ts";
 import {
 	boxQuery,
 	consumeRun,
@@ -715,6 +716,16 @@ export class Api {
 	/** Switch the project's visibility (abso issue 140): an owner's key, or the shared token on staging. */
 	setVisibility(v: "public" | "private"): Promise<{ project: string; visibility: "public" | "private" }> {
 		return this.json("POST", `/visibility?visibility=${v}`, {});
+	}
+
+	/** The project's auto-settle choice (abso-core 23): off, advise or settle, and how sure before abso settles. */
+	autosettle(): Promise<AutosettleAnswer> {
+		return this.json("GET", "/autosettle");
+	}
+
+	/** Change it (abso-core 23): an owner's key, or the shared token on staging. Without `at`, the server keeps its own. */
+	setAutosettle(mode: AutosettleMode, at?: number): Promise<AutosettleAnswer> {
+		return this.json("POST", `/autosettle?mode=${mode}${at === undefined ? "" : `&at=${at}`}`, {});
 	}
 
 	/** Take back this agent's queued publishes (#39); refused while one is being checked. */
