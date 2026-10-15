@@ -95,7 +95,6 @@ const MAP_HEADER_BYTES = 32;
 const MAP_ENTRY_BYTES = 40;
 const SET_ENTRY_BYTES = 32;
 const REFERENCE_BYTES = 8;
-const FILE_LOCATION_MEMO_ENTRIES = 256;
 /**
  * Moved lines a view resolves once and keeps (abso Capacity): a stored graph otherwise resolved every move again on
  * disk for each file it laid out. Game's whole history has 290; past this many, the view goes back to that.
@@ -103,8 +102,84 @@ const FILE_LOCATION_MEMO_ENTRIES = 256;
 export const MOVED_LINES_KEPT = 20_000;
 class TooManyMoves extends Error {}
 const NO_LINES: readonly number[] = Object.freeze([]);
-/** Lines whose place views sharing moves remember, at most: about 40 bytes each. */
-const SHARED_FILE_MEMO = 200_000;
+/** Nodes whose nearest moved line above a graph remembers, at most: about 40 bytes each. */
+const CLIMB_MEMO = 200_000;
+
+/** One relocation of a moved line, with its line's number and its new parent's code. */
+interface MoveEntry {
+	readonly n: number;
+	readonly r: RelocationInfo;
+	readonly parent: number;
+}
+
+/**
+ * A graph's moves, whatever the set (abso Capacity): each mover's moved lines, each moved line's relocations in seq
+ * order, and for any node the nearest node at or above it, by where lines were written, that a move ever relocated,
+ * or its file's start. Worked out once per graph and extended as it grows. A view's moves then resolve over the moved
+ * lines alone: before, every view walked each moved line's file up to its start, a read per line.
+ */
+class MoveSkeleton {
+	readonly #graph: Graph;
+	#seen = 0;
+	/** Movers in seq order, with the numbers of the lines each moves, in its moves' order. */
+	readonly movers: { readonly seq: number; readonly lines: readonly number[] }[] = [];
+	/** Every relocation of each moved line, by the line's number, in seq order. */
+	readonly byLine = new Map<number, MoveEntry[]>();
+	readonly #climbed = new Map<number, number>();
+
+	constructor(graph: Graph) {
+		this.#graph = graph;
+	}
+
+	/** Take in movers the graph gained since. */
+	update(): this {
+		const graph = this.#graph;
+		const all = graph.movers();
+		if (this.#seen === all.length) return this;
+		for (; this.#seen < all.length; this.#seen++) {
+			const id = all[this.#seen]!;
+			const lines: number[] = [];
+			graph.atom(id).moves!.forEach((m, k) => {
+				const n = graph.lineN(m.line);
+				const r: RelocationInfo = Object.freeze({ atom: id, line: m.line, parent: m.parent, k });
+				const entry: MoveEntry = { n, r, parent: graph.codeOf(m.parent)! };
+				const list = this.byLine.get(n);
+				if (list) list.push(entry);
+				else this.byLine.set(n, [entry]);
+				lines.push(n);
+			});
+			this.movers.push({ seq: seqOf(id), lines });
+		}
+		// A new moved line can sit between a node and the one it climbed to.
+		this.#climbed.clear();
+		return this;
+	}
+
+	/** The nearest node at or above this one, by where lines were written, that a move ever relocated; or its file's start. */
+	climb(code: number): number {
+		const walked: number[] = [];
+		let c = code;
+		while (c >= 0 && !this.byLine.has(c)) {
+			const known = this.#climbed.get(c);
+			if (known !== undefined) {
+				c = known;
+				break;
+			}
+			walked.push(c);
+			c = this.#graph.parentCodeOf(c);
+		}
+		if (this.#climbed.size + walked.length > CLIMB_MEMO) this.#climbed.clear();
+		for (const w of walked) this.#climbed.set(w, c);
+		return c;
+	}
+}
+
+const skeletons = new WeakMap<Graph, MoveSkeleton>();
+function skeletonOf(graph: Graph): MoveSkeleton {
+	let skeleton = skeletons.get(graph);
+	if (!skeleton) skeletons.set(graph, (skeleton = new MoveSkeleton(graph)));
+	return skeleton.update();
+}
 
 /**
  * The projection of a closed set. Construct once, then ask for files, lines
@@ -136,8 +211,6 @@ export class View {
 	#movedInto: Map<number, number[]> | undefined;
 	/** Whether this view's moves are too many to keep, so they're resolved on disk per layout; undefined until asked. */
 	#movesOnDisk: boolean | undefined;
-	/** Bounded memo: ancestry can span the entire history even for one visible line. */
-	#fileOf = new Map<number, string>();
 	/** The latest records asked for: one file's lines, one file's sequence, one file's text. */
 	#linesCache: { path: string; lines: readonly VisibleLine[] } | undefined;
 	#seqCache: { path: string; seq: readonly SeqLine[] } | undefined;
@@ -223,34 +296,46 @@ export class View {
 	#relocations(): Map<LineId, RelocationInfo> {
 		if (this.#relocs) return this.#relocs;
 		const graph = this.graph;
+		const skeleton = skeletonOf(graph);
 		const stronger = (a: RelocationInfo, b: RelocationInfo): boolean => graph.comparePriority(a.atom, b.atom) > 0;
-		// Persistent reads decode new objects. Cycle suppression must identify the
-		// logical move, not one particular decoded JavaScript object.
 		const identity = (r: RelocationInfo): string => JSON.stringify([r.atom, r.k]);
 		const ignored = new Set<string>();
-		const pick = (line: LineId): RelocationInfo | undefined => {
-			let best: RelocationInfo | undefined;
-			for (const r of graph.eachRelocationOf(line)) {
-				if (this.#has(graph.atom(r.atom).seq) && !ignored.has(identity(r)) && (!best || stronger(r, best))) best = r;
+		const pick = (n: number): MoveEntry | undefined => {
+			let best: MoveEntry | undefined;
+			for (const e of skeleton.byLine.get(n) ?? []) {
+				if (this.#has(seqOf(e.r.atom)) && !ignored.has(identity(e.r)) && (!best || stronger(e.r, best.r))) best = e;
 			}
 			return best;
 		};
-		const relocs = new Map<LineId, RelocationInfo>();
-		for (const id of this.#eachMover()) {
-			for (const m of graph.atom(id).moves!) {
-				if (!relocs.has(m.line)) relocs.set(m.line, pick(m.line)!);
+		// By the moved line's number, in the order its movers come (seq order, then each mover's moves).
+		const relocs = new Map<number, MoveEntry>();
+		for (const mover of skeleton.movers) {
+			if (!this.#has(mover.seq)) continue;
+			for (const n of mover.lines) {
+				if (!relocs.has(n)) relocs.set(n, pick(n)!);
 				if (graph.hasOrderedChildren && relocs.size > MOVED_LINES_KEPT) throw new TooManyMoves();
 			}
 		}
-		const parentOf = (line: LineId): NodeId => relocs.get(line)?.parent ?? graph.lineParent(line)!;
-		const reaches = new Set<LineId>();
+		// From a node, the next node that matters for loops: a line moved in this set, or a file's start.
+		const hop = (code: number): number => {
+			let c = skeleton.climb(code);
+			while (c >= 0 && !relocs.has(c)) c = skeleton.climb(graph.parentCodeOf(c));
+			return c;
+		};
+		const step = (n: number): number => {
+			const e = relocs.get(n);
+			return hop(e ? e.parent : graph.parentCodeOf(n));
+		};
+		// Two moves made apart can loop lines into each other, so no start node reaches them; then the oldest
+		// relocation on the loop is ignored, and the next newest of that line counts, until none loop.
+		const reaches = new Set<number>();
 		for (const line of [...relocs.keys()]) {
 			for (;;) {
-				const path: LineId[] = [];
-				const onPath = new Map<LineId, number>();
-				let cur: NodeId = line;
+				const path: number[] = [];
+				const onPath = new Map<number, number>();
+				let cur = line;
 				let loopAt = -1;
-				while (!isStartNode(cur) && !reaches.has(cur)) {
+				while (cur >= 0 && !reaches.has(cur)) {
 					const at = onPath.get(cur);
 					if (at !== undefined) {
 						loopAt = at;
@@ -258,29 +343,27 @@ export class View {
 					}
 					onPath.set(cur, path.length);
 					path.push(cur);
-					cur = parentOf(cur);
+					cur = step(cur);
 				}
 				if (loopAt < 0) {
 					for (const l of path) reaches.add(l);
 					break;
 				}
-				let weakest: RelocationInfo | undefined;
+				let weakest: MoveEntry | undefined;
 				for (const l of path.slice(loopAt)) {
-					const r = relocs.get(l);
-					if (r && (!weakest || stronger(weakest, r))) weakest = r;
+					const e = relocs.get(l);
+					if (e && (!weakest || stronger(weakest.r, e.r))) weakest = e;
 				}
-				ignored.add(identity(weakest!));
-				const next = pick(weakest!.line);
-				if (next) relocs.set(weakest!.line, next);
-				else relocs.delete(weakest!.line);
+				ignored.add(identity(weakest!.r));
+				const next = pick(weakest!.n);
+				if (next) relocs.set(weakest!.n, next);
+				else relocs.delete(weakest!.n);
 			}
 		}
-		this.#relocs = relocs;
-		return relocs;
+		this.#relocsN = new Map([...relocs].map(([n, e]) => [n, { r: e.r, parent: e.parent }]));
+		this.#relocs = new Map([...relocs.values()].map((e) => [e.r.line, e.r]));
+		return this.#relocs;
 	}
-
-	/** Where lines sit, shared with views that took this one's moves (shareMoves): unbounded up to SHARED_FILE_MEMO. */
-	#fileOfShared: Map<number, string> | undefined;
 
 	/**
 	 * Take another view's resolved moves (abso Capacity), when both sets hold the very same atoms that move lines: the
@@ -297,8 +380,6 @@ export class View {
 		this.#relocsN = from.#relocationsN();
 		this.#movesOnDisk = false;
 		this.#movedFrom = from.#movedInFrom();
-		from.#fileOfShared ??= new Map();
-		this.#fileOfShared = from.#fileOfShared;
 	}
 
 	/** Whether moves are resolved on disk for each layout: only a stored graph's view with more than MOVED_LINES_KEPT. */
@@ -366,36 +447,21 @@ export class View {
 				while (!isStartNode(current)) current = moves.parent(current);
 				return current.slice(1);
 			});
+		return this.#fileOfCode(n);
+	}
+
+	/** The file a node sits in, in this set: up by where lines were written, through the moves that count here. */
+	#fileOfCode(code: number): string {
+		const graph = this.graph;
 		const relocs = this.#relocationsN();
-		// Keep only a fixed tail of the walk for path compression. The selected
-		// relocation graph is acyclic, so traversal needs no history-sized stack.
-		const path: number[] = [];
-		let visited = 0;
-		let cur = n;
-		let file: string | undefined;
-		while (file === undefined) {
-			if (cur < 0) file = graph.nodeOf(cur).slice(1);
-			else {
-				file = (this.#fileOfShared ?? this.#fileOf).get(cur);
-				if (file === undefined) {
-					if (this.#fileOfShared) path.push(cur);
-					else path[visited++ % FILE_LOCATION_MEMO_ENTRIES] = cur;
-					cur = relocs.get(cur)?.parent ?? graph.parentCodeOf(cur);
-				}
-			}
+		const skeleton = skeletonOf(graph);
+		let c = code;
+		for (;;) {
+			c = skeleton.climb(c);
+			if (c < 0) return graph.nodeOf(c).slice(1);
+			const e = relocs.get(c);
+			c = e ? e.parent : graph.parentCodeOf(c);
 		}
-		const shared = this.#fileOfShared;
-		if (shared) {
-			if (shared.size > SHARED_FILE_MEMO) shared.clear();
-			for (const l of path) shared.set(l, file);
-			return file;
-		}
-		for (const l of path) {
-			if (!this.#fileOf.has(l) && this.#fileOf.size >= FILE_LOCATION_MEMO_ENTRIES)
-				this.#fileOf.delete(this.#fileOf.keys().next().value!);
-			this.#fileOf.set(l, file);
-		}
-		return file;
 	}
 
 	/** The lines hanging off a node in this set, in layout order. */
@@ -507,25 +573,7 @@ export class View {
 		const out = new Map<string, Set<number>>();
 		if (this.#hasMoves) {
 			const relocs = this.#relocationsN();
-			// Where each node sits, walked once for the whole view: through the moves, up to a file's start.
-			const memo = new Map<number, string>();
-			const fileOf = (code: number): string => {
-				const walked: number[] = [];
-				let cur = code;
-				let file: string | undefined;
-				while (file === undefined) {
-					if (cur < 0) file = graph.nodeOf(cur).slice(1);
-					else {
-						file = memo.get(cur);
-						if (file === undefined) {
-							walked.push(cur);
-							cur = relocs.get(cur)?.parent ?? graph.parentCodeOf(cur);
-						}
-					}
-				}
-				for (const n of walked) memo.set(n, file);
-				return file;
-			};
+			const fileOf = (code: number): string => this.#fileOfCode(code);
 			for (const [n, { parent }] of relocs) {
 				const into = fileOf(parent);
 				let from = out.get(into);
@@ -909,13 +957,11 @@ export class View {
 		n += 2 * ARRAY_HEADER_BYTES + this.#membershipSeq.byteLength + this.#membershipValue.byteLength;
 		if (this.#movers) n += ARRAY_HEADER_BYTES + REFERENCE_BYTES * this.#movers.length;
 		n += MAP_HEADER_BYTES; // #files exists from construction.
-		n += MAP_HEADER_BYTES; // #fileOf exists from construction.
 		if (this.#stable) n += this.#stable.retainedBytes;
 		else if (this.#set) n += OBJECT_BYTES + SET_ENTRY_BYTES * this.#set.size;
 		if (this.#knownList) n += ARRAY_HEADER_BYTES + REFERENCE_BYTES * this.#knownList.length;
 		if (this.#relocs) n += MAP_HEADER_BYTES + MAP_ENTRY_BYTES * this.#relocs.size;
 		if (this.#relocsN) n += MAP_HEADER_BYTES + (MAP_ENTRY_BYTES + OBJECT_BYTES) * this.#relocsN.size;
-		n += MAP_ENTRY_BYTES * this.#fileOf.size;
 		for (const f of this.#files.values()) {
 			n += MAP_ENTRY_BYTES;
 			if (f !== NO_FILE) {

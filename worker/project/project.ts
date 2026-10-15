@@ -2769,8 +2769,16 @@ export class Project {
 		if (set instanceof StableSet) {
 			// Keep indexed membership external. Only dependencies absent from
 			// that snapshot belong in the operation's closure overlay. Over a stored closed base (abso Capacity),
-			// only the overlay's atoms can reach outside it.
-			const walk = set instanceof StableUnionSet && isClosedSet(set.left) ? set.right : set;
+			// only the atoms outside it can reach outside it: unions are opened down to their closed parts.
+			const walk: Iterable<AtomId>[] = [];
+			const open = (part: ReadonlySet<AtomId>): void => {
+				if (isClosedSet(part)) return;
+				if (part instanceof StableUnionSet) {
+					open(part.left);
+					open(part.right);
+				} else walk.push(part);
+			};
+			open(set);
 			const missing = new Set<AtomId>();
 			const visit = (id: AtomId) => {
 				const stack = [id];
@@ -2783,7 +2791,7 @@ export class Project {
 					}
 				}
 			};
-			for (const id of walk) visit(id);
+			for (const part of walk) for (const id of part) visit(id);
 			return markClosed(missing.size ? new StableUnionSet(set, new StableOverlaySet(missing)) : set);
 		}
 		return this.#graph.closureOf(set);
