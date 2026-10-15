@@ -273,6 +273,18 @@ export class Graph {
 	readonly #childCounts?: ChildCounts;
 	#atoms: Atom[] = [];
 	#lamport: number[] = [];
+	/**
+	 * A stored graph's lamport numbers, 256 to a row (abso Capacity). A graph that already has them a row each (#lamport)
+	 * keeps that; the choice is made when first needed, so opening reads nothing.
+	 */
+	#lamportPaged: ReturnType<typeof storedNumbers> | undefined;
+	#lamportPagesKnown: ReturnType<typeof storedNumbers> | null | undefined;
+	get #lamportPages(): ReturnType<typeof storedNumbers> | null {
+		if (this.#lamportPagesKnown === undefined)
+			this.#lamportPagesKnown =
+				this.#lamportPaged && this.#storage!.read("lamport:meta", "length") === undefined ? this.#lamportPaged : null;
+		return this.#lamportPagesKnown;
+	}
 	// Lines, packed (#46): line n is the k-th line atom seq wrote, n = #lineBase[seq] + k. Each holds its
 	// atom's seq, the file it was written in (an index into #paths) and its parent (a line's n, or -1 - a
 	// path's index for a file's start). Its text stays in the atom. Ids and LineInfo objects are made only
@@ -547,6 +559,7 @@ export class Graph {
 				},
 			);
 			this.#lamport = storedArray(storage, "lamport");
+			this.#lamportPaged = storedNumbers(storage, "lamport-pages");
 			this.#lineBase = storedArray(storage, "line-base");
 			this.#paths = storedArray(storage, "paths");
 			this.#movers = storedArray(storage, "movers");
@@ -793,6 +806,8 @@ export class Graph {
 	#relocatedToCode: StateMap<number, RelocationInfo[]> = new Map();
 	#relocatedToCodePages: ReturnType<typeof storedLists<RelocationInfo>> | undefined;
 	#movers: AtomId[] = [];
+	/** A stored graph's movers, read once (abso Capacity): every view walks them, a row each. */
+	#moverList: AtomId[] | undefined;
 	#atomFiles: (readonly string[])[] = [];
 	/** Each atom's deleted lines by n, packed (#46), or undefined when it deletes none. */
 	#atomDeletes: (readonly number[] | Int32Array | undefined)[] = [];
@@ -830,7 +845,7 @@ export class Graph {
 	/** lamport(a) = 1 + max lamport of its deps; 0 for an atom with no deps (such as a0). */
 	lamport(id: AtomId): number {
 		if (!this.has(id)) throw new EngineError("unknown-atom", `no atom ${id}`);
-		return this.#lamport[this.#seq(id)]!;
+		return this.#lamportAt(this.#seq(id));
 	}
 
 	/** Compare by priority (lamport, then seq). Negative when a comes first (is lower). */
@@ -969,8 +984,12 @@ export class Graph {
 		return atomId(seq);
 	}
 
+	#lamportAt(seq: number): number {
+		return this.#lamportPages ? this.#lamportPages.at(seq) : this.#lamport[seq]!;
+	}
+
 	lamportOfSeq(seq: number): number {
-		return this.#lamport[seq]!;
+		return this.#lamportAt(seq);
 	}
 
 	/** The file line n was written in. */
@@ -1256,7 +1275,13 @@ export class Graph {
 
 	/** Atoms that move lines, in seq order. */
 	movers(): readonly AtomId[] {
-		return this.#movers;
+		if (!this.#storage) return this.#movers;
+		// Checked against the stored list's length and last mover, so a rolled-back add can't leave one behind.
+		const length = this.#movers.length;
+		const list = this.#moverList;
+		if (list && list.length === length && (length === 0 || list[length - 1] === this.#movers[length - 1])) return list;
+		this.#moverList = [...this.#movers];
+		return this.#moverList;
 	}
 
 	/** Atoms that list this one directly in their deps. */
@@ -1330,7 +1355,7 @@ export class Graph {
 	 * the search never descends below the target's lamport.
 	 */
 	#reaches(from: Iterable<AtomId>, target: AtomId): boolean {
-		const floor = this.#lamport[this.#seq(target)]!;
+		const floor = this.#lamportAt(this.#seq(target));
 		if (this.#storage) {
 			return this.withProjectionScratch((scratch) => {
 				let length = 0;
@@ -1341,13 +1366,13 @@ export class Graph {
 				};
 				for (const id of from) {
 					if (id === target) return true;
-					if (this.#lamport[this.#seq(id)]! > floor) push(id);
+					if (this.#lamportAt(this.#seq(id)) > floor) push(id);
 				}
 				while (length > 0) {
 					const key = String(--length);
 					const current = scratch.read("stack", key) as AtomId;
 					scratch.remove("stack", key);
-					if (this.#lamport[this.#seq(current)]! <= floor) continue;
+					if (this.#lamportAt(this.#seq(current)) <= floor) continue;
 					for (const dependency of this.atom(current).deps) {
 						if (dependency === target) return true;
 						push(dependency);
@@ -1363,7 +1388,7 @@ export class Graph {
 			if (cur === target) return true;
 			if (seen.has(cur)) continue;
 			seen.add(cur);
-			if (this.#lamport[this.#seq(cur)]! <= floor) continue;
+			if (this.#lamportAt(this.#seq(cur)) <= floor) continue;
 			for (const d of this.atom(cur).deps) if (!seen.has(d)) stack.push(d);
 		}
 		return false;
@@ -1507,7 +1532,8 @@ export class Graph {
 		this.#atoms.push(this.#storage ? atom : frozen);
 		let lam = 0;
 		for (const d of deps) lam = Math.max(lam, this.lamport(d) + 1);
-		this.#lamport.push(lam);
+		if (this.#lamportPages) this.#lamportPages.push(lam);
+		else this.#lamport.push(lam);
 
 		// The run starts' parents and the deleted lines, as codes, before this atom's own lines exist.
 		// The atom as given: with lists kept elsewhere, the frozen one reads them back from the log.
