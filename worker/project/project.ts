@@ -2744,13 +2744,24 @@ export class Project {
 			const base = this.#viewAt(this.#spaceOf(agent), agent.base);
 			if (base instanceof View) {
 				view.shareMoves(base);
-				// And its layout of every file the draft doesn't touch, when the draft moves nothing (abso Capacity).
+				// And its layout of every file the draft doesn't touch, when the draft moves nothing (abso Capacity). What the
+				// view holds beyond its base is the draft and whatever the draft depends on that the base lacks (the view's
+				// set is closed): each of those can change a file, so all of them count.
 				const mine = agent.mine;
-				view.shareFiles(base, () =>
-					mine.some((id) => (this.#graph.atom(id).moves?.length ?? 0) > 0)
-						? undefined
-						: this.#touchedFiles(mine, [base, view]),
-				);
+				view.shareFiles(base, () => {
+					const graph = this.#graph;
+					const below = base.set;
+					const beyond = new Set<AtomId>();
+					const stack = [...mine];
+					while (stack.length) {
+						const id = stack.pop()!;
+						if (beyond.has(id) || below.has(id)) continue;
+						beyond.add(id);
+						for (const dep of graph.atom(id).deps) if (!beyond.has(dep) && !below.has(dep)) stack.push(dep);
+					}
+					for (const id of beyond) if ((graph.atom(id).moves?.length ?? 0) > 0) return undefined;
+					return this.#touchedFiles(beyond, [base, view]);
+				});
 			}
 		}
 		return view;
