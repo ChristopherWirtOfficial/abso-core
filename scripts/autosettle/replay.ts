@@ -1,40 +1,33 @@
 // Recover each past hold's lines from a project's raw log (#19): the held agent's own lines survive in its draft
 // entries even after it kept theirs or edited by hand, which no version shows.
 //
-//   node scripts/autosettle/replay.ts <log.ndjson> <cases.json> <seat folder> <out.json>
+//   node --max-old-space-size=8192 scripts/autosettle/replay.ts <log.ndjson> <cases.json> <out.json>
 //
 // <log.ndjson> is GET /p/<project>/export (one raw log entry per line; owner-only). <cases.json> comes from
-// extract.ts, which says which settles to look for and what was kept. The seat folder reads theirs' file text
-// for positions and context. For each settle: the held agent's draft edits between its last push and the
-// refused push, the edits of theirs' push, and the groups of them that wrote the same lines (abso's own test
-// for a collision), in file order, paired with the settle's blocks in order.
+// extract.ts, which says which settles to look for and what was kept. For each settle, the engine rebuilds three
+// files from the log: the held agent's at its refused push (its base plus its draft), its base, and theirs' version.
+// git merge-file --diff3 cuts them into blocks as a pull would, and the blocks pair with the settle's in order.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Graph } from "../../src/engine/graph.ts";
+import type { Atom } from "../../src/engine/types.ts";
+import { View } from "../../src/engine/view.ts";
 
-interface InsertRun {
-	file: string;
-	parent: string;
-	lines: string[];
-}
-interface Atom {
-	id: string;
-	seq: number;
-	author: string;
-	time: number;
-	inserts: InsertRun[];
-	deletes: string[];
-	writes: string[];
-}
 type Entry = {
 	type: string;
 	agent?: string;
+	space?: string | null;
+	version?: number;
 	time?: number;
 	atom?: Atom;
 	tie?: Atom;
-	version?: number;
-	space?: string;
-} & Record<string, unknown>;
+	atoms?: string[];
+	changes?: string[];
+	collisions?: { file: string }[];
+};
 interface Case {
 	id: string;
 	file: string;
@@ -44,9 +37,11 @@ interface Case {
 	[k: string]: unknown;
 }
 
-const [logPath, casesPath, seat, out] = process.argv.slice(2);
-if (!logPath || !casesPath || !seat || !out) {
-	console.error("usage: node scripts/autosettle/replay.ts <log.ndjson> <cases.json> <seat folder> <out.json>");
+const [logPath, casesPath, out] = process.argv.slice(2);
+if (!logPath || !casesPath || !out) {
+	console.error(
+		"usage: node --max-old-space-size=8192 scripts/autosettle/replay.ts <log.ndjson> <cases.json> <out.json>",
+	);
 	process.exit(2);
 }
 const entries: Entry[] = readFileSync(logPath, "utf8")
@@ -54,88 +49,105 @@ const entries: Entry[] = readFileSync(logPath, "utf8")
 	.filter((l) => l.trim() !== "")
 	.map((l) => JSON.parse(l) as Entry);
 const cases = JSON.parse(readFileSync(casesPath, "utf8")) as Case[];
-const abso = (...args: string[]) =>
-	execFileSync("abso", args, { cwd: seat, encoding: "utf8", maxBuffer: 1 << 28, shell: process.platform === "win32" });
 
-// Every line any atom inserted: its text and file.
-const lineText = new Map<string, { text: string; file: string }>();
-const atoms = new Map<string, Atom>();
-for (const e of entries)
-	for (const a of [e.atom, e.tie]) {
-		if (!a?.inserts) continue;
-		atoms.set(a.id, a);
-		let k = 0;
-		for (const run of a.inserts) for (const text of run.lines) lineText.set(`${a.id}.${k++}`, { text, file: run.file });
-	}
-const insertedIds = (a: Atom, file: string) => {
-	const ids: string[] = [];
-	let k = 0;
-	for (const run of a.inserts)
-		for (const _ of run.lines) {
-			if (run.file === file) ids.push(`${a.id}.${k}`);
-			k++;
-		}
-	return ids;
+// Every atom into one graph, and shared's set after each version.
+const graph = new Graph();
+const added = (a: Atom | undefined) => {
+	if (a && !graph.has(a.id)) graph.add(a);
 };
-const MARKER = /^(<<<<<<< yours|\|\|\|\|\|\|\| before|=======$|>>>>>>> theirs:)/;
-
-/** The published shared version's index in the log, and the agent's draft atoms before an index since its last push. */
-const publishAt = new Map<number, number>();
+const sharedAt = new Map<number, Set<string>>();
+const versionAt = new Map<number, number>();
+let shared = new Set<string>();
 entries.forEach((e, i) => {
-	if ((e.type === "publish" || e.type === "land") && e.space === undefined && typeof e.version === "number")
-		publishAt.set(e.version, i);
+	added(e.atom);
+	added(e.tie);
+	if (e.type === "init" && e.atom) {
+		shared.add(e.atom.id);
+		sharedAt.set(0, new Set(shared));
+	}
+	const intoShared = (e.type === "publish" && !e.space) || e.type === "land";
+	if (intoShared && typeof e.version === "number") {
+		shared = new Set(shared);
+		for (const id of e.changes ?? []) shared.add(id);
+		if (e.tie) shared.add(e.tie.id);
+		sharedAt.set(e.version, shared);
+		versionAt.set(e.version, i);
+	}
 });
-function draftBefore(agent: string, end: number): Atom[] {
+const textOf = (set: Set<string>, file: string): string[] => {
+	const view = new View(graph, set);
+	return view.hasFile(file) ? view.lines(file).map((l) => l.text) : [];
+};
+
+/** The agent's base version and its unpublished draft atoms just before log index `end`. */
+function draftBefore(agent: string, end: number): { base: number; draft: string[] } {
+	let base = 0;
 	let start = 0;
 	for (let i = end - 1; i >= 0; i--) {
 		const e = entries[i]!;
-		if (e.agent === agent && (e.type === "publish" || e.type === "land")) {
+		if (e.agent !== agent) continue;
+		if (base === 0 && (e.type === "sync" || e.type === "join") && typeof e.version === "number") base = e.version;
+		if ((e.type === "publish" && !e.space) || e.type === "land") {
+			if (base === 0 && typeof e.version === "number") base = e.version;
 			start = i + 1;
 			break;
 		}
 	}
-	return entries
-		.slice(start, end)
-		.filter((e) => e.type === "draft" && e.agent === agent && e.atom)
-		.map((e) => e.atom!);
+	const draft: string[] = [];
+	for (const e of entries.slice(start, end)) {
+		if (e.agent !== agent) continue;
+		if (e.type === "draft" && e.atom) draft.push(e.atom.id);
+		if (e.type === "discard")
+			for (const id of e.atoms ?? []) draft.splice(draft.indexOf(id), draft.includes(id) ? 1 : 0);
+	}
+	return { base, draft };
 }
 
-/** Atoms touching `file`, grouped into collisions: groups linked by a written key or by one editing another's lines. */
-function collisions(mine: Atom[], theirs: Atom[], file: string) {
-	const touches = (a: Atom) =>
-		a.inserts.some((r) => r.file === file) || a.deletes.some((d) => lineText.get(d)?.file === file);
-	const all = [
-		...mine.filter(touches).map((a) => ({ a, side: "yours" as const })),
-		...theirs.filter(touches).map((a) => ({ a, side: "theirs" as const })),
-	];
-	const parent = all.map((_, i) => i);
-	const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
-	const keyOwner = new Map<string, number>();
-	all.forEach(({ a }, i) => {
-		const keys = [...a.writes, ...a.deletes.map((d) => `L:${d}`)];
-		for (const own of insertedIds(a, file)) keys.push(`own:${own}`);
-		for (const k of keys) {
-			const key = k.startsWith("own:") ? `L:${k.slice(4)}` : k;
-			const j = keyOwner.get(key);
-			if (j === undefined) keyOwner.set(key, i);
-			else parent[find(i)] = find(j);
+interface Block {
+	yours: string[];
+	base: string[];
+	theirs: string[];
+	/** Where the block starts in theirs. */
+	at: number;
+}
+/** git's three-way merge of the files, as marker blocks with each side's lines. */
+function blocks(yours: string[], base: string[], theirs: string[]): Block[] {
+	const dir = mkdtempSync(join(tmpdir(), "autosettle-"));
+	const path = (n: string) => join(dir, n);
+	writeFileSync(path("yours"), `${yours.join("\n")}\n`);
+	writeFileSync(path("base"), `${base.join("\n")}\n`);
+	writeFileSync(path("theirs"), `${theirs.join("\n")}\n`);
+	let merged = "";
+	try {
+		merged = execFileSync("git", ["merge-file", "-p", "--diff3", path("yours"), path("base"), path("theirs")], {
+			encoding: "utf8",
+			maxBuffer: 1 << 28,
+		});
+	} catch (e) {
+		// git merge-file exits with the number of conflicts.
+		merged = (e as { stdout?: string }).stdout ?? "";
+	}
+	rmSync(dir, { recursive: true, force: true });
+	const found: Block[] = [];
+	let side: "out" | "yours" | "base" | "theirs" = "out";
+	let cur: Block = { yours: [], base: [], theirs: [], at: 0 };
+	let theirsLine = 0;
+	for (const line of merged.split("\n")) {
+		if (line.startsWith("<<<<<<< ")) {
+			side = "yours";
+			cur = { yours: [], base: [], theirs: [], at: theirsLine };
+		} else if (side === "yours" && line.startsWith("||||||| ")) side = "base";
+		else if (side === "base" && line === "=======") side = "theirs";
+		else if (side === "theirs" && line.startsWith(">>>>>>> ")) {
+			found.push(cur);
+			side = "out";
+		} else if (side === "out") theirsLine++;
+		else {
+			cur[side].push(line);
+			if (side === "theirs") theirsLine++;
 		}
-	});
-	const groups = new Map<number, typeof all>();
-	all.forEach((x, i) => groups.set(find(i), [...(groups.get(find(i)) ?? []), x]));
-	return [...groups.values()].filter((g) => g.some((x) => x.side === "yours") && g.some((x) => x.side === "theirs"));
-}
-
-/** The lines a side's atoms in a group leave standing, in order, without marker lines. */
-function standing(group: { a: Atom; side: string }[], side: string, file: string): string[] {
-	const atomsOf = group.filter((x) => x.side === side).map((x) => x.a);
-	const gone = new Set(atomsOf.flatMap((a) => a.deletes));
-	return atomsOf
-		.sort((x, y) => x.seq - y.seq)
-		.flatMap((a) => insertedIds(a, file))
-		.filter((id) => !gone.has(id))
-		.map((id) => lineText.get(id)!.text)
-		.filter((t) => !MARKER.test(t));
+	}
+	return found;
 }
 
 const results: unknown[] = [];
@@ -146,68 +158,60 @@ for (const c of cases) {
 }
 for (const group of byGroup.values()) {
 	const c0 = group[0]!;
-	const settleAt = publishAt.get(c0.settler.settleVersion);
-	const theirsAt = publishAt.get(c0.theirs.version);
-	const notes: string[] = [];
-	if (settleAt === undefined || theirsAt === undefined) {
+	const settleAt = versionAt.get(c0.settler.settleVersion);
+	const theirSet = sharedAt.get(c0.theirs.version);
+	if (settleAt === undefined || !theirSet) {
 		for (const c of group) results.push({ ...c, yours: null, notes: "the settle or theirs isn't in this log" });
 		continue;
 	}
-	// The held push: the settler's newest refusal naming the file before its settle.
+	const notes: string[] = [];
 	let refusedAt = -1;
 	for (let i = settleAt - 1; i >= 0; i--) {
 		const e = entries[i]!;
-		if (e.type === "refused" && e.agent === c0.settler.agent) {
-			const files = ((e.collisions as { file: string }[] | undefined) ?? []).map((x) => x.file);
-			if (files.includes(c0.file)) {
-				refusedAt = i;
+		if (e.type === "refused" && e.agent === c0.settler.agent && (e.collisions ?? []).some((x) => x.file === c0.file)) {
+			refusedAt = i;
+			break;
+		}
+	}
+	// No refusal on record (older holds): the draft just before the agent's first pull past theirs.
+	let end = refusedAt;
+	if (end < 0) {
+		notes.push("no refused push on record; used the draft before the agent pulled theirs");
+		const theirsAt = versionAt.get(c0.theirs.version)!;
+		end = settleAt;
+		for (let i = theirsAt + 1; i < settleAt; i++) {
+			const e = entries[i]!;
+			if (e.agent === c0.settler.agent && e.type === "sync" && (e.version ?? 0) >= c0.theirs.version) {
+				end = i;
 				break;
 			}
 		}
 	}
-	if (refusedAt < 0) notes.push("no refused push found; used the draft just before the settle");
-	const mine = draftBefore(c0.settler.agent, refusedAt >= 0 ? refusedAt : settleAt);
-	const theirPublish = entries[theirsAt]!;
-	const theirIds = (theirPublish.changes as string[] | undefined) ?? [];
-	const theirs = theirIds.map((id) => atoms.get(id)).filter((a): a is Atom => a !== undefined);
-	const found = collisions(mine, theirs, c0.file);
-	// File order, by where theirs' first standing line sits in theirs' version.
-	let theirFile: string[] = [];
-	try {
-		theirFile = abso("show", `${c0.theirs.version}:${c0.file}`).split(/\r?\n/);
-	} catch {
-		notes.push("couldn't read theirs' file");
+	const { base, draft } = draftBefore(c0.settler.agent, end);
+	const baseSet = sharedAt.get(base);
+	if (!baseSet) {
+		for (const c of group) results.push({ ...c, yours: null, notes: `no shared version ${base} in this log` });
+		continue;
 	}
-	const placed = found
-		.map((g) => {
-			const t = standing(g, "theirs", c0.file);
-			const at = t.length > 0 ? theirFile.indexOf(t[0]!) : -1;
-			return { g, at, yours: standing(g, "yours", c0.file), theirs: t };
-		})
-		.sort((x, y) => x.at - y.at);
-	if (placed.length !== group.length)
-		notes.push(`found ${placed.length} collisions for ${group.length} settled blocks`);
+	const yoursText = textOf(new Set([...baseSet, ...draft]), c0.file);
+	const baseText = textOf(baseSet, c0.file);
+	const theirText = textOf(theirSet, c0.file);
+	const found = blocks(yoursText, baseText, theirText);
+	if (found.length !== group.length) notes.push(`git found ${found.length} blocks for ${group.length} settled`);
 	group.forEach((c, i) => {
-		const p = placed[i];
-		const base = p
-			? [...new Set(p.g.flatMap((x) => x.a.deletes))]
-					.filter((d) => !p.g.some((x) => insertedIds(x.a, c.file).includes(d)))
-					.map((d) => lineText.get(d)?.text)
-					.filter((t): t is string => t !== undefined && !MARKER.test(t))
-			: null;
+		const b = found.length === group.length ? found[i] : undefined;
 		results.push({
 			...c,
-			base,
-			yours: p ? p.yours : null,
-			theirsLines: p ? p.theirs : null,
-			context:
-				p && p.at >= 0
-					? {
-							before: theirFile.slice(Math.max(0, p.at - 15), p.at),
-							after: theirFile.slice(p.at + p.theirs.length, p.at + p.theirs.length + 15),
-						}
-					: { before: [], after: [] },
-			notes: [...notes, ...(p ? [] : ["no collision paired with this block"])].join("; "),
+			base: b?.base ?? null,
+			yours: b?.yours ?? null,
+			theirsLines: b?.theirs ?? null,
+			context: b
+				? {
+						before: theirText.slice(Math.max(0, b.at - 15), b.at),
+						after: theirText.slice(b.at + b.theirs.length, b.at + b.theirs.length + 15),
+					}
+				: { before: [], after: [] },
+			notes: [...notes, ...(b ? [] : ["blocks don't pair one to one, so none is used"])].join("; "),
 			recoveredBy: "replay",
 		});
 	});
