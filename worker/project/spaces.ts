@@ -133,6 +133,13 @@ function extraEvent(storage: GraphStateStorage, atom: AtomId, version: number): 
 	return membershipEvent(storage, CLOSURE, atom, version);
 }
 
+/** Whether shared's closure changed at this version: its newest closure event is from it. */
+export function closureChangedAt(storage: GraphStateStorage, version: number): boolean {
+	const order = storedArray<MembershipEvent>(storage, `${CLOSURE}:events`);
+	const length = order.length;
+	return length > 0 && order[length - 1]!.version === version;
+}
+
 /** The newest shared version whose closure is indexed, or undefined when this writer has none. */
 export function closureIndexed(storage: GraphStateStorage): number | undefined {
 	return storage.read(`${CLOSURE}:meta`, "indexed") as number | undefined;

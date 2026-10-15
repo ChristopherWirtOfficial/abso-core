@@ -64,11 +64,34 @@ export class PathIndex {
 		// Net changes only, as show has them: a file made and removed again before the publish isn't one (#37).
 		const touched = this.#deps.touchedFiles([...p.atoms, ...(p.dropped ?? [])], [before, after]);
 		const files = [...touched].filter((path) => differs(before, after, path)).sort();
+		this.keep(space, version, files, before, after);
+		return files;
+	}
+
+	/**
+	 * Keep a version's changed files, with its files made and taken out and its moves: worked out here, or as the
+	 * version landed (version-files.ts, abso Capacity), which says which files existed before and after.
+	 */
+	keep(
+		space: Space,
+		version: number,
+		files: string[],
+		before: ReadView,
+		after: ReadView,
+		exists?: ReadonlyMap<string, readonly [boolean, boolean]>,
+	): void {
+		let cache = this.#filesCache.get(space);
+		if (!cache) this.#filesCache.set(space, (cache = new Map()));
+		let shapes = this.#shapeCache.get(space);
+		if (!shapes) this.#shapeCache.set(space, (shapes = new Map()));
+		const p = space.versions[version]!;
 		cache.set(version, files);
 		// Files made and taken out, and which of those are one file moved (#41): an atom that moves lines
 		// names both files, and a binary or empty file moved keeps its blob.
-		const made = files.filter((f) => !before.hasFile(f) && after.hasFile(f));
-		const gone = files.filter((f) => before.hasFile(f) && !after.hasFile(f));
+		const had = (f: string) => exists?.get(f)?.[0] ?? before.hasFile(f);
+		const has = (f: string) => exists?.get(f)?.[1] ?? after.hasFile(f);
+		const made = files.filter((f) => !had(f) && has(f));
+		const gone = files.filter((f) => had(f) && !has(f));
 		const moves: [string, string][] = [];
 		if (made.length > 0 && gone.length > 0) {
 			const movers = new Set(this.#deps.graph.movers());
@@ -87,7 +110,6 @@ export class PathIndex {
 		}
 		shapes.set(version, { made, gone, moves });
 		this.#deps.shapes?.put(space.name, version, JSON.stringify({ stamp: shapeStamp(p), files, made, gone, moves }));
-		return files;
 	}
 
 	/** A version's files kept from an earlier load (#41), when the row describes this very version; into the caches. */

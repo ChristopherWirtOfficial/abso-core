@@ -47,7 +47,7 @@ export interface FileAttrs {
 }
 
 /** Structural read boundary shared by historical and transaction-bound projections. */
-export type ReadView = Omit<Pick<View, keyof View>, "sameText"> & {
+export type ReadView = Omit<Pick<View, keyof View>, "sameText" | "visibleCount" | "shareMoves"> & {
 	sameText(path: string, other: ReadView): boolean;
 };
 
@@ -100,6 +100,8 @@ const FILE_LOCATION_MEMO_ENTRIES = 256;
 export const MOVED_LINES_KEPT = 20_000;
 class TooManyMoves extends Error {}
 const NO_LINES: readonly number[] = Object.freeze([]);
+/** Lines whose place views sharing moves remember, at most: about 40 bytes each. */
+const SHARED_FILE_MEMO = 200_000;
 
 /**
  * The projection of a closed set. Construct once, then ask for files, lines
@@ -274,6 +276,25 @@ export class View {
 		return relocs;
 	}
 
+	/** Where lines sit, shared with views that took this one's moves (shareMoves): unbounded up to SHARED_FILE_MEMO. */
+	#fileOfShared: Map<number, string> | undefined;
+
+	/**
+	 * Take another view's resolved moves (abso Capacity). Only for a set that differs from that view's by atoms that
+	 * move nothing, drop nothing and change no closure: its moves resolve the same, and every line it shares with that
+	 * view sits where it sat there.
+	 */
+	shareMoves(from: View): void {
+		if (from.graph !== this.graph || from.#hasMoves !== this.#hasMoves || !this.#hasMoves) return;
+		if (from.#scratchMoves()) return;
+		this.#relocs = from.#relocations();
+		this.#relocsN = from.#relocationsN();
+		this.#movesOnDisk = false;
+		this.#movedFrom = from.#movedInFrom();
+		from.#fileOfShared ??= new Map();
+		this.#fileOfShared = from.#fileOfShared;
+	}
+
 	/** Whether moves are resolved on disk for each layout: only a stored graph's view with more than MOVED_LINES_KEPT. */
 	#scratchMoves(): boolean {
 		if (!this.#hasMoves || !this.graph.hasOrderedChildren) return false;
@@ -349,12 +370,19 @@ export class View {
 		while (file === undefined) {
 			if (cur < 0) file = graph.nodeOf(cur).slice(1);
 			else {
-				file = this.#fileOf.get(cur);
+				file = (this.#fileOfShared ?? this.#fileOf).get(cur);
 				if (file === undefined) {
-					path[visited++ % FILE_LOCATION_MEMO_ENTRIES] = cur;
+					if (this.#fileOfShared) path.push(cur);
+					else path[visited++ % FILE_LOCATION_MEMO_ENTRIES] = cur;
 					cur = relocs.get(cur)?.parent ?? graph.parentCodeOf(cur);
 				}
 			}
+		}
+		const shared = this.#fileOfShared;
+		if (shared) {
+			if (shared.size > SHARED_FILE_MEMO) shared.clear();
+			for (const l of path) shared.set(l, file);
+			return file;
 		}
 		for (const l of path) {
 			if (!this.#fileOf.has(l) && this.#fileOf.size >= FILE_LOCATION_MEMO_ENTRIES)
@@ -666,6 +694,11 @@ export class View {
 	/** Every file the set has ever written a line in, including fully deleted ones. */
 	knownPaths(): string[] {
 		return [...this.#known];
+	}
+
+	/** How many visible lines a file has. */
+	visibleCount(path: string): number {
+		return this.#file(path).vis.length;
 	}
 
 	/** Whether the file exists in this projection (has a visible line). */

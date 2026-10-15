@@ -12,7 +12,15 @@
 // agents publish into under the same rules, and that lands in shared as one
 // unit. Every agent works in one space at a time.
 
-import { type Atom, type AtomId, EngineError, Graph, type LineId, type ReadView } from "../../src/engine/index.ts";
+import {
+	type Atom,
+	type AtomId,
+	EngineError,
+	Graph,
+	type LineId,
+	type ReadView,
+	View,
+} from "../../src/engine/index.ts";
 import {
 	CachedStateStorage,
 	differenceSet,
@@ -176,11 +184,21 @@ import { record as hostedRecord, type RecordHost } from "./record.ts";
 import { recordFile as hostedRecordFile, type RecordFileHost } from "./record-file.ts";
 import { refusals as hostedRefusals, refuse as hostedRefuse, type RefuseHost } from "./refuse.ts";
 import { restore as hostedRestore, type RestoreHost } from "./restore.ts";
-import { indexClosure, last, Membership, SHARED, SharedAdditions, type Space, sharedBaseOf } from "./spaces.ts";
+import {
+	closureChangedAt,
+	indexClosure,
+	last,
+	Membership,
+	SHARED,
+	SharedAdditions,
+	type Space,
+	sharedBaseOf,
+} from "./spaces.ts";
 import { starting as hostedStarting, type StartingHost } from "./start.ts";
 import { switchTo as hostedSwitchTo, type SwitchHost } from "./switch-to.ts";
 import { sync as hostedSync, type SyncHost } from "./sync.ts";
 import { treeHash } from "./tree.ts";
+import { versionFiles as keptVersionFiles, type VersionFilesHost } from "./version-files.ts";
 import {
 	type LogHost,
 	compare as versionCompare,
@@ -1588,8 +1606,25 @@ export class Project {
 			this.#applyEntry(entry, at, keptTime);
 			// Shared's closure, kept per version on disk (abso Capacity): after the entry, since its atoms join the graph after
 			// its membership.
-			if (this.#writerStorage && (this.#spaces.get(SHARED)?.versions.length ?? 0) > versionsBefore)
-				indexClosure(this.#writerStorage, this.#spaces.get(SHARED)!, this.#graph);
+			if (this.#writerStorage && (this.#spaces.get(SHARED)?.versions.length ?? 0) > versionsBefore) {
+				const shared = this.#spaces.get(SHARED)!;
+				const storage = this.#writerStorage;
+				indexClosure(storage, shared, this.#graph);
+				// Each new version's changed files, from what it touched (version-files.ts): kept in the shapes table when
+				// the host gives one, so the log, a path's history and the tree never lay versions out to find them.
+				const host: VersionFilesHost = {
+					storage,
+					graph: this.#graph,
+					at: (v) => this.#at(shared, v),
+					viewAt: (v) => this.#viewAt(shared, v),
+					empty: () => new View(this.#graph, []),
+					closureChangedAt: (v) => closureChangedAt(storage, v),
+				};
+				for (let v = versionsBefore; v < shared.versions.length; v++) {
+					const { files, exists } = keptVersionFiles(host, shared.versions[v]!);
+					this.#paths.keep(shared, v, files, v === 0 ? host.empty() : host.viewAt(v - 1), host.viewAt(v), exists);
+				}
+			}
 		} finally {
 			// Positions by version: where each version of shared was made.
 			const versionsAfter = this.#spaces.get(SHARED)?.versions.length ?? 0;
