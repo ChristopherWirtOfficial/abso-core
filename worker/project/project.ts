@@ -834,6 +834,12 @@ export class Project {
 		return p && { agent: p.agent, message: p.message, time: p.time };
 	}
 
+	/** The atoms a version of shared, or of a named draft, added to its space: what was pushed together (blame's trail). */
+	versionAtoms(version: number, draft: string | null = null): readonly AtomId[] {
+		const space = draft === null ? this.#shared : this.#spaces.get(draft);
+		return space?.versions[version]?.atoms ?? [];
+	}
+
 	/** The graph, for reading (blame, history). Don't add to it. */
 	get graph(): Graph {
 		return this.#graph;

@@ -226,7 +226,9 @@ export function why(project: Project, asked: string, n: number, where: BlameWher
 		toMessage: graph.atom(r.to).message,
 	}));
 	const reasonsIn: { from: AtomId; kind: string; text: string; fromAuthor: string; fromMessage: string }[] = [];
-	for (const other of graph.atoms()) {
+	// The atoms that point at it, where the graph keeps them (abso Capacity): looking at every atom read each one.
+	const pointing = graph.reasonsTo(atom.id);
+	for (const other of pointing ? pointing.map((id) => graph.atom(id)) : graph.atoms()) {
 		for (const r of other.reasons) {
 			if (r.to === atom.id)
 				reasonsIn.push({
@@ -305,7 +307,13 @@ function lineTrail(project: Project, view: ReadView, file: string, line: LineId)
 	const graph = project.graph;
 	// Changes pushed together: the same version of the same space, or both still in one agent's draft.
 	const samePush = (a: Atom, b: Atom) => samePublish(publishOf(project, a.id), publishOf(project, b.id));
-	const { steps, more } = trail(graph, view, file, line, undefined, samePush);
+	// What was pushed with a published atom is its version's atoms; an atom still in a draft goes with every other one,
+	// so the trail looks near by as before.
+	const pushmates = (a: Atom) => {
+		const p = publishOf(project, a.id);
+		return p ? project.versionAtoms(p.version, p.draft) : undefined;
+	};
+	const { steps, more } = trail(graph, view, file, line, undefined, samePush, pushmates);
 	const groups: { steps: TrailStep[]; publish: Publish | null }[] = [];
 	for (const s of steps) {
 		const publish = publishOf(project, s.atom);

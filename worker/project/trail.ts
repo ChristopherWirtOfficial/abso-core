@@ -12,7 +12,15 @@
 // in another (a file split in two), which the trail follows into the file it
 // came from.
 
-import type { Atom, AtomId, Graph, LineId, ReadView, SeqLine } from "../../src/engine/index.ts";
+import {
+	type Atom,
+	type AtomId,
+	type Graph,
+	type LineId,
+	type ReadView,
+	type SeqLine,
+	seqOf,
+} from "../../src/engine/index.ts";
 
 /** One change in a line's past, newest first. */
 export interface TrailStep {
@@ -194,6 +202,7 @@ export function trail(
 	line: LineId,
 	max = TRAIL_MAX,
 	samePush: (a: Atom, b: Atom) => boolean = (a, b) => a.id === b.id,
+	pushmates?: (atom: Atom) => Iterable<AtomId> | undefined,
 ): { steps: TrailStep[]; more: boolean } {
 	const files = new Map<string, { seq: readonly SeqLine[]; index: Map<LineId, number> }>();
 	const sequenceOf = (path: string) => {
@@ -218,7 +227,7 @@ export function trail(
 			const { seq, index } = sequenceOf(path);
 			const at = index.get(id);
 			if (at === undefined) continue;
-			const hunk = hunkOf(graph, seq, at, graph.atom(seq[at]!.atom));
+			const hunk = hunkOf(seq, at, graph.atom(seq[at]!.atom));
 			const p = pairIn(
 				hunk.before.map((i) => seq[i]!.text),
 				hunk.after.map((i) => seq[i]!.text),
@@ -234,7 +243,15 @@ export function trail(
 		let formatting = pair?.formatting ?? false;
 		let searched = false;
 		if (replaced === undefined) {
-			const moved = movedFrom(graph, view, atom, seq[at]!.text, new Set(hunk.before.map((i) => seq[i]!.id)), samePush);
+			const moved = movedFrom(
+				graph,
+				view,
+				atom,
+				seq[at]!.text,
+				new Set(hunk.before.map((i) => seq[i]!.id)),
+				samePush,
+				pushmates,
+			);
 			if (moved) [replaced, formatting, searched] = [moved, true, true];
 		}
 		const maybeMoved = searched || (replaced !== undefined && graph.lineFile(replaced) !== graph.lineFile(id));
@@ -277,14 +294,24 @@ function movedFrom(
 	text: string,
 	skip: ReadonlySet<LineId>,
 	samePush: (a: Atom, b: Atom) => boolean,
+	pushmates?: (atom: Atom) => Iterable<AtomId> | undefined,
 ): LineId | undefined {
 	const want = normalize([text]);
 	if (want.length < 12) return undefined;
 	const all = graph.atoms();
 	const exact: LineId[] = [];
 	const same: LineId[] = [];
-	for (let s = Math.max(0, atom.seq - NEAR); s <= Math.min(all.length - 1, atom.seq + NEAR); s++) {
-		const other = all[s]!;
+	// Only atoms pushed with this one can count (samePush), so where the caller can list them, those are the candidates
+	// (abso Capacity): reading every atom within NEAR of it was 10,000 atom reads a step on abso. Otherwise, every atom
+	// near by, as before.
+	const mates = pushmates?.(atom);
+	const near = (s: number) => s >= atom.seq - NEAR && s <= atom.seq + NEAR;
+	const candidates: Iterable<Atom> = mates
+		? [...mates].filter((id) => near(seqOf(id))).map((id) => graph.atom(id))
+		: (function* () {
+				for (let s = Math.max(0, atom.seq - NEAR); s <= Math.min(all.length - 1, atom.seq + NEAR); s++) yield all[s]!;
+			})();
+	for (const other of candidates) {
 		if (other.author !== atom.author || !view.set.has(other.id) || !samePush(other, atom)) continue;
 		for (const d of other.deletes) {
 			if (skip.has(d)) continue;
@@ -304,8 +331,7 @@ function movedFrom(
  * Lines nobody could see when it was made (written later, or already
  * deleted) are passed over; a line it left alone ends the hunk.
  */
-function hunkOf(graph: Graph, seq: readonly SeqLine[], at: number, atom: Atom): { before: number[]; after: number[] } {
-	const seqOf = (id: AtomId) => graph.atom(id).seq;
+function hunkOf(seq: readonly SeqLine[], at: number, atom: Atom): { before: number[]; after: number[] } {
 	const role = (s: SeqLine): "wrote" | "deleted" | "unseen" | "kept" => {
 		if (s.atom === atom.id) return "wrote";
 		if (seqOf(s.atom) > atom.seq) return "unseen";

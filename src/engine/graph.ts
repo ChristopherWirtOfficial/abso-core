@@ -612,6 +612,7 @@ export class Graph {
 			this.#dependentsPages = storedLists<AtomId>(storage, "dependents");
 			this.#resolversPages = storedLists<AtomId>(storage, "resolvers");
 			this.#togetherPages = storedLists<TogetherLink>(storage, "together");
+			this.#reasonsInPages = storedLists<AtomId>(storage, "reasons-in");
 			this.#fileAtomPages = storedLists<AtomId>(storage, "file-atoms");
 			this.#runStartPages = storedLists<number>(storage, "run-starts", (key) =>
 				JSON.stringify(["number", Number(key)]),
@@ -803,6 +804,16 @@ export class Graph {
 	#resolversPages: ReturnType<typeof storedLists<AtomId>> | undefined;
 	#together: StateMap<AtomId, TogetherLink[]> = new Map();
 	#togetherPages: ReturnType<typeof storedLists<TogetherLink>> | undefined;
+	/** The atoms whose reasons point at each atom, in seq order, once each (abso Capacity). */
+	#reasonsIn = new Map<AtomId, AtomId[]>();
+	#reasonsInPages: ReturnType<typeof storedLists<AtomId>> | undefined;
+	/** Whether a stored graph keeps reasons-in: from a fresh graph on, worked out when first needed. */
+	#reasonsInKnown: boolean | undefined;
+	get #reasonsInKept(): boolean {
+		if (!this.#storage) return true;
+		this.#reasonsInKnown ??= this.#storage.read("reasons-in:meta", "kept") === 1;
+		return this.#reasonsInKnown;
+	}
 	#fileAtoms: StateMap<string, AtomId[]> = new Map();
 	#fileAtomPages: ReturnType<typeof storedLists<AtomId>> | undefined;
 	/** First lines of runs (their n), by the node they were written after: a line's n, or -1 - a path's index. */
@@ -1345,6 +1356,16 @@ export class Graph {
 		else yield* listOf(this.#resolvers.get(id));
 	}
 
+	/**
+	 * The atoms whose reasons point at this one, in seq order, once each; or undefined when a stored graph made before
+	 * this index keeps none, and the caller looks at every atom (abso Capacity).
+	 */
+	reasonsTo(id: AtomId): readonly AtomId[] | undefined {
+		if (!this.#reasonsInKept) return undefined;
+		if (this.#reasonsInPages) return [...this.#reasonsInPages.values(id)];
+		return this.#reasonsIn.get(id) ?? [];
+	}
+
 	/** `together` reasons touching this atom, in either direction. */
 	togetherLinks(id: AtomId): readonly TogetherLink[] {
 		return [...this.eachTogetherLink(id)];
@@ -1546,6 +1567,8 @@ export class Graph {
 		}
 		if (this.#storage && this.#atoms.length === 0 && this.#packFiles) {
 			this.#storage.write("file-lines:meta", "format", 2);
+			this.#storage.write("reasons-in:meta", "kept", 1);
+			this.#reasonsInKnown = true;
 			this.#formatKnown = 2;
 		}
 
@@ -1722,6 +1745,15 @@ export class Graph {
 		for (const file of files) {
 			if (this.#fileAtomPages) this.#fileAtomPages.append(file, frozen.id);
 			else pushIndex(this.#fileAtoms, file, frozen.id);
+		}
+		if (this.#reasonsInKept) {
+			const pointed = new Set<AtomId>();
+			for (const r of frozen.reasons) {
+				if (pointed.has(r.to)) continue;
+				pointed.add(r.to);
+				if (this.#reasonsInPages) this.#reasonsInPages.append(r.to, frozen.id);
+				else pushIndex(this.#reasonsIn, r.to, frozen.id);
+			}
 		}
 		for (const r of frozen.reasons) {
 			if (r.kind !== "together" || r.to === frozen.id) continue;
