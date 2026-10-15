@@ -10,7 +10,7 @@
 // made when a caller asks for them, and the latest asked for is kept.
 
 import type { Graph, RelocationInfo } from "./graph.ts";
-import { isStartNode, seqOf } from "./keys.ts";
+import { isStartNode, lineId, seqOf } from "./keys.ts";
 import { resolveScratchMoves, scratchLayoutNodes } from "./relocation-scratch.ts";
 import { isClosedSet, StableSet } from "./state-source.ts";
 import { joinLines } from "./text.ts";
@@ -71,6 +71,11 @@ interface FileState {
 	readonly visText?: readonly (string | null)[];
 	/** Its visible lines' writers' seqs, when laid out from the file's packed history. */
 	readonly visWriter?: Int32Array;
+	/** Its visible lines' places in their writers (a line id's k), when laid out from packed history. */
+	readonly visK?: Int32Array;
+	/** The same for every line of seq, when complete and laid out from packed history. */
+	readonly seqWriter?: Int32Array;
+	readonly seqK?: Int32Array;
 	/** Positions by n, built the first time they're asked for. */
 	seqIndex?: Map<number, number>;
 	visIndex?: Map<number, number>;
@@ -648,6 +653,7 @@ export class View {
 		const children = new Map<number, Child[]>();
 		const texts = new Map<number, string | null>();
 		const writers = new Map<number, number>();
+		const places = new Map<number, number>();
 		const deleters = new Map<number, number[]>();
 		// Each atom's lamport once per layout: most lines share a few atoms, and a stored graph reads it from a page.
 		const lamports = new Map<number, number>();
@@ -677,6 +683,7 @@ export class View {
 				else children.set(at, [child]);
 				texts.set(n, text);
 				writers.set(n, seq);
+				places.set(n, k);
 			}
 			for (const [n, deleter] of graph.packedDeletes(file)) {
 				if (!this.#has(deleter)) continue;
@@ -694,6 +701,9 @@ export class View {
 		const vis: number[] = [];
 		const visText: (string | null)[] = [];
 		const visWriter: number[] = [];
+		const visK: number[] = [];
+		const seqWriter: number[] = [];
+		const seqK: number[] = [];
 		const deletedBy = new Map<number, readonly number[]>();
 		const stack: number[] = [];
 		const push = (code: number) => {
@@ -712,8 +722,13 @@ export class View {
 				vis.push(n);
 				visText.push(texts.get(n) ?? null);
 				visWriter.push(writers.get(n)!);
+				visK.push(places.get(n)!);
 			}
-			if (complete) seq.push(n);
+			if (complete) {
+				seq.push(n);
+				seqWriter.push(writers.get(n)!);
+				seqK.push(places.get(n)!);
+			}
 			push(n);
 		}
 		return {
@@ -724,6 +739,8 @@ export class View {
 			deletedBy,
 			visText,
 			visWriter: Int32Array.from(visWriter),
+			visK: Int32Array.from(visK),
+			...(complete ? { seqWriter: Int32Array.from(seqWriter), seqK: Int32Array.from(seqK) } : {}),
 		};
 	}
 
@@ -884,13 +901,13 @@ export class View {
 	buildLines(path: string): readonly VisibleLine[] {
 		const graph = this.graph;
 		// Texts and writers the packed layout already holds are not read again (abso Capacity).
-		const { vis, visText, visWriter } = this.#file(path);
+		const { vis, visText, visWriter, visK } = this.#file(path);
 		const lines: VisibleLine[] = new Array(vis.length);
 		for (let i = 0; i < vis.length; i++) {
 			const n = vis[i]!;
 			const packed = visText?.[i];
 			lines[i] = {
-				id: graph.lineIdOf(n),
+				id: visWriter && visK ? lineId(graph.idOfSeq(visWriter[i]!), visK[i]!) : graph.lineIdOf(n),
 				textChunks: () => graph.textChunks(n),
 				get text() {
 					return packed ?? graph.textOf(n);
@@ -905,12 +922,12 @@ export class View {
 	lines(path: string): readonly VisibleLine[] {
 		if (this.#linesCache?.path === path) return this.#linesCache.lines;
 		const graph = this.graph;
-		const { vis, visText, visWriter } = this.#file(path);
+		const { vis, visText, visWriter, visK } = this.#file(path);
 		const lines: VisibleLine[] = new Array(vis.length);
 		for (let i = 0; i < vis.length; i++) {
 			const n = vis[i]!;
 			lines[i] = {
-				id: graph.lineIdOf(n),
+				id: visWriter && visK ? lineId(graph.idOfSeq(visWriter[i]!), visK[i]!) : graph.lineIdOf(n),
 				text: visText?.[i] ?? graph.textOf(n),
 				atom: graph.idOfSeq(visWriter ? visWriter[i]! : graph.writerSeqOf(n)),
 			};
@@ -925,13 +942,21 @@ export class View {
 		const graph = this.graph;
 		const f = this.#file(path, true);
 		const out: SeqLine[] = new Array(f.seq.length);
+		// Ids and writers from the packed layout, and each text read only when asked (abso Capacity): callers walk a few
+		// lines of a file's history, and reading every line's text was a row each on a stored graph.
+		const { seqWriter, seqK } = f;
 		for (let i = 0; i < f.seq.length; i++) {
 			const n = f.seq[i]!;
 			const by = f.deletedBy.get(i);
+			const writer = seqWriter ? seqWriter[i]! : graph.writerSeqOf(n);
+			let text: string | undefined;
 			out[i] = {
-				id: graph.lineIdOf(n),
-				text: graph.textOf(n),
-				atom: graph.idOfSeq(graph.writerSeqOf(n)),
+				id: seqWriter && seqK ? lineId(graph.idOfSeq(writer), seqK[i]!) : graph.lineIdOf(n),
+				get text() {
+					text ??= graph.textOf(n);
+					return text;
+				},
+				atom: graph.idOfSeq(writer),
 				deletedBy: by ? by.map((s) => graph.idOfSeq(s)) : NONE,
 				visible: by === undefined,
 			};
@@ -1053,6 +1078,9 @@ export class View {
 				n += f.seq.byteLength + f.vis.byteLength;
 				if (f.visText) for (const text of f.visText) n += REFERENCE_BYTES + 2 * (text?.length ?? 0);
 				if (f.visWriter) n += 4 * f.visWriter.length;
+				if (f.visK) n += 4 * f.visK.length;
+				if (f.seqWriter) n += 4 * f.seqWriter.length;
+				if (f.seqK) n += 4 * f.seqK.length;
 				n += MAP_HEADER_BYTES + (MAP_ENTRY_BYTES + ARRAY_HEADER_BYTES) * f.deletedBy.size;
 				for (const deleters of f.deletedBy.values()) n += REFERENCE_BYTES * deleters.length;
 				if (f.seqIndex) n += MAP_HEADER_BYTES + MAP_ENTRY_BYTES * f.seqIndex.size;
